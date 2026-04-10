@@ -1,3 +1,10 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
+
 export const config = {
   databaseUrl: process.env.DATABASE_URL ?? "postgresql://glowos:glowos_dev@localhost:5432/glowos_dev",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",

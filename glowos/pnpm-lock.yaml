@@ -109,6 +109,9 @@ importers:
 
   packages/db:
     dependencies:
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.6.1
       drizzle-orm:
         specifier: ^0.30.10
         version: 0.30.10(@types/pg@8.20.0)(@types/react@19.2.14)(pg@8.20.0)(react@19.2.5)

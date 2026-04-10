@@ -1,4 +1,4 @@
-import "dotenv/config";
+// dotenv is loaded in lib/config.ts (must run before any other imports read env)
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
