@@ -176,11 +176,7 @@ export default function HomePage() {
               </Link>
               <a
                 href="#how-it-works"
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 hover:border-white/30 bg-white/5 hover:bg-white/10 px-8 py-4 text-base font-semibold text-white transition-all duration-200"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 hover:border-white/30 bg-white/5 hover:bg-white/10 px-8 py-4 text-base font-semibold text-white transition-all duration-200 scroll-smooth"
               >
                 <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />

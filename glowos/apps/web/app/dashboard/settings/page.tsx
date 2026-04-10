@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 
@@ -1179,6 +1179,14 @@ function AccountTab({ onSaved, onError }: { onSaved: (msg: string) => void; onEr
 // ─── Main Settings Page ────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabId>(() => {
