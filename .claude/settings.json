@@ -54,7 +54,8 @@
       "Bash(curl -s https://bookingcrm-production.up.railway.app/merchant/clients -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MDFiZmVmNy03ZGFkLTRjMGItYTNkZC0zMDkyM2UwYjNlMDUiLCJtZXJjaGFudElkIjoiMmI2NjM2ZjMtNmViOS00YzQzLWE0OGItYzQ4NzA3NmFlMTJiIiwicm9sZSI6Im93bmVyIiwiaWF0IjoxNzc1ODM2OTI2LCJleHAiOjE3NzU4Mzc4MjZ9.DjlHY79M6iCl0-d5iM9UmB2vUdLTl3Q10Sc8tl_LTzg')",
       "Bash(curl -s https://bookingcrm-production.up.railway.app/merchant/me -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MDFiZmVmNy03ZGFkLTRjMGItYTNkZC0zMDkyM2UwYjNlMDUiLCJtZXJjaGFudElkIjoiMmI2NjM2ZjMtNmViOS00YzQzLWE0OGItYzQ4NzA3NmFlMTJiIiwicm9sZSI6Im93bmVyIiwiaWF0IjoxNzc1ODM2OTI2LCJleHAiOjE3NzU4Mzc4MjZ9.DjlHY79M6iCl0-d5iM9UmB2vUdLTl3Q10Sc8tl_LTzg')",
       "Bash(curl -s -X PUT https://bookingcrm-production.up.railway.app/merchant/settings/cancellation-policy -H 'Content-Type: application/json' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MDFiZmVmNy03ZGFkLTRjMGItYTNkZC0zMDkyM2UwYjNlMDUiLCJtZXJjaGFudElkIjoiMmI2NjM2ZjMtNmViOS00YzQzLWE0OGItYzQ4NzA3NmFlMTJiIiwicm9sZSI6Im93bmVyIiwiaWF0IjoxNzc1ODM2OTI2LCJleHAiOjE3NzU4Mzc4MjZ9.DjlHY79M6iCl0-d5iM9UmB2vUdLTl3Q10Sc8tl_LTzg' -d '{\"free_cancellation_hours\": 24, \"late_cancellation_refund_pct\": 50, \"no_show_charge\": \"full\"}')",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(vercel logs:*)"
     ]
   }
 }

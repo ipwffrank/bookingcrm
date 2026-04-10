@@ -1,6 +1,8 @@
 import { apiFetch } from '../lib/api';
 import BookingWidget from './BookingWidget';
 
+export const dynamic = 'force-dynamic';
+
 interface SalonData {
   merchant: {
     id: string;

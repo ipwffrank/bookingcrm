@@ -1,6 +1,8 @@
 import CancelClient from './CancelClient';
 import { apiFetch } from '../../lib/api';
 
+export const dynamic = 'force-dynamic';
+
 interface CancelData {
   booking: {
     id: string;
