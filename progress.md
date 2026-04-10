@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 10 April 2026**
+**Last updated: 10 April 2026 (end of day)**
 
 ---
 
@@ -13,49 +13,64 @@
 | Cache / Queue | Upstash Redis | Upstash |
 | Source Code | https://github.com/ipwffrank/bookingcrm | GitHub |
 
+### Accounts
+- **Vercel:** ipwffrank (team: glowos)
+- **Railway:** ipwffrank@gmail.com (project: alert-truth)
+- **Neon:** ep-quiet-hall-ambckxnr-pooler
+- **Upstash:** ultimate-chimp-84494
+- **Twilio:** ipwffrank@gmail.com — account created, credentials NOT yet added
+- **Stripe:** NOT yet signed up
+- **GitHub:** ipwffrank/bookingcrm
+
 ---
 
-## What's Completed
+## What's Completed (Session 1 — 10 April 2026)
 
 ### Backend (services/api/) — 100% for MVP
 - [x] Database schema — 15 PostgreSQL tables via Drizzle ORM
 - [x] Authentication — JWT signup/login/refresh, RBAC (owner/manager/staff), tenant isolation
 - [x] Booking Engine — Redis-cached availability, 5-min slot leasing, full booking lifecycle
-- [x] Payments — Stripe Connect onboarding, payment intents, webhook handler, refunds
-- [x] Notifications — BullMQ queues, Twilio WhatsApp integration, 7 notification types
+- [x] Payments API — Stripe Connect onboarding, payment intents, webhook handler, refunds
+- [x] Notifications API — BullMQ queues, Twilio WhatsApp integration, 7 notification types
 - [x] Workers — CRM profile updates, VIP scoring (RFM), churn detection
 - [x] Analytics API — revenue, staff performance, top services, booking sources
 - [x] Campaigns API — CRUD, audience filtering, message personalization, send/results
 - [x] Cancellation policy endpoint
 
-### Frontend (apps/web/) — 90% for MVP
-- [x] Landing page — premium dark design inspired by SevenRooms
+### Frontend (apps/web/) — 95% for MVP
+- [x] Landing page — premium dark design inspired by SevenRooms (redesigned)
+- [x] Navbar — sticky with smooth scroll, mobile hamburger, logo links to home
 - [x] Signup page — creates salon + owner, stores tokens
 - [x] Login page — JWT auth with token storage
 - [x] Onboarding wizard — 5-step (Profile, Services, Staff, Payments, Policy)
+- [x] Dashboard layout — sidebar navigation (Dashboard, Analytics, Services, Staff, Clients, Campaigns, Settings)
 - [x] Dashboard — today's bookings with check-in/complete/no-show/walk-in
 - [x] Services CRUD — add/edit/deactivate with validation
 - [x] Staff CRUD — service assignment + 7-day working hours grid
 - [x] Client CRM — VIP summary, search, filters, detail drawer with notes
 - [x] Analytics — revenue chart, staff performance, top services, booking sources
 - [x] Campaigns — create, audience filter, message templates, send, results
-- [x] Settings — profile, cancellation policy, payments, booking page, account
-- [x] Booking page — full wizard (service → staff → date → details → confirm)
+- [x] Settings — 5 tabs (profile, cancellation policy, payments, booking page, account)
+- [x] Booking page — full 5-step wizard (service → staff → date/time → details → confirm)
+- [x] Confirmation page — booking summary with WhatsApp notice
 - [x] Cancellation page — refund eligibility + execution
-- [x] All logos link back to landing page
+- [x] All logos link back to landing page (/)
 
 ### Infrastructure
 - [x] Turborepo + pnpm monorepo
 - [x] Deployed on Vercel (frontend) + Railway (API)
-- [x] Neon PostgreSQL + Upstash Redis
-- [x] Docker Compose for local dev
-- [x] GitHub repo with auto-deploy on push
+- [x] Neon PostgreSQL + Upstash Redis connected
+- [x] Dockerfile for Railway deployment
+- [x] Docker Compose for local dev (Postgres 16 + Redis 7)
+- [x] GitHub repo with CI pushes
 
-### Test Data (ABC Salon)
-- [x] 8 services (nails, face, massage)
-- [x] 5 staff with working hours
-- [x] 20 bookings (completed, confirmed, no-show, walk-in)
+### Test Data (ABC Salon — ipwffrank@gmail.com)
+- [x] Merchant profile updated (address, description, cancellation policy)
+- [x] 8 services (Classic Manicure, Gel Manicure, Gel Pedicure, Nail Art, Acrylic Extensions, Nail Removal, Express Facial, Back Massage)
+- [x] 5 staff (Sarah Lim, Wei Lin, Priya Nair, Michelle Tan, Any Available)
+- [x] 20 bookings across Apr 3–10 (13 completed, 5 confirmed, 2 no-show)
 - [x] 10 clients with varied booking histories
+- [x] Walk-in bookings included
 
 ### Bug Fixes Applied
 - [x] Signup now stores auth tokens in localStorage
@@ -63,63 +78,62 @@
 - [x] Onboarding staff step logic fixed
 - [x] CORS configured for all origins
 - [x] Lazy DB connection for Neon (dotenv load order)
-- [x] ESM module resolution for Node 24
+- [x] ESM module resolution for Node 24 (`"type": "module"` on db package)
+- [x] force-dynamic on SSR pages to prevent build-time API calls
+- [x] Suspense boundary for useSearchParams in settings page
+- [x] Removed onClick from server component (landing page)
+- [x] scroll-smooth on html element for anchor navigation
 
 ---
 
 ## What's NOT Done Yet
 
-### Priority 1 — Do First When Resuming
+### Priority 1 — Do FIRST When Resuming (11 April)
 
-1. **Twilio WhatsApp Setup**
-   - User has a Twilio account (ipwffrank@gmail.com)
-   - Need: Account SID, Auth Token, WhatsApp number
-   - Update Railway env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
-   - Workers are already coded — just need credentials to activate
-   - Test: signup → booking → WhatsApp confirmation received
+1. **Twilio WhatsApp — Get Credentials**
+   - Go to https://console.twilio.com (NOT the Admin page)
+   - Copy: Account SID (starts with AC...) and Auth Token
+   - For testing: set up WhatsApp Sandbox (Console → Messaging → Try it out → Send a WhatsApp message)
+   - Then update Railway env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
+   - All notification code is already written — just needs credentials
+   - Test: create a booking → WhatsApp confirmation should be received
 
-2. **Stripe Connect Setup**
-   - Need: Stripe account with Connect enabled (SG business entity required)
-   - Update Railway env vars: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET
-   - Set up Stripe webhook endpoint: https://bookingcrm-production.up.railway.app/webhooks/stripe
-   - Test: booking → card payment → commission split → merchant payout
+2. **Fix Route Ordering Bug (Critical)**
+   - `/booking/:slug` wildcard catches `/booking/merchant` — "merchant" is treated as a slug
+   - Fix: in `services/api/src/index.ts`, mount merchant booking routes BEFORE the public `/:slug` routes
+   - Or rename to `/merchant/bookings` to avoid collision entirely
+   - This affects: dashboard today's bookings list, walk-in creation
 
-3. **Fix Route Ordering Bug (Critical)**
-   - The `/booking/:slug` wildcard route catches `/booking/merchant` — "merchant" is treated as a slug
-   - Fix: reorder routes in services/api/src/index.ts so merchant routes are registered before public booking routes
-   - Or rename merchant booking routes to avoid collision
+3. **Stripe Connect — Sign Up**
+   - Sign up at https://stripe.com (needs SG business entity or sole proprietorship)
+   - Enable Connect (Platform/Marketplace mode)
+   - Get: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY
+   - Set up webhook: https://bookingcrm-production.up.railway.app/webhooks/stripe → get STRIPE_WEBHOOK_SECRET
+   - Update Railway env vars
+   - All payment code is already written — just needs keys
 
 ### Priority 2 — Before Pilot Launch
 
 4. **End-to-End Flow Testing**
-   - Test full flow on production: signup → onboarding → add services → add staff → share booking link → client books → dashboard shows booking
-   - Fix any remaining API path mismatches between frontend and backend
+   - Full production test: signup → onboarding → add services/staff → share booking link → client books → dashboard shows booking → check-in → complete
    - Test on mobile (responsive)
+   - Fix any remaining API path mismatches
 
 5. **Custom Domain**
    - Register glowos.sg
-   - Point to Vercel (frontend)
-   - Set up api.glowos.sg subdomain → Railway
+   - Point to Vercel (frontend): Vercel dashboard → Domains → Add
+   - Set up api.glowos.sg → Railway: Railway dashboard → Settings → Custom Domain
 
 6. **Vercel + GitHub Auto-Deploy**
-   - Connect Vercel to GitHub repo for automatic deploys on push
-   - Currently deploying via CLI
+   - Connect Vercel project to GitHub repo for automatic deploys on push
+   - Currently deploying via `vercel --prod` CLI manually
+   - Vercel dashboard → Git → Connect Repository → select ipwffrank/bookingcrm → Root Directory: glowos
 
 ### Priority 3 — Phase 2
 
-7. **Google Actions Center Integration**
-   - Merchant/service feeds
-   - Real-time availability API (already built, needs Google partner application)
-   - Booking creation from Google
-
-8. **AI Agents (Claude API)**
-   - Campaign Composer Agent — auto-generate re-engagement messages
-   - Business Insights Agent — conversational analytics
-   - Need: ANTHROPIC_API_KEY in Railway env vars
-
-9. **HitPay Integration**
-   - PayNow / GrabPay support for Singapore
-   - Alternative to Stripe for local payment methods
+7. **Google Actions Center** — "Book" button on Google Maps (needs working Stripe + partner application)
+8. **AI Agents (Claude API)** — campaign composer, business insights (needs ANTHROPIC_API_KEY)
+9. **HitPay** — PayNow/GrabPay for Singapore local payments
 
 ---
 
@@ -128,38 +142,49 @@
 ```
 Bookingcrm/
 ├── glowos/
-│   ├── apps/web/          → Next.js 15 (marketing + dashboard + booking pages)
-│   ├── packages/db/       → Drizzle ORM (15 tables)
-│   ├── packages/types/    → Shared TypeScript types
-│   ├── services/api/      → Hono API server + BullMQ workers
-│   └── docker-compose.yml → Postgres 16 + Redis 7 (local dev)
-├── Dockerfile             → Railway deployment
-└── progress.md            → This file
+│   ├── apps/web/              → Next.js 15 (all frontend: marketing, dashboard, booking)
+│   │   ├── app/page.tsx       → Landing page (SevenRooms-inspired)
+│   │   ├── app/signup/        → Signup
+│   │   ├── app/login/         → Login
+│   │   ├── app/onboarding/    → 5-step onboarding wizard
+│   │   ├── app/dashboard/     → Dashboard with sidebar (bookings, services, staff, clients, analytics, campaigns, settings)
+│   │   ├── app/[slug]/        → Public booking page (SSR + client widget)
+│   │   └── app/cancel/        → Cancellation page
+│   ├── packages/db/           → Drizzle ORM (15 tables)
+│   ├── packages/types/        → Shared TypeScript types
+│   ├── services/api/          → Hono API server + BullMQ workers
+│   │   ├── src/routes/        → auth, merchant, services, staff, bookings, clients, payments, webhooks, analytics, campaigns
+│   │   ├── src/workers/       → notification, CRM, VIP scoring
+│   │   └── src/lib/           → config, redis, stripe, twilio, queue, scheduler, availability, refunds, jwt, slug
+│   └── docker-compose.yml     → Postgres 16 + Redis 7 (local dev)
+├── Dockerfile                 → Railway deployment (tsx runtime)
+└── progress.md                → This file
 ```
 
-### Key Files
-- **API entry:** `glowos/services/api/src/index.ts`
-- **DB schema:** `glowos/packages/db/src/schema/`
+### Key Files to Know
+- **API entry + route mounting:** `glowos/services/api/src/index.ts`
+- **DB schema (all tables):** `glowos/packages/db/src/schema/`
 - **Landing page:** `glowos/apps/web/app/page.tsx`
-- **Dashboard:** `glowos/apps/web/app/dashboard/`
-- **Booking page:** `glowos/apps/web/app/[slug]/`
-- **Environment:** `glowos/.env` (local), Railway dashboard (production)
+- **Dashboard layout + sidebar:** `glowos/apps/web/app/dashboard/layout.tsx`
+- **Booking widget:** `glowos/apps/web/app/[slug]/BookingWidget.tsx`
+- **Environment (local):** `glowos/.env`
+- **Environment (production):** Railway dashboard → bookingcrm service → Variables tab
 
-### Credentials Location
-- **Neon DB:** Railway env vars + glowos/.env
-- **Upstash Redis:** Railway env vars + glowos/.env
-- **Twilio:** Twilio console (ipwffrank@gmail.com) — NOT YET in env vars
-- **Stripe:** NOT YET configured
-- **Vercel:** CLI authenticated as ipwffrank
+### How to Deploy
+- **Frontend (Vercel):** `cd glowos && vercel --prod` (must run from glowos/ dir, not root)
+- **API (Railway):** auto-deploys on git push to main
+- **Local dev:** `cd glowos/services/api && npx tsx src/index.ts`
 
 ---
 
-## Resume Checklist
+## Resume Checklist (for 11 April)
 
-When starting a new session:
-
-1. `cd ~/Desktop/Projects/Bookingcrm/glowos`
-2. Read this file for context
-3. Check what's first in "Priority 1" above
-4. Ask user for any pending credentials (Twilio SID/token, Stripe keys)
-5. Fix the route ordering bug (#3 above) before anything else
+```
+1. cd ~/Desktop/Projects/Bookingcrm
+2. Read this progress.md
+3. Ask user for Twilio credentials (Account SID + Auth Token from console.twilio.com)
+4. Fix the route ordering bug in services/api/src/index.ts (#2 above)
+5. Update Railway env vars with Twilio credentials
+6. Test WhatsApp notifications end-to-end
+7. Ask user about Stripe signup status
+```
