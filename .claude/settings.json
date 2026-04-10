@@ -6,7 +6,8 @@
       "Bash(vercel --prod --force)",
       "Bash(git mv:*)",
       "Bash(rm -rf /Users/chrisrine/Desktop/Projects/Bookingcrm/.vercel /Users/chrisrine/Desktop/Projects/Bookingcrm/vercel.json)",
-      "Bash(rm -rf /Users/chrisrine/Desktop/Projects/Bookingcrm/glowos/.vercel)"
+      "Bash(rm -rf /Users/chrisrine/Desktop/Projects/Bookingcrm/glowos/.vercel)",
+      "Bash(curl -s -X OPTIONS https://bookingcrm-production.up.railway.app/auth/signup -H 'Origin: https://glowos-nine.vercel.app' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type' -D -)"
     ]
   }
 }

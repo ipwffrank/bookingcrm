@@ -23,10 +23,7 @@ app.use("*", logger());
 app.use(
   "*",
   cors({
-    origin: [
-      process.env.FRONTEND_URL ?? "http://localhost:3000",
-      process.env.DASHBOARD_URL ?? "http://localhost:3002",
-    ],
+    origin: (origin) => origin || "*",
     credentials: true,
   })
 );
