@@ -22,4 +22,4 @@ RUN pnpm --filter @glowos/api build
 EXPOSE 3001
 
 WORKDIR /app/glowos/services/api
-CMD ["node", "dist/index.js"]
+CMD ["npx", "tsx", "src/index.ts"]
