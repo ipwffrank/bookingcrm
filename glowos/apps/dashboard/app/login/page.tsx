@@ -77,7 +77,7 @@ export default function LoginPage() {
           <p className="text-center text-sm text-gray-500 mt-6">
             Don&apos;t have an account?{' '}
             <a
-              href={`${process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000'}/signup`}
+              href="/signup"
               className="text-indigo-600 font-medium hover:underline"
             >
               Sign up free
