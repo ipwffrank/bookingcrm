@@ -2,11 +2,11 @@
 
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type MerchantCategory = 'hair_salon' | 'nail_studio' | 'spa' | 'massage' | 'beauty_centre';
+type MerchantCategory = 'restaurant' | 'hair_salon' | 'beauty_clinic' | 'medical_clinic' | 'spa' | 'nail_studio' | 'massage' | 'other';
 type NoShowCharge = 'full' | 'partial' | 'none';
 
 interface Merchant {
@@ -78,11 +78,14 @@ const TABS: Tab[] = [
 ];
 
 const CATEGORY_OPTIONS: { value: MerchantCategory; label: string }[] = [
-  { value: 'hair_salon', label: 'Hair Salon' },
+  { value: 'restaurant', label: 'Restaurant / F&B' },
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop' },
+  { value: 'beauty_clinic', label: 'Beauty / Facial Clinic' },
+  { value: 'medical_clinic', label: 'Medical / Dental Clinic' },
+  { value: 'spa', label: 'Spa / Wellness Centre' },
   { value: 'nail_studio', label: 'Nail Studio' },
-  { value: 'spa', label: 'Spa' },
-  { value: 'massage', label: 'Massage' },
-  { value: 'beauty_centre', label: 'Beauty Centre' },
+  { value: 'massage', label: 'Massage / Physiotherapy' },
+  { value: 'other', label: 'Other' },
 ];
 
 // ─── Toast ─────────────────────────────────────────────────────────────────────
@@ -189,7 +192,7 @@ function ProfileTab({
       onSaved('Business profile saved successfully');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);
@@ -217,13 +220,13 @@ function ProfileTab({
         <h3 className="text-sm font-semibold text-gray-900 mb-4">Basic Information</h3>
         <div className="space-y-4">
           <div>
-            <label className={labelCls}>Salon Name</label>
+            <label className={labelCls}>Business Name</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setField('name', e.target.value)}
               className={inputCls}
-              placeholder="e.g. Glow Beauty Studio"
+              placeholder="e.g. Glow Wellness, Ristorante Sole"
             />
           </div>
           <div>
@@ -233,7 +236,7 @@ function ProfileTab({
               onChange={(e) => setField('description', e.target.value)}
               rows={3}
               className={`${inputCls} resize-none`}
-              placeholder="Brief description of your salon..."
+              placeholder="Brief description of your business..."
             />
           </div>
           <div>
@@ -295,7 +298,7 @@ function ProfileTab({
                 value={form.email}
                 onChange={(e) => setField('email', e.target.value)}
                 className={inputCls}
-                placeholder="hello@salon.com"
+                placeholder="hello@mybusiness.com"
               />
             </div>
           </div>
@@ -402,7 +405,7 @@ function CancellationTab({
       onSaved('Cancellation policy saved successfully');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);
@@ -570,7 +573,7 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
       setStatus(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load payment status';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         onError(msg);
@@ -608,7 +611,7 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
       window.location.href = data.onboarding_url;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to start Stripe onboarding';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         onError(msg);
@@ -906,7 +909,7 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
       {/* QR Code Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-1">QR Code</h3>
-        <p className="text-xs text-gray-500 mb-4">Print this QR code and display it in your salon for walk-in clients to scan.</p>
+        <p className="text-xs text-gray-500 mb-4">Print this QR code and display it at your location for walk-in clients to scan.</p>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
           <div className="p-4 bg-white border-2 border-gray-200 rounded-xl shadow-sm">
             <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
@@ -992,7 +995,7 @@ function AccountTab({ onSaved, onError }: { onSaved: (msg: string) => void; onEr
       onSaved('Password changed successfully');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to change password';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         onError(msg);
@@ -1221,7 +1224,7 @@ function SettingsContent() {
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Failed to load';
-        if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         }
       })
@@ -1237,7 +1240,7 @@ function SettingsContent() {
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Manage your salon&apos;s profile, policies, and integrations</p>
+          <p className="text-sm text-gray-500 mt-0.5">Manage your business profile, policies, and integrations</p>
         </div>
         <Spinner />
       </div>
@@ -1250,7 +1253,7 @@ function SettingsContent() {
     <>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Manage your salon&apos;s profile, policies, and integrations</p>
+        <p className="text-sm text-gray-500 mt-0.5">Manage your business profile, policies, and integrations</p>
       </div>
 
       {/* Tabs */}

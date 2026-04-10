@@ -17,11 +17,13 @@ type FormData = {
 type FieldError = Partial<Record<keyof FormData, string>>;
 
 const CATEGORIES = [
-  { value: 'hair_salon', label: 'Hair Salon' },
+  { value: 'restaurant', label: 'Restaurant / F&B' },
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop' },
+  { value: 'beauty_clinic', label: 'Beauty / Facial Clinic' },
+  { value: 'medical_clinic', label: 'Medical / Dental Clinic' },
+  { value: 'spa', label: 'Spa / Wellness Centre' },
   { value: 'nail_studio', label: 'Nail Studio' },
-  { value: 'spa', label: 'Spa' },
-  { value: 'massage', label: 'Massage' },
-  { value: 'beauty_centre', label: 'Beauty Centre' },
+  { value: 'massage', label: 'Massage / Physiotherapy' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -47,7 +49,7 @@ export default function SignupPage() {
     if (!form.phone.trim()) next.phone = 'Mobile number is required';
     if (!form.password) next.password = 'Password is required';
     else if (form.password.length < 8) next.password = 'Password must be at least 8 characters';
-    if (!form.salon_name.trim()) next.salon_name = 'Salon name is required';
+    if (!form.salon_name.trim()) next.salon_name = 'Business name is required';
     if (!form.salon_category) next.salon_category = 'Please select a category';
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -87,8 +89,8 @@ export default function SignupPage() {
           <Link href="/" className="text-2xl font-bold text-indigo-600">
             GlowOS
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-2">Create your account</h1>
-          <p className="text-gray-500 text-sm">Start your free trial — no credit card required</p>
+          <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-2">Get started with GlowOS</h1>
+          <p className="text-gray-500 text-sm">14-day free trial. No credit card required.</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl shadow-gray-100 border border-gray-100 p-8">
@@ -122,7 +124,7 @@ export default function SignupPage() {
                 className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
                   errors.email ? 'border-red-400 bg-red-50' : 'border-gray-300'
                 }`}
-                placeholder="jane@mysalon.sg"
+                placeholder="jane@mybusiness.com"
               />
               {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
@@ -156,7 +158,7 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Salon name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Business name</label>
               <input
                 type="text"
                 value={form.salon_name}
@@ -164,7 +166,7 @@ export default function SignupPage() {
                 className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
                   errors.salon_name ? 'border-red-400 bg-red-50' : 'border-gray-300'
                 }`}
-                placeholder="Glow Beauty Studio"
+                placeholder="e.g. Glow Wellness, Ristorante Sole"
               />
               {errors.salon_name && (
                 <p className="text-xs text-red-500 mt-1">{errors.salon_name}</p>
@@ -173,7 +175,7 @@ export default function SignupPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Salon category
+                Business category
               </label>
               <select
                 value={form.salon_category}

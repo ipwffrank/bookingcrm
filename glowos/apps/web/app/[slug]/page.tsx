@@ -44,9 +44,9 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="text-6xl mb-4">🔍</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Salon not found</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Business not found</h1>
           <p className="text-gray-500">
-            We couldn&apos;t find a salon at this address. Double-check the link and try again.
+            We couldn&apos;t find a business at this address. Double-check the link and try again.
           </p>
         </div>
       </div>
@@ -57,7 +57,7 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Salon Header */}
+      {/* Business Header */}
       <div className="bg-white border-b border-gray-100">
         {merchant.coverPhotoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -85,7 +85,7 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
               <h1 className="text-2xl font-bold text-gray-900">{merchant.name}</h1>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-sm text-gray-500">
                 <span>⭐</span>
-                <span className="capitalize">{merchant.id ? 'Beauty' : 'Salon'}</span>
+                <span className="capitalize">Service Business</span>
                 {merchant.addressLine1 && (
                   <>
                     <span>·</span>

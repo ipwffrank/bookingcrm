@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type Category = 'hair' | 'nails' | 'face' | 'body' | 'massage' | 'other';
+type Category = 'hair' | 'nails' | 'face' | 'body' | 'massage' | 'dining' | 'medical' | 'other';
 
 interface Service {
   id: string;
@@ -32,9 +32,11 @@ interface ServiceForm {
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: 'hair', label: 'Hair' },
   { value: 'nails', label: 'Nails' },
-  { value: 'face', label: 'Face' },
-  { value: 'body', label: 'Body' },
+  { value: 'face', label: 'Face / Skin' },
+  { value: 'body', label: 'Body / Wellness' },
   { value: 'massage', label: 'Massage' },
+  { value: 'dining', label: 'Dining / F&B' },
+  { value: 'medical', label: 'Medical / Clinical' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -44,6 +46,8 @@ const CATEGORY_COLORS: Record<Category, string> = {
   face:    'bg-blue-100 text-blue-700 border-blue-200',
   body:    'bg-green-100 text-green-700 border-green-200',
   massage: 'bg-amber-100 text-amber-700 border-amber-200',
+  dining:  'bg-orange-100 text-orange-700 border-orange-200',
+  medical: 'bg-teal-100 text-teal-700 border-teal-200',
   other:   'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -138,7 +142,7 @@ function ServiceModal({
       onSave();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setApiError(msg);
@@ -245,7 +249,7 @@ export default function ServicesPage() {
       setServices(data.services ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load services';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);
@@ -272,7 +276,7 @@ export default function ServicesPage() {
       await fetchServices();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         alert(msg);

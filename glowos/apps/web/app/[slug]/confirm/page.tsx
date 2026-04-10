@@ -70,7 +70,7 @@ export default async function ConfirmPage({
             )}
             {staff && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Stylist</span>
+                <span className="text-gray-500">Staff</span>
                 <span className="font-medium text-gray-900">{staff}</span>
               </div>
             )}
@@ -93,7 +93,7 @@ export default async function ConfirmPage({
           {/* Payment notice */}
           {amount && (
             <div className="mx-8 mb-4 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700">
-              <div className="font-semibold mb-0.5">💳 Pay at the salon</div>
+              <div className="font-semibold mb-0.5">💳 Pay at your appointment</div>
               Please bring SGD {parseFloat(amount).toFixed(2)} on the day of your appointment.
             </div>
           )}

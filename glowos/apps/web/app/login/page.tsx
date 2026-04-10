@@ -42,7 +42,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-bold text-indigo-600">GlowOS</Link>
-          <h1 className="text-xl font-semibold text-gray-900 mt-2">Sign in to your account</h1>
+          <h1 className="text-xl font-semibold text-gray-900 mt-2">Welcome back</h1>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl shadow-gray-100 border border-gray-100 p-8">
@@ -60,7 +60,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="jane@mysalon.sg"
+                placeholder="jane@mybusiness.com"
                 autoComplete="email"
               />
             </div>

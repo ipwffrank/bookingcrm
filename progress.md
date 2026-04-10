@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 10 April 2026 (end of day)**
+**Last updated: 11 April 2026**
 
 ---
 
@@ -18,9 +18,45 @@
 - **Railway:** ipwffrank@gmail.com (project: alert-truth)
 - **Neon:** ep-quiet-hall-ambckxnr-pooler
 - **Upstash:** ultimate-chimp-84494
-- **Twilio:** ipwffrank@gmail.com — account created, credentials NOT yet added
+- **Twilio:** ipwffrank@gmail.com — account created, credentials added to local .env (sandbox number +14155238886)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 2 — 11 April 2026)
+
+### Landing Page Redesign — SevenRooms-Inspired (2 passes)
+
+**Pass 1 — Initial redesign:**
+- [x] Complete visual overhaul — dark premium aesthetic with warm champagne gold (#c4a778) accent palette
+- [x] Scroll-triggered animations — new `AnimateOnScroll` component using IntersectionObserver (fade-up, slide-in-left/right, scale-in)
+- [x] NavBar redesign — cleaner minimal style, gold accents
+- [x] Fixed hero layout overlap — switched from absolute positioning to proper CSS grid
+- [x] Deployed to Vercel production
+
+**Pass 2 — Frontend-design skill refinement:**
+- [x] Typography upgrade — Cormorant Garamond (serif display) + Outfit (geometric sans body), replacing generic Inter/Playfair
+- [x] Film grain overlay — subtle SVG noise texture across entire page for editorial depth
+- [x] Hero editorial treatment — italic "booking software", `clamp()` fluid typography, orchestrated `hero-load` animation sequence
+- [x] Animated gold divider lines between all sections
+- [x] Centered section labels with flanking gold lines
+- [x] NavBar animated underline on hover + animated hamburger icon (lines rotate to X)
+- [x] CSS variables system (`--gold`, `--surface`, `--surface-raised`) for consistency
+- [x] Dashboard mockup gentle float animation (`animate-subtle-float`)
+- [x] CTA buttons: dark text on gold (better contrast), lift + shadow bloom on hover
+- [x] Deeper hover states with longer transitions (500–700ms)
+- [x] Custom scrollbar, focus-visible styles, selection color
+- [x] Deployed to Vercel production
+
+### New Files
+- `apps/web/app/components/AnimateOnScroll.tsx` — reusable scroll-triggered animation wrapper (IntersectionObserver)
+
+### Modified Files
+- `apps/web/app/page.tsx` — full landing page redesign (2 passes)
+- `apps/web/app/components/NavBar.tsx` — refined styling, animated hamburger, gold palette
+- `apps/web/app/layout.tsx` — Cormorant Garamond + Outfit fonts, CSS variable setup
+- `apps/web/app/globals.css` — animation keyframes, grain overlay, CSS variables, divider lines, custom scrollbar
 
 ---
 
@@ -38,7 +74,7 @@
 - [x] Cancellation policy endpoint
 
 ### Frontend (apps/web/) — 95% for MVP
-- [x] Landing page — premium dark design inspired by SevenRooms (redesigned)
+- [x] Landing page — premium dark design inspired by SevenRooms (redesigned in Session 2)
 - [x] Navbar — sticky with smooth scroll, mobile hamburger, logo links to home
 - [x] Signup page — creates salon + owner, stores tokens
 - [x] Login page — JWT auth with token storage
@@ -88,15 +124,14 @@
 
 ## What's NOT Done Yet
 
-### Priority 1 — Do FIRST When Resuming (11 April)
+### Priority 1 — Do FIRST When Resuming (12 April)
 
-1. **Twilio WhatsApp — Get Credentials**
-   - Go to https://console.twilio.com (NOT the Admin page)
-   - Copy: Account SID (starts with AC...) and Auth Token
-   - For testing: set up WhatsApp Sandbox (Console → Messaging → Try it out → Send a WhatsApp message)
-   - Then update Railway env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
-   - All notification code is already written — just needs credentials
-   - Test: create a booking → WhatsApp confirmation should be received
+1. **Twilio WhatsApp — Credentials Added (Local)**
+   - [x] Twilio credentials added to local `.env` (Account SID, Auth Token, WhatsApp sandbox number +14155238886)
+   - [ ] Update Railway env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (deploy to production)
+   - [ ] Join WhatsApp sandbox: recipient must text "join <sandbox-keyword>" to +14155238886 before receiving messages
+   - [ ] Test: create a booking → WhatsApp confirmation should be received
+   - Note: sandbox uses free-form `body` messages (not content templates) — code is compatible
 
 2. **Fix Route Ordering Bug (Critical)**
    - `/booking/:slug` wildcard catches `/booking/merchant` — "merchant" is treated as a slug
@@ -111,6 +146,14 @@
    - Set up webhook: https://bookingcrm-production.up.railway.app/webhooks/stripe → get STRIPE_WEBHOOK_SECRET
    - Update Railway env vars
    - All payment code is already written — just needs keys
+
+### Priority 1.5 — Landing Page Imagery
+
+4. **Add Real Images to Landing Page**
+   - Feature section visual placeholders currently show icons — replace with salon/hospitality photography
+   - Options: export assets from Figma (Figma MCP available in Claude Desktop only, NOT Claude Code), or use high-quality stock photos (Unsplash)
+   - Add images to `glowos/apps/web/public/images/`
+   - Note: Figma MCP requires Claude Desktop app + Figma Desktop with Dev Mode enabled
 
 ### Priority 2 — Before Pilot Launch
 

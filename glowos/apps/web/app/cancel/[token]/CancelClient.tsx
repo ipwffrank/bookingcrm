@@ -18,6 +18,7 @@ interface CancelData {
   reason?: string;
   refund_type: 'full' | 'partial' | 'none';
   refund_amount: number;
+  refund_percentage: number;
 }
 
 function formatDateTime(iso: string): string {
@@ -41,7 +42,7 @@ export default function CancelClient({ token, data }: { token: string; data: Can
   const [cancelled, setCancelled] = useState(false);
   const [error, setError] = useState('');
 
-  const { booking, service, eligible, reason, refund_type, refund_amount } = data;
+  const { booking, service, eligible, reason, refund_type, refund_amount, refund_percentage } = data;
 
   async function handleCancel() {
     setLoading(true);
@@ -71,7 +72,7 @@ export default function CancelClient({ token, data }: { token: string; data: Can
           )}
           {refund_type === 'none' && (
             <p className="text-gray-500 text-sm">
-              Your booking has been cancelled. No refund is applicable per the salon&apos;s
+              Your booking has been cancelled. No refund is applicable per the business&apos;s
               cancellation policy.
             </p>
           )}
@@ -136,13 +137,13 @@ export default function CancelClient({ token, data }: { token: string; data: Can
                 {refund_type === 'partial' && (
                   <>
                     <div className="font-semibold mb-1">Partial refund available</div>
-                    You&apos;ll receive a 50% refund of{' '}
+                    You&apos;ll receive a {refund_percentage}% refund of{' '}
                     <span className="font-bold">SGD {refund_amount.toFixed(2)}</span>
                   </>
                 )}
                 {refund_type === 'none' && (
                   <>
-                    <div className="font-semibold mb-1">No refund per salon policy</div>
+                    <div className="font-semibold mb-1">No refund per cancellation policy</div>
                     This cancellation is within the no-refund window.
                   </>
                 )}

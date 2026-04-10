@@ -141,7 +141,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const days = next30Days();
 
   const staffWithAny: StaffMember[] = [
-    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available stylist' },
+    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member' },
     ...staff,
   ];
 
@@ -303,7 +303,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
       <div className="flex items-center justify-between px-1 pb-2">
         <StepBadge num={1} label="Service" active={step === 1} done={step > 1} />
         <div className={`flex-1 h-px mx-2 ${step > 1 ? 'bg-green-300' : 'bg-gray-200'}`} />
-        <StepBadge num={2} label="Stylist" active={step === 2} done={step > 2} />
+        <StepBadge num={2} label="Staff" active={step === 2} done={step > 2} />
         <div className={`flex-1 h-px mx-2 ${step > 2 ? 'bg-green-300' : 'bg-gray-200'}`} />
         <StepBadge num={3} label="Date & Time" active={step === 3} done={step > 3} />
         <div className={`flex-1 h-px mx-2 ${step > 3 ? 'bg-green-300' : 'bg-gray-200'}`} />
@@ -376,7 +376,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
             className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
           >
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              2 — Select Your Stylist
+              2 — Select Your Staff
             </h2>
             {selectedStaff && step !== 2 && (
               <span className="text-sm text-indigo-600 font-medium truncate ml-4">{resolvedStaffName}</span>
@@ -693,7 +693,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
 
               <div className="border-t border-indigo-100 pt-3 grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Stylist</p>
+                  <p className="text-xs text-gray-500 mb-0.5">Staff</p>
                   <p className="text-sm font-semibold text-gray-800">{resolvedStaffName}</p>
                 </div>
                 <div>
@@ -708,7 +708,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-0.5">Payment</p>
-                  <p className="text-sm font-semibold text-gray-800">Pay at salon</p>
+                  <p className="text-sm font-semibold text-gray-800">Pay at appointment</p>
                 </div>
               </div>
 
@@ -733,7 +733,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
               </h3>
               <p className="text-xs text-amber-700 leading-relaxed">
                 Cancellations made more than 24 hours before your appointment are eligible for a
-                full refund. Late cancellations may receive a partial refund as per the salon&apos;s
+                full refund. Late cancellations may receive a partial refund as per the business&apos;s
                 policy. A cancellation link will be sent to you via WhatsApp.
               </p>
             </div>
@@ -766,8 +766,8 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
             </button>
 
             <p className="text-xs text-gray-400 text-center">
-              By confirming you agree to the salon&apos;s cancellation policy above.
-              Payment is collected at the salon.
+              By confirming you agree to the cancellation policy above.
+              Payment is collected at your appointment.
             </p>
           </div>
         </div>

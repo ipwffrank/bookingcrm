@@ -19,7 +19,7 @@ const updateMerchantSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email().optional(),
   category: z
-    .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre"])
+    .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"])
     .optional(),
   timezone: z.string().optional(),
 });

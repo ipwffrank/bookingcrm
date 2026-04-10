@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -142,7 +142,7 @@ function ClientDetail({
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : '';
-        if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         }
       })
@@ -306,7 +306,7 @@ export default function ClientsPage() {
       setClients(data.clients ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load clients';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);

@@ -60,20 +60,24 @@ type CancellationPolicy = {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-  { value: 'hair_salon', label: 'Hair Salon' },
+  { value: 'restaurant', label: 'Restaurant / F&B' },
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop' },
+  { value: 'beauty_clinic', label: 'Beauty / Facial Clinic' },
+  { value: 'medical_clinic', label: 'Medical / Dental Clinic' },
+  { value: 'spa', label: 'Spa / Wellness Centre' },
   { value: 'nail_studio', label: 'Nail Studio' },
-  { value: 'spa', label: 'Spa' },
-  { value: 'massage', label: 'Massage' },
-  { value: 'beauty_centre', label: 'Beauty Centre' },
+  { value: 'massage', label: 'Massage / Physiotherapy' },
   { value: 'other', label: 'Other' },
 ];
 
 const SERVICE_CATEGORIES = [
   { value: 'hair', label: 'Hair' },
   { value: 'nails', label: 'Nails' },
-  { value: 'face', label: 'Face' },
-  { value: 'body', label: 'Body' },
+  { value: 'face', label: 'Face / Skin' },
+  { value: 'body', label: 'Body / Wellness' },
   { value: 'massage', label: 'Massage' },
+  { value: 'dining', label: 'Dining / F&B' },
+  { value: 'medical', label: 'Medical / Clinical' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -197,7 +201,7 @@ function Step1Profile({ merchant, onNext }: Step1Props) {
 
   function validate() {
     const next: Partial<typeof form> = {};
-    if (!form.name.trim()) next.name = 'Salon name is required';
+    if (!form.name.trim()) next.name = 'Business name is required';
     if (!form.addressLine1.trim()) next.addressLine1 = 'Address is required';
     if (!form.postalCode.trim()) next.postalCode = 'Postal code is required';
     if (!form.category) next.category = 'Please select a category';
@@ -234,17 +238,17 @@ function Step1Profile({ merchant, onNext }: Step1Props) {
   return (
     <div>
       <h2 className="text-xl font-bold text-gray-900 mb-1">Business Profile</h2>
-      <p className="text-sm text-gray-500 mb-6">Tell clients about your salon.</p>
+      <p className="text-sm text-gray-500 mb-6">Tell clients about your business.</p>
       {apiError && <ErrorBanner message={apiError} />}
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Salon name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Business name</label>
           <input
             type="text"
             value={form.name}
             onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
             className={inputClass(!!errors.name)}
-            placeholder="Glow Beauty Studio"
+            placeholder="e.g. Glow Wellness, Trattoria Sole"
           />
           {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
         </div>
@@ -317,7 +321,7 @@ function Step1Profile({ merchant, onNext }: Step1Props) {
             onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
             className={`${inputClass()} resize-none`}
             rows={3}
-            placeholder="We specialise in Korean hair treatments and nail art…"
+            placeholder="Briefly describe what makes your business special…"
           />
         </div>
       </div>
@@ -440,7 +444,7 @@ function Step2Services({ services, onServicesChange, onNext, onBack }: Step2Prop
   return (
     <div>
       <h2 className="text-xl font-bold text-gray-900 mb-1">Services</h2>
-      <p className="text-sm text-gray-500 mb-6">Add the services your salon offers.</p>
+      <p className="text-sm text-gray-500 mb-6">Add the services your business offers.</p>
       {apiError && <ErrorBanner message={apiError} />}
 
       {/* Service list */}
@@ -759,7 +763,7 @@ function Step3Staff({ staffList, services, onStaffChange, onNext, onBack }: Step
                 value={form.title}
                 onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
                 className={inputClass()}
-                placeholder="Senior Stylist"
+                placeholder="e.g. Senior Therapist, Head Chef"
               />
             </div>
           </div>
@@ -1221,7 +1225,7 @@ export default function OnboardingPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <Link href="/" className="text-2xl font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
-          <p className="text-gray-500 text-sm mt-1">Let&rsquo;s set up your salon in a few quick steps.</p>
+          <p className="text-gray-500 text-sm mt-1">Let&rsquo;s set up your business in a few quick steps.</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl shadow-gray-100 border border-gray-100 p-8">

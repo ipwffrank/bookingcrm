@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ function StaffModal({
       onSave();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setApiError(msg);
@@ -203,7 +203,7 @@ function StaffModal({
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Senior Stylist"
+                placeholder="e.g. Senior Therapist, Head Chef"
               />
             </div>
           </div>
@@ -405,7 +405,7 @@ export default function StaffPage() {
       setStaffList(data.staff ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load staff';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);
@@ -427,7 +427,7 @@ export default function StaffPage() {
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
-        if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         } else {
           setError(msg);
@@ -448,7 +448,7 @@ export default function StaffPage() {
       await fetchStaff();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         alert(msg);

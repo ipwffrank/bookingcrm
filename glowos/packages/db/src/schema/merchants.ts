@@ -18,7 +18,7 @@ export const merchants = pgTable("merchants", {
   phone: varchar("phone", { length: 20 }),
   email: varchar("email", { length: 255 }),
   category: varchar("category", { length: 50 })
-    .$type<"hair_salon" | "nail_studio" | "spa" | "massage" | "beauty_centre">(),
+    .$type<"hair_salon" | "nail_studio" | "spa" | "massage" | "beauty_centre" | "restaurant" | "beauty_clinic" | "medical_clinic" | "other">(),
   logoUrl: text("logo_url"),
   coverPhotoUrl: text("cover_photo_url"),
   timezone: varchar("timezone", { length: 50 }).notNull().default("Asia/Singapore"),

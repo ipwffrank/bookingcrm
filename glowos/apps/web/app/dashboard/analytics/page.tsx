@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -585,7 +585,7 @@ export default function AnalyticsPage() {
 
       const handleError = (err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Failed to load analytics';
-        if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         } else {
           setError(msg);

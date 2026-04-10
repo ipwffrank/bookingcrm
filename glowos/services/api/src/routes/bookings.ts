@@ -122,295 +122,8 @@ async function findOrCreateClientProfile(
   return created;
 }
 
-// ─── Public: GET /booking/:slug ────────────────────────────────────────────────
-
-bookingsRouter.get("/:slug", async (c) => {
-  const slug = c.req.param("slug")!;
-
-  const [merchant] = await db
-    .select({
-      id: merchants.id,
-      slug: merchants.slug,
-      name: merchants.name,
-      description: merchants.description,
-      logoUrl: merchants.logoUrl,
-      coverPhotoUrl: merchants.coverPhotoUrl,
-      phone: merchants.phone,
-      addressLine1: merchants.addressLine1,
-      addressLine2: merchants.addressLine2,
-      postalCode: merchants.postalCode,
-      timezone: merchants.timezone,
-    })
-    .from(merchants)
-    .where(eq(merchants.slug, slug))
-    .limit(1);
-
-  if (!merchant) {
-    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
-  }
-
-  // Active services
-  const activeServices = await db
-    .select()
-    .from(services)
-    .where(and(eq(services.merchantId, merchant.id), eq(services.isActive, true)));
-
-  // Active staff
-  const activeStaff = await db
-    .select()
-    .from(staff)
-    .where(and(eq(staff.merchantId, merchant.id), eq(staff.isActive, true)));
-
-  return c.json({ merchant, services: activeServices, staff: activeStaff });
-});
-
-// ─── Public: GET /booking/:slug/availability ───────────────────────────────────
-
-bookingsRouter.get("/:slug/availability", async (c) => {
-  const slug = c.req.param("slug")!;
-  const serviceId = c.req.query("service_id");
-  const staffId = c.req.query("staff_id");
-  const date = c.req.query("date");
-
-  if (!serviceId || !date) {
-    return c.json(
-      { error: "Bad Request", message: "service_id and date query params are required" },
-      400
-    );
-  }
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return c.json({ error: "Bad Request", message: "date must be in YYYY-MM-DD format" }, 400);
-  }
-
-  const slots = await getAvailability({
-    merchantSlug: slug,
-    serviceId,
-    staffId: staffId ?? "any",
-    date,
-  });
-
-  return c.json({ slots });
-});
-
-// ─── Public: POST /booking/:slug/lease ────────────────────────────────────────
-
-bookingsRouter.post("/:slug/lease", zValidator(leaseSchema), async (c) => {
-  const slug = c.req.param("slug")!;
-  const body = c.get("body") as z.infer<typeof leaseSchema>;
-
-  // Resolve merchant
-  const [merchant] = await db
-    .select({ id: merchants.id })
-    .from(merchants)
-    .where(eq(merchants.slug, slug))
-    .limit(1);
-
-  if (!merchant) {
-    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
-  }
-
-  // Load service for duration
-  const [service] = await db
-    .select({
-      id: services.id,
-      durationMinutes: services.durationMinutes,
-      bufferMinutes: services.bufferMinutes,
-    })
-    .from(services)
-    .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchant.id)))
-    .limit(1);
-
-  if (!service) {
-    return c.json({ error: "Not Found", message: "Service not found" }, 404);
-  }
-
-  const startTime = parseISO(body.start_time);
-  const totalDuration = service.durationMinutes + service.bufferMinutes;
-  const endTime = addMinutes(startTime, totalDuration);
-  const dateStr = body.start_time.slice(0, 10); // YYYY-MM-DD
-
-  // Verify slot is actually available
-  const slots = await getAvailability({
-    merchantSlug: slug,
-    serviceId: body.service_id,
-    staffId: body.staff_id,
-    date: dateStr,
-  });
-
-  const slotExists = slots.some(
-    (s) => s.start_time === startTime.toISOString() && s.staff_id === body.staff_id
-  );
-
-  if (!slotExists) {
-    return c.json(
-      { error: "Conflict", message: "This slot is no longer available" },
-      409
-    );
-  }
-
-  const expiresAt = addSeconds(new Date(), 300); // 5 minutes
-  const sessionToken = crypto.randomUUID();
-
-  const [lease] = await db
-    .insert(slotLeases)
-    .values({
-      merchantId: merchant.id,
-      staffId: body.staff_id,
-      serviceId: body.service_id,
-      startTime,
-      endTime,
-      expiresAt,
-      sessionToken,
-    })
-    .returning();
-
-  if (!lease) {
-    return c.json({ error: "Internal Server Error", message: "Failed to create lease" }, 500);
-  }
-
-  await invalidateAvailabilityCacheByMerchantId(merchant.id);
-
-  return c.json({ lease_id: lease.id, expires_at: lease.expiresAt }, 201);
-});
-
-// ─── Public: DELETE /booking/:slug/lease/:leaseId ─────────────────────────────
-
-bookingsRouter.delete("/:slug/lease/:leaseId", async (c) => {
-  const slug = c.req.param("slug")!;
-  const leaseId = c.req.param("leaseId")!;
-
-  const [merchant] = await db
-    .select({ id: merchants.id })
-    .from(merchants)
-    .where(eq(merchants.slug, slug))
-    .limit(1);
-
-  if (!merchant) {
-    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
-  }
-
-  const [lease] = await db
-    .select({ id: slotLeases.id })
-    .from(slotLeases)
-    .where(and(eq(slotLeases.id, leaseId), eq(slotLeases.merchantId, merchant.id)))
-    .limit(1);
-
-  if (!lease) {
-    return c.json({ error: "Not Found", message: "Lease not found" }, 404);
-  }
-
-  await db.delete(slotLeases).where(eq(slotLeases.id, leaseId));
-
-  await invalidateAvailabilityCacheByMerchantId(merchant.id);
-
-  return c.json({ success: true, message: "Lease released" });
-});
-
-// ─── Public: POST /booking/:slug/confirm ──────────────────────────────────────
-
-bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
-  const slug = c.req.param("slug")!;
-  const body = c.get("body") as z.infer<typeof confirmSchema>;
-
-  // Resolve merchant
-  const [merchant] = await db
-    .select({ id: merchants.id })
-    .from(merchants)
-    .where(eq(merchants.slug, slug))
-    .limit(1);
-
-  if (!merchant) {
-    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
-  }
-
-  // Verify lease exists, belongs to merchant, and hasn't expired
-  const now = new Date();
-  const [lease] = await db
-    .select()
-    .from(slotLeases)
-    .where(
-      and(
-        eq(slotLeases.id, body.lease_id),
-        eq(slotLeases.merchantId, merchant.id),
-        gte(slotLeases.expiresAt, now)
-      )
-    )
-    .limit(1);
-
-  if (!lease) {
-    return c.json(
-      { error: "Gone", message: "Lease not found or has expired. Please select a new slot." },
-      410
-    );
-  }
-
-  // Load service for price
-  const [service] = await db
-    .select({ priceSgd: services.priceSgd, durationMinutes: services.durationMinutes })
-    .from(services)
-    .where(eq(services.id, lease.serviceId))
-    .limit(1);
-
-  if (!service) {
-    return c.json({ error: "Not Found", message: "Service not found" }, 404);
-  }
-
-  // Find or create client
-  const client = await findOrCreateClient(
-    body.client_phone,
-    body.client_name,
-    body.client_email
-  );
-
-  // Find or create client profile for this merchant
-  await findOrCreateClientProfile(merchant.id, client.id);
-
-  // Create booking
-  const [booking] = await db
-    .insert(bookings)
-    .values({
-      merchantId: merchant.id,
-      clientId: client.id,
-      serviceId: lease.serviceId,
-      staffId: lease.staffId,
-      startTime: lease.startTime,
-      endTime: lease.endTime,
-      durationMinutes: service.durationMinutes,
-      status: "confirmed",
-      priceSgd: service.priceSgd,
-      paymentMethod: body.payment_method,
-      bookingSource: "direct_widget",
-      commissionRate: "0",
-      commissionSgd: "0",
-    })
-    .returning();
-
-  if (!booking) {
-    return c.json({ error: "Internal Server Error", message: "Failed to create booking" }, 500);
-  }
-
-  // Delete the used lease
-  await db.delete(slotLeases).where(eq(slotLeases.id, lease.id));
-
-  await invalidateAvailabilityCacheByMerchantId(merchant.id);
-
-  // Generate cancellation token
-  const bookingToken = generateBookingToken(booking.id);
-
-  // Queue post-booking jobs (cash/walk-in bookings)
-  await addJob("notifications", "booking_confirmation", { booking_id: booking.id });
-  await scheduleReminder(booking.id, booking.startTime);
-
-  return c.json(
-    {
-      booking,
-      booking_token: bookingToken,
-      message: "Booking confirmed successfully",
-    },
-    201
-  );
-});
+// ─── IMPORTANT: Literal-path routes MUST come before /:slug wildcard routes ──
+// Otherwise Hono treats "merchant", "cancel", etc. as a :slug value.
 
 // ─── Public: GET /booking/cancel/:bookingToken ────────────────────────────────
 
@@ -474,9 +187,9 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
 
   // Determine refund based on cancellation_policy
   const policy = merchant.cancellationPolicy as {
-    hours_for_full_refund?: number;
-    hours_for_partial_refund?: number;
-    partial_refund_percentage?: number;
+    free_cancellation_hours?: number;
+    late_cancellation_refund_pct?: number;
+    no_show_charge?: "full" | "partial" | "none";
   } | null;
 
   const now = new Date();
@@ -485,24 +198,29 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
 
   let refundType: "full" | "partial" | "none" = "none";
   let refundAmount = 0;
+  let refundPercentage = 0;
 
   if (!policy) {
     // Default: full refund
     refundType = "full";
     refundAmount = price;
+    refundPercentage = 100;
   } else if (
-    policy.hours_for_full_refund !== undefined &&
-    hoursUntilBooking >= policy.hours_for_full_refund
+    policy.free_cancellation_hours !== undefined &&
+    hoursUntilBooking >= policy.free_cancellation_hours
   ) {
+    // Cancelled within the free cancellation window → full refund
     refundType = "full";
     refundAmount = price;
+    refundPercentage = 100;
   } else if (
-    policy.hours_for_partial_refund !== undefined &&
-    hoursUntilBooking >= policy.hours_for_partial_refund
+    policy.late_cancellation_refund_pct !== undefined &&
+    policy.late_cancellation_refund_pct > 0
   ) {
+    // Cancelled after free window but before appointment → partial refund
     refundType = "partial";
-    const pct = policy.partial_refund_percentage ?? 50;
-    refundAmount = parseFloat(((price * pct) / 100).toFixed(2));
+    refundPercentage = policy.late_cancellation_refund_pct;
+    refundAmount = parseFloat(((price * refundPercentage) / 100).toFixed(2));
   }
 
   return c.json({
@@ -511,6 +229,7 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
     eligible: true,
     refund_type: refundType,
     refund_amount: refundAmount,
+    refund_percentage: refundPercentage,
   });
 });
 
@@ -838,6 +557,304 @@ bookingsRouter.put("/merchant/:id/no-show", requireMerchant, async (c) => {
   await scheduleNoShowReengagement(bookingId);
 
   return c.json({ booking: updated });
+});
+
+// ─── Public: GET /booking/:slug ────────────────────────────────────────────────
+// NOTE: Wildcard /:slug routes MUST be defined AFTER all literal-path routes
+// (e.g. /merchant, /cancel) to prevent Hono from matching literal segments as slugs.
+
+bookingsRouter.get("/:slug", async (c) => {
+  const slug = c.req.param("slug")!;
+
+  // Guard: reject reserved path segments that should be handled by literal routes
+  const reservedPaths = ["merchant", "cancel", "health"];
+  if (reservedPaths.includes(slug)) {
+    return c.json({ error: "Not Found", message: "Route not found" }, 404);
+  }
+
+  const [merchant] = await db
+    .select({
+      id: merchants.id,
+      slug: merchants.slug,
+      name: merchants.name,
+      description: merchants.description,
+      logoUrl: merchants.logoUrl,
+      coverPhotoUrl: merchants.coverPhotoUrl,
+      phone: merchants.phone,
+      addressLine1: merchants.addressLine1,
+      addressLine2: merchants.addressLine2,
+      postalCode: merchants.postalCode,
+      timezone: merchants.timezone,
+    })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
+  }
+
+  // Active services
+  const activeServices = await db
+    .select()
+    .from(services)
+    .where(and(eq(services.merchantId, merchant.id), eq(services.isActive, true)));
+
+  // Active staff
+  const activeStaff = await db
+    .select()
+    .from(staff)
+    .where(and(eq(staff.merchantId, merchant.id), eq(staff.isActive, true)));
+
+  return c.json({ merchant, services: activeServices, staff: activeStaff });
+});
+
+// ─── Public: GET /booking/:slug/availability ───────────────────────────────────
+
+bookingsRouter.get("/:slug/availability", async (c) => {
+  const slug = c.req.param("slug")!;
+  const serviceId = c.req.query("service_id");
+  const staffId = c.req.query("staff_id");
+  const date = c.req.query("date");
+
+  if (!serviceId || !date) {
+    return c.json(
+      { error: "Bad Request", message: "service_id and date query params are required" },
+      400
+    );
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return c.json({ error: "Bad Request", message: "date must be in YYYY-MM-DD format" }, 400);
+  }
+
+  const slots = await getAvailability({
+    merchantSlug: slug,
+    serviceId,
+    staffId: staffId ?? "any",
+    date,
+  });
+
+  return c.json({ slots });
+});
+
+// ─── Public: POST /booking/:slug/lease ────────────────────────────────────────
+
+bookingsRouter.post("/:slug/lease", zValidator(leaseSchema), async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = c.get("body") as z.infer<typeof leaseSchema>;
+
+  // Resolve merchant
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
+  }
+
+  // Load service for duration
+  const [service] = await db
+    .select({
+      id: services.id,
+      durationMinutes: services.durationMinutes,
+      bufferMinutes: services.bufferMinutes,
+    })
+    .from(services)
+    .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchant.id)))
+    .limit(1);
+
+  if (!service) {
+    return c.json({ error: "Not Found", message: "Service not found" }, 404);
+  }
+
+  const startTime = parseISO(body.start_time);
+  const totalDuration = service.durationMinutes + service.bufferMinutes;
+  const endTime = addMinutes(startTime, totalDuration);
+  const dateStr = body.start_time.slice(0, 10); // YYYY-MM-DD
+
+  // Verify slot is actually available
+  const slots = await getAvailability({
+    merchantSlug: slug,
+    serviceId: body.service_id,
+    staffId: body.staff_id,
+    date: dateStr,
+  });
+
+  const slotExists = slots.some(
+    (s) => s.start_time === startTime.toISOString() && s.staff_id === body.staff_id
+  );
+
+  if (!slotExists) {
+    return c.json(
+      { error: "Conflict", message: "This slot is no longer available" },
+      409
+    );
+  }
+
+  const expiresAt = addSeconds(new Date(), 300); // 5 minutes
+  const sessionToken = crypto.randomUUID();
+
+  const [lease] = await db
+    .insert(slotLeases)
+    .values({
+      merchantId: merchant.id,
+      staffId: body.staff_id,
+      serviceId: body.service_id,
+      startTime,
+      endTime,
+      expiresAt,
+      sessionToken,
+    })
+    .returning();
+
+  if (!lease) {
+    return c.json({ error: "Internal Server Error", message: "Failed to create lease" }, 500);
+  }
+
+  await invalidateAvailabilityCacheByMerchantId(merchant.id);
+
+  return c.json({ lease_id: lease.id, expires_at: lease.expiresAt }, 201);
+});
+
+// ─── Public: DELETE /booking/:slug/lease/:leaseId ─────────────────────────────
+
+bookingsRouter.delete("/:slug/lease/:leaseId", async (c) => {
+  const slug = c.req.param("slug")!;
+  const leaseId = c.req.param("leaseId")!;
+
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
+  }
+
+  const [lease] = await db
+    .select({ id: slotLeases.id })
+    .from(slotLeases)
+    .where(and(eq(slotLeases.id, leaseId), eq(slotLeases.merchantId, merchant.id)))
+    .limit(1);
+
+  if (!lease) {
+    return c.json({ error: "Not Found", message: "Lease not found" }, 404);
+  }
+
+  await db.delete(slotLeases).where(eq(slotLeases.id, leaseId));
+
+  await invalidateAvailabilityCacheByMerchantId(merchant.id);
+
+  return c.json({ success: true, message: "Lease released" });
+});
+
+// ─── Public: POST /booking/:slug/confirm ──────────────────────────────────────
+
+bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = c.get("body") as z.infer<typeof confirmSchema>;
+
+  // Resolve merchant
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Salon not found" }, 404);
+  }
+
+  // Verify lease exists, belongs to merchant, and hasn't expired
+  const now = new Date();
+  const [lease] = await db
+    .select()
+    .from(slotLeases)
+    .where(
+      and(
+        eq(slotLeases.id, body.lease_id),
+        eq(slotLeases.merchantId, merchant.id),
+        gte(slotLeases.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  if (!lease) {
+    return c.json(
+      { error: "Gone", message: "Lease not found or has expired. Please select a new slot." },
+      410
+    );
+  }
+
+  // Load service for price
+  const [service] = await db
+    .select({ priceSgd: services.priceSgd, durationMinutes: services.durationMinutes })
+    .from(services)
+    .where(eq(services.id, lease.serviceId))
+    .limit(1);
+
+  if (!service) {
+    return c.json({ error: "Not Found", message: "Service not found" }, 404);
+  }
+
+  // Find or create client
+  const client = await findOrCreateClient(
+    body.client_phone,
+    body.client_name,
+    body.client_email
+  );
+
+  // Find or create client profile for this merchant
+  await findOrCreateClientProfile(merchant.id, client.id);
+
+  // Create booking
+  const [booking] = await db
+    .insert(bookings)
+    .values({
+      merchantId: merchant.id,
+      clientId: client.id,
+      serviceId: lease.serviceId,
+      staffId: lease.staffId,
+      startTime: lease.startTime,
+      endTime: lease.endTime,
+      durationMinutes: service.durationMinutes,
+      status: "confirmed",
+      priceSgd: service.priceSgd,
+      paymentMethod: body.payment_method,
+      bookingSource: "direct_widget",
+      commissionRate: "0",
+      commissionSgd: "0",
+    })
+    .returning();
+
+  if (!booking) {
+    return c.json({ error: "Internal Server Error", message: "Failed to create booking" }, 500);
+  }
+
+  // Delete the used lease
+  await db.delete(slotLeases).where(eq(slotLeases.id, lease.id));
+
+  await invalidateAvailabilityCacheByMerchantId(merchant.id);
+
+  // Generate cancellation token
+  const bookingToken = generateBookingToken(booking.id);
+
+  // Queue post-booking jobs (cash/walk-in bookings)
+  await addJob("notifications", "booking_confirmation", { booking_id: booking.id });
+  await scheduleReminder(booking.id, booking.startTime);
+
+  return c.json(
+    {
+      booking,
+      booking_token: bookingToken,
+      message: "Booking confirmed successfully",
+    },
+    201
+  );
 });
 
 export { bookingsRouter };

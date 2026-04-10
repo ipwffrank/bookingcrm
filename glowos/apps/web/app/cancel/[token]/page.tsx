@@ -18,6 +18,7 @@ interface CancelData {
   reason?: string;
   refund_type: 'full' | 'partial' | 'none';
   refund_amount: number;
+  refund_percentage: number;
 }
 
 export default async function CancelPage({ params }: { params: Promise<{ token: string }> }) {

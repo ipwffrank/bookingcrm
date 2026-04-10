@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, ilike, or, desc } from "drizzle-orm";
+import { and, eq, ilike, or, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, clients, clientProfiles, bookings, services, staff } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
@@ -63,9 +63,60 @@ clientsRouter.get("/", requireMerchant, async (c) => {
     );
   }
 
+  // Compute spending stats from bookings for each client
+  const clientIds = rows.map((r) => r.profile.clientId);
+  let spendingMap = new Map<
+    string,
+    { totalSpendSgd: string; totalVisits: number; lastVisitAt: string | null }
+  >();
+
+  if (clientIds.length > 0) {
+    const spendingRows = await db
+      .select({
+        clientId: bookings.clientId,
+        totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+        totalVisits: sql<number>`cast(count(*) as int)`,
+        lastVisitAt: sql<string>`max(${bookings.startTime})`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          sql`${bookings.clientId} IN (${sql.join(
+            clientIds.map((id) => sql`${id}::uuid`),
+            sql`, `
+          )})`,
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+        )
+      )
+      .groupBy(bookings.clientId);
+
+    for (const row of spendingRows) {
+      spendingMap.set(row.clientId, {
+        totalSpendSgd: String(row.totalSpendSgd),
+        totalVisits: Number(row.totalVisits),
+        lastVisitAt: row.lastVisitAt ? String(row.lastVisitAt) : null,
+      });
+    }
+  }
+
+  // Enrich profiles with computed spending data
+  const enrichedRows = rows.map((r) => {
+    const spending = spendingMap.get(r.profile.clientId);
+    return {
+      profile: {
+        ...r.profile,
+        totalSpendSgd: spending?.totalSpendSgd ?? "0",
+        totalVisits: spending?.totalVisits ?? 0,
+        lastVisitAt: spending?.lastVisitAt ?? null,
+      },
+      client: r.client,
+    };
+  });
+
   return c.json({
-    clients: rows,
-    pagination: { limit, offset, count: rows.length },
+    clients: enrichedRows,
+    pagination: { limit, offset, count: enrichedRows.length },
   });
 });
 
@@ -110,8 +161,29 @@ clientsRouter.get("/:id", requireMerchant, async (c) => {
     .orderBy(desc(bookings.startTime))
     .limit(10);
 
+  // Compute spending stats from bookings for this client
+  const [spendingStats] = await db
+    .select({
+      totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      totalVisits: sql<number>`cast(count(*) as int)`,
+      lastVisitAt: sql<string>`max(${bookings.startTime})`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.clientId, row.profile.clientId),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    );
+
   return c.json({
-    profile: row.profile,
+    profile: {
+      ...row.profile,
+      totalSpendSgd: String(spendingStats?.totalSpendSgd ?? "0"),
+      totalVisits: Number(spendingStats?.totalVisits ?? 0),
+      lastVisitAt: spendingStats?.lastVisitAt ? String(spendingStats.lastVisitAt) : null,
+    },
     client: row.client,
     recent_bookings: recentBookings,
   });

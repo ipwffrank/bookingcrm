@@ -12,7 +12,8 @@
     "db:generate": "pnpm --filter @glowos/db db:generate",
     "db:migrate": "pnpm --filter @glowos/db db:migrate",
     "db:push": "pnpm --filter @glowos/db db:push",
-    "db:studio": "pnpm --filter @glowos/db db:studio"
+    "db:studio": "pnpm --filter @glowos/db db:studio",
+    "db:seed": "pnpm --filter @glowos/db db:seed"
   },
   "devDependencies": {
     "turbo": "^2.0.0",

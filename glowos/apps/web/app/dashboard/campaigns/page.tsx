@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../lib/api';
+import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -310,7 +310,7 @@ function CreateCampaignModal({
       onCreated();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create campaign';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setApiError(msg);
@@ -606,7 +606,7 @@ function CampaignResults({
         setStats(data.stats);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load results';
-        if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+        if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         } else {
           setError(msg);
@@ -829,7 +829,7 @@ export default function CampaignsPage() {
       setCampaigns(data.campaigns ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load campaigns';
-      if (msg.includes('401') || msg.toLowerCase().includes('unauthorized')) {
+      if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
       } else {
         setError(msg);

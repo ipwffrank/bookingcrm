@@ -19,10 +19,10 @@ const signupSchema = z.object({
   phone: z.string().min(1, "Phone number is required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   salon_name: z.string().min(1, "Salon name is required"),
-  salon_category: z.enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre"], {
+  salon_category: z.enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"], {
     errorMap: () => ({
       message:
-        "Invalid salon category. Must be one of: hair_salon, nail_studio, spa, massage, beauty_centre",
+        "Invalid business category. Must be one of: hair_salon, nail_studio, spa, massage, beauty_centre, restaurant, beauty_clinic, medical_clinic, other",
     }),
   }),
 });
