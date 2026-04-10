@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s https://bookingcrm-production.up.railway.app/)",
+      "Bash(curl -s -X POST https://bookingcrm-production.up.railway.app/auth/signup -H 'Content-Type: application/json' -d '{\"name\":\"Demo Owner\",\"email\":\"demo@glowos.sg\",\"phone\":\"+6598765432\",\"password\":\"demo1234\",\"salon_name\":\"Glow Beauty Studio\",\"salon_category\":\"beauty_centre\"}')",
+      "Bash(vercel --prod --force)",
+      "Bash(git mv:*)",
+      "Bash(rm -rf /Users/chrisrine/Desktop/Projects/Bookingcrm/.vercel /Users/chrisrine/Desktop/Projects/Bookingcrm/vercel.json)",
+      "Bash(rm -rf /Users/chrisrine/Desktop/Projects/Bookingcrm/glowos/.vercel)"
+    ]
+  }
+}
