@@ -31,7 +31,7 @@ export default function AnimateOnScroll({
   stagger?: number;
   as?: 'div' | 'section' | 'article' | 'li' | 'span';
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function AnimateOnScroll({
   if (stagger > 0 && visible) {
     return (
       <Tag
-        ref={ref as React.RefObject<HTMLDivElement>}
+        ref={ref as any}
         className={className}
         style={{ '--stagger-interval': `${stagger}ms` } as React.CSSProperties}
       >
@@ -81,7 +81,7 @@ export default function AnimateOnScroll({
 
   return (
     <Tag
-      ref={ref as React.RefObject<HTMLDivElement>}
+      ref={ref as any}
       className={`${animationClass} ${className}`}
       style={delayStyle}
     >
