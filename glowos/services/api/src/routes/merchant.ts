@@ -71,6 +71,37 @@ merchantRouter.put(
   }
 );
 
+// ─── PUT /merchant/settings/cancellation-policy ───────────────────────────────
+
+const cancellationPolicySchema = z.object({
+  free_cancellation_hours: z.number().int().min(0),
+  late_cancellation_refund_pct: z.number().int().min(0).max(100),
+  no_show_charge: z.enum(["full", "partial", "none"]),
+});
+
+merchantRouter.put(
+  "/settings/cancellation-policy",
+  requireMerchant,
+  requireRole("owner"),
+  zValidator(cancellationPolicySchema),
+  async (c) => {
+    const merchantId = c.get("merchantId");
+    const body = c.get("body") as z.infer<typeof cancellationPolicySchema>;
+
+    const [updated] = await db
+      .update(merchants)
+      .set({ cancellationPolicy: body, updatedAt: new Date() })
+      .where(eq(merchants.id, merchantId))
+      .returning();
+
+    if (!updated) {
+      return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+    }
+
+    return c.json({ cancellation_policy: updated.cancellationPolicy });
+  }
+);
+
 // ─── POST /merchant/onboarding/complete ───────────────────────────────────────
 
 merchantRouter.post(

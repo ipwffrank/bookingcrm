@@ -1,12 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 interface Service {
   id: string;
@@ -50,6 +46,8 @@ interface BookingWidgetProps {
   slug: string;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-SG', {
     hour: '2-digit',
@@ -58,8 +56,13 @@ function formatTime(iso: string): string {
   });
 }
 
-function formatDate(d: Date): string {
-  return d.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' });
+function formatDateFull(d: Date): string {
+  return d.toLocaleDateString('en-SG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 function next30Days(): Date[] {
@@ -75,102 +78,28 @@ function next30Days(): Date[] {
 }
 
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Use local year/month/day to avoid timezone issues
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-// ── Inner payment form ────────────────────────────────────────────────────────
-
-interface PaymentFormProps {
-  clientSecret: string;
-  amount: string;
-  slug: string;
-  leaseId: string;
-  serviceId: string;
-  clientName: string;
-  clientPhone: string;
-  clientEmail: string;
-  onSuccess: (bookingId: string) => void;
-  onError: (msg: string) => void;
+function padTwo(n: number): string {
+  return String(n).padStart(2, '0');
 }
 
-function PaymentForm({
-  clientSecret,
-  amount,
-  slug,
-  leaseId,
-  serviceId,
-  clientName,
-  clientPhone,
-  clientEmail,
-  onSuccess,
-  onError,
-}: PaymentFormProps) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [paying, setPaying] = useState(false);
+// ── Step indicator ────────────────────────────────────────────────────────────
 
-  async function handleConfirm() {
-    if (!stripe || !elements) return;
-    setPaying(true);
-    try {
-      const card = elements.getElement(CardElement);
-      if (!card) throw new Error('Card element not found');
-
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card,
-          billing_details: { name: clientName, email: clientEmail || undefined },
-        },
-      });
-
-      if (result.error) {
-        onError(result.error.message || 'Payment failed');
-        return;
-      }
-
-      if (result.paymentIntent?.status === 'succeeded') {
-        // Confirm booking on our backend
-        const res = await apiFetch(`/booking/${slug}/confirm`, {
-          method: 'POST',
-          body: JSON.stringify({
-            lease_id: leaseId,
-            client_name: clientName,
-            client_phone: clientPhone,
-            client_email: clientEmail || undefined,
-            payment_method: result.paymentIntent.id,
-          }),
-        });
-        onSuccess(res.booking.id as string);
-      }
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Payment failed');
-    } finally {
-      setPaying(false);
-    }
-  }
-
+function StepBadge({ num, label, active, done }: { num: number; label: string; active: boolean; done: boolean }) {
   return (
-    <div className="space-y-4">
-      <div className="border border-gray-200 rounded-lg p-4 bg-white">
-        <CardElement
-          options={{
-            style: {
-              base: {
-                fontSize: '16px',
-                color: '#111827',
-                '::placeholder': { color: '#9ca3af' },
-              },
-            },
-          }}
-        />
-      </div>
-      <button
-        onClick={handleConfirm}
-        disabled={paying || !stripe}
-        className="w-full rounded-xl bg-indigo-600 py-4 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-      >
-        {paying ? 'Processing…' : `Confirm & Pay — SGD ${amount}`}
-      </button>
+    <div className={`flex items-center gap-2 text-sm ${active ? 'text-indigo-600 font-semibold' : done ? 'text-green-600' : 'text-gray-400'}`}>
+      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
+        done ? 'bg-green-500 border-green-500 text-white' : active ? 'border-indigo-600 text-indigo-600' : 'border-gray-300 text-gray-400'
+      }`}>
+        {done ? '✓' : num}
+      </span>
+      <span className="hidden sm:inline">{label}</span>
     </div>
   );
 }
@@ -180,26 +109,44 @@ function PaymentForm({
 export default function BookingWidget({ merchant, services, staff, slug }: BookingWidgetProps) {
   const router = useRouter();
 
+  // Wizard state
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+
+  // Selections
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
+
+  // Availability
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
+
+  // Lease
   const [leaseId, setLeaseId] = useState('');
   const [leaseExpiry, setLeaseExpiry] = useState<Date | null>(null);
   const [leaseLoading, setLeaseLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  // Client details
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
-  const [piLoading, setPiLoading] = useState(false);
-  const [piError, setPiError] = useState('');
-  const [countdown, setCountdown] = useState(0);
+
+  // Confirm
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+
   const days = next30Days();
 
-  // Fetch availability when service + staff + date are selected
+  const staffWithAny: StaffMember[] = [
+    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available stylist' },
+    ...staff,
+  ];
+
+  // ── Fetch availability ───────────────────────────────────────────────────────
+
   const fetchSlots = useCallback(async () => {
     if (!selectedService || !selectedStaff || !selectedDate) return;
     setSlotsLoading(true);
@@ -207,15 +154,12 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     setSlots([]);
     try {
       const dateStr = toDateStr(selectedDate);
-      const params = new URLSearchParams({
-        service_id: selectedService.id,
-        date: dateStr,
-      });
+      const params = new URLSearchParams({ service_id: selectedService.id, date: dateStr });
       if (selectedStaff.id !== 'any') params.append('staff_id', selectedStaff.id);
       const res = await apiFetch(`/booking/${slug}/availability?${params.toString()}`);
       setSlots((res.slots as TimeSlot[]) || []);
     } catch (err) {
-      setSlotsError(err instanceof Error ? err.message : 'Failed to load slots');
+      setSlotsError(err instanceof Error ? err.message : 'Failed to load availability');
     } finally {
       setSlotsLoading(false);
     }
@@ -225,26 +169,56 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     void fetchSlots();
   }, [fetchSlots]);
 
-  // Lease countdown timer
+  // ── Lease countdown ──────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!leaseExpiry) return;
     const interval = setInterval(() => {
       const remaining = Math.max(0, Math.floor((leaseExpiry.getTime() - Date.now()) / 1000));
       setCountdown(remaining);
       if (remaining === 0) {
+        // Lease expired — go back to slot selection
         setLeaseId('');
         setLeaseExpiry(null);
         setSelectedSlot(null);
-        setClientSecret('');
+        setStep(3);
       }
     }, 1000);
     return () => clearInterval(interval);
   }, [leaseExpiry]);
 
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+
+  function handleServiceSelect(svc: Service) {
+    setSelectedService(svc);
+    setSelectedStaff(null);
+    setSelectedDate(null);
+    setSelectedSlot(null);
+    setLeaseId('');
+    setLeaseExpiry(null);
+    setStep(2);
+  }
+
+  function handleStaffSelect(s: StaffMember) {
+    setSelectedStaff(s);
+    setSelectedDate(null);
+    setSelectedSlot(null);
+    setLeaseId('');
+    setLeaseExpiry(null);
+    setStep(3);
+  }
+
+  function handleDateSelect(day: Date) {
+    setSelectedDate(day);
+    setSelectedSlot(null);
+    setLeaseId('');
+    setLeaseExpiry(null);
+  }
+
   async function handleSlotSelect(slot: TimeSlot) {
     setSelectedSlot(slot);
     setLeaseLoading(true);
-    setPiError('');
+    setConfirmError('');
     try {
       const res = await apiFetch(`/booking/${slug}/lease`, {
         method: 'POST',
@@ -257,356 +231,544 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
       setLeaseId(res.lease_id as string);
       setLeaseExpiry(new Date(res.expires_at as string));
       setCountdown(300);
+      setStep(4);
     } catch (err) {
-      setPiError(err instanceof Error ? err.message : 'Could not hold slot');
+      setConfirmError(err instanceof Error ? err.message : 'Could not hold this slot. Please try another.');
       setSelectedSlot(null);
     } finally {
       setLeaseLoading(false);
     }
   }
 
-  async function handleGetPaymentIntent() {
-    if (!selectedService || !leaseId) return;
-    if (!clientName.trim() || !clientPhone.trim()) {
-      setPiError('Please fill in your name and phone number');
+  async function handleConfirmBooking() {
+    if (!leaseId || !selectedService) return;
+    if (!clientName.trim()) {
+      setConfirmError('Please enter your name');
       return;
     }
-    setPiLoading(true);
-    setPiError('');
+    if (!clientPhone.trim()) {
+      setConfirmError('Please enter your mobile number');
+      return;
+    }
+
+    setConfirmLoading(true);
+    setConfirmError('');
     try {
-      const res = await apiFetch(`/booking/${slug}/create-payment-intent`, {
+      const res = await apiFetch(`/booking/${slug}/confirm`, {
         method: 'POST',
         body: JSON.stringify({
           lease_id: leaseId,
-          service_id: selectedService.id,
-          booking_source: 'direct_widget',
+          client_name: clientName.trim(),
+          client_phone: clientPhone.trim(),
+          client_email: clientEmail.trim() || undefined,
+          payment_method: 'cash',
         }),
       });
-      setClientSecret(res.client_secret as string);
+      const bookingId = (res.booking as { id: string }).id;
+      router.push(
+        `/${slug}/confirm?booking_id=${bookingId}` +
+        `&service=${encodeURIComponent(selectedService.name)}` +
+        `&staff=${encodeURIComponent(selectedStaff?.id === 'any' ? 'Any Available' : (selectedStaff?.name || ''))}` +
+        `&time=${encodeURIComponent(selectedSlot?.start_time || '')}` +
+        `&amount=${encodeURIComponent(selectedService.priceSgd)}`
+      );
     } catch (err) {
-      setPiError(err instanceof Error ? err.message : 'Payment setup failed');
+      const msg = err instanceof Error ? err.message : 'Booking failed. Please try again.';
+      // If lease expired during form fill
+      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('lease')) {
+        setLeaseId('');
+        setLeaseExpiry(null);
+        setSelectedSlot(null);
+        setStep(3);
+        setConfirmError('Your slot hold expired. Please select a new time.');
+      } else {
+        setConfirmError(msg);
+      }
     } finally {
-      setPiLoading(false);
+      setConfirmLoading(false);
     }
   }
 
-  function handleSuccess(bookingId: string) {
-    router.push(`/${slug}/confirm?booking=${bookingId}&service=${selectedService?.name || ''}&staff=${selectedStaff?.name || ''}&time=${selectedSlot?.start_time || ''}&amount=${selectedService?.priceSgd || ''}`);
-  }
+  // ── Computed ─────────────────────────────────────────────────────────────────
 
-  const staffWithAny: StaffMember[] = [
-    { id: 'any', name: 'Any Available', photoUrl: null, title: null },
-    ...staff,
-  ];
+  const resolvedStaffName =
+    selectedStaff?.id === 'any' ? 'Any Available' : (selectedStaff?.name ?? '');
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
-      {/* Step 1: Select Service */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-50 bg-gray-50">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-            Select a Service
-          </h2>
-        </div>
-        <div className="divide-y divide-gray-50">
-          {services.map((svc) => (
-            <label
-              key={svc.id}
-              className={`flex items-start gap-3 px-6 py-4 cursor-pointer hover:bg-indigo-50 transition-colors ${
-                selectedService?.id === svc.id ? 'bg-indigo-50' : ''
-              }`}
-            >
-              <input
-                type="radio"
-                name="service"
-                value={svc.id}
-                checked={selectedService?.id === svc.id}
-                onChange={() => {
-                  setSelectedService(svc);
-                  setSelectedStaff(null);
-                  setSelectedDate(null);
-                  setSelectedSlot(null);
-                  setLeaseId('');
-                  setClientSecret('');
-                }}
-                className="mt-1 accent-indigo-600"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-gray-900">{svc.name}</span>
-                  <span className="text-sm font-semibold text-indigo-600 shrink-0">
-                    SGD {parseFloat(svc.priceSgd).toFixed(2)}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-0.5">{svc.durationMinutes} min</p>
-                {svc.description && (
-                  <p className="text-xs text-gray-400 mt-1 line-clamp-2">{svc.description}</p>
-                )}
-              </div>
-            </label>
-          ))}
-        </div>
+
+      {/* Step progress */}
+      <div className="flex items-center justify-between px-1 pb-2">
+        <StepBadge num={1} label="Service" active={step === 1} done={step > 1} />
+        <div className={`flex-1 h-px mx-2 ${step > 1 ? 'bg-green-300' : 'bg-gray-200'}`} />
+        <StepBadge num={2} label="Stylist" active={step === 2} done={step > 2} />
+        <div className={`flex-1 h-px mx-2 ${step > 2 ? 'bg-green-300' : 'bg-gray-200'}`} />
+        <StepBadge num={3} label="Date & Time" active={step === 3} done={step > 3} />
+        <div className={`flex-1 h-px mx-2 ${step > 3 ? 'bg-green-300' : 'bg-gray-200'}`} />
+        <StepBadge num={4} label="Details" active={step === 4} done={step > 4} />
+        <div className={`flex-1 h-px mx-2 ${step > 4 ? 'bg-green-300' : 'bg-gray-200'}`} />
+        <StepBadge num={5} label="Confirm" active={step === 5} done={false} />
       </div>
 
-      {/* Step 2: Select Staff */}
-      {selectedService && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-50 bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              Select Your Stylist
-            </h2>
-          </div>
+      {/* ── Step 1: Select Service ─────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setStep(1)}
+          className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+        >
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+            1 — Select a Service
+          </h2>
+          {selectedService && step !== 1 && (
+            <span className="text-sm text-indigo-600 font-medium truncate ml-4">{selectedService.name}</span>
+          )}
+        </button>
+
+        {step === 1 && (
           <div className="divide-y divide-gray-50">
-            {staffWithAny.map((s) => (
+            {services.length === 0 && (
+              <p className="px-6 py-8 text-center text-gray-400 text-sm">No services available right now.</p>
+            )}
+            {services.map((svc) => (
               <label
-                key={s.id}
-                className={`flex items-center gap-3 px-6 py-4 cursor-pointer hover:bg-indigo-50 transition-colors ${
-                  selectedStaff?.id === s.id ? 'bg-indigo-50' : ''
+                key={svc.id}
+                className={`flex items-start gap-3 px-6 py-4 cursor-pointer transition-colors ${
+                  selectedService?.id === svc.id
+                    ? 'bg-indigo-50 border-l-4 border-indigo-500'
+                    : 'hover:bg-indigo-50 border-l-4 border-transparent'
                 }`}
               >
                 <input
                   type="radio"
-                  name="staff"
-                  value={s.id}
-                  checked={selectedStaff?.id === s.id}
-                  onChange={() => {
-                    setSelectedStaff(s);
-                    setSelectedDate(null);
-                    setSelectedSlot(null);
-                    setLeaseId('');
-                    setClientSecret('');
-                  }}
-                  className="accent-indigo-600"
+                  name="service"
+                  value={svc.id}
+                  checked={selectedService?.id === svc.id}
+                  onChange={() => handleServiceSelect(svc)}
+                  className="mt-1 accent-indigo-600 shrink-0"
                 />
-                {s.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={s.photoUrl}
-                    alt={s.name}
-                    className="w-10 h-10 rounded-full object-cover border border-gray-100"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-300 to-purple-400 flex items-center justify-center text-white text-sm font-semibold">
-                    {s.name.charAt(0)}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-gray-900">{svc.name}</span>
+                    <span className="text-sm font-bold text-indigo-600 shrink-0">
+                      SGD {parseFloat(svc.priceSgd).toFixed(2)}
+                    </span>
                   </div>
-                )}
-                <div>
-                  <div className="text-sm font-medium text-gray-900">{s.name}</div>
-                  {s.title && <div className="text-xs text-gray-400">{s.title}</div>}
+                  <p className="text-xs text-gray-500 mt-0.5">{svc.durationMinutes} min</p>
+                  {svc.description && (
+                    <p className="text-xs text-gray-400 mt-1 leading-relaxed line-clamp-2">
+                      {svc.description}
+                    </p>
+                  )}
                 </div>
               </label>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* ── Step 2: Select Staff ───────────────────────────────────────────────── */}
+      {selectedService && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setStep(2)}
+            className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+          >
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              2 — Select Your Stylist
+            </h2>
+            {selectedStaff && step !== 2 && (
+              <span className="text-sm text-indigo-600 font-medium truncate ml-4">{resolvedStaffName}</span>
+            )}
+          </button>
+
+          {step === 2 && (
+            <div className="divide-y divide-gray-50">
+              {staffWithAny.map((s) => (
+                <label
+                  key={s.id}
+                  className={`flex items-center gap-3 px-6 py-4 cursor-pointer transition-colors ${
+                    selectedStaff?.id === s.id
+                      ? 'bg-indigo-50 border-l-4 border-indigo-500'
+                      : 'hover:bg-indigo-50 border-l-4 border-transparent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="staff"
+                    value={s.id}
+                    checked={selectedStaff?.id === s.id}
+                    onChange={() => handleStaffSelect(s)}
+                    className="accent-indigo-600 shrink-0"
+                  />
+                  {s.id === 'any' ? (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 border-2 border-dashed border-indigo-300 flex items-center justify-center text-indigo-400 text-lg shrink-0">
+                      ✦
+                    </div>
+                  ) : s.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={s.photoUrl}
+                      alt={s.name}
+                      className="w-10 h-10 rounded-full object-cover border border-gray-100 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                      {s.name.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">{s.name}</div>
+                    {s.title && <div className="text-xs text-gray-400 mt-0.5">{s.title}</div>}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Step 3: Select Date & Time */}
+      {/* ── Step 3: Select Date & Time ─────────────────────────────────────────── */}
       {selectedService && selectedStaff && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-50 bg-gray-50">
+          <button
+            onClick={() => setStep(3)}
+            className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+          >
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              Select Date &amp; Time
+              3 — Select Date &amp; Time
             </h2>
-          </div>
-          <div className="px-6 py-4">
-            {/* Date Picker */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
-              {days.map((day) => {
-                const isSelected = selectedDate && toDateStr(day) === toDateStr(selectedDate);
-                return (
-                  <button
-                    key={toDateStr(day)}
-                    onClick={() => {
-                      setSelectedDate(day);
-                      setSelectedSlot(null);
-                      setLeaseId('');
-                      setClientSecret('');
-                    }}
-                    className={`shrink-0 rounded-xl px-3 py-2 text-center border transition-colors ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'border-gray-200 text-gray-700 hover:border-indigo-300'
-                    }`}
-                  >
-                    <div className="text-xs font-medium">
-                      {day.toLocaleDateString('en-SG', { weekday: 'short' })}
-                    </div>
-                    <div className="text-base font-bold">{day.getDate()}</div>
-                    <div className="text-xs">
-                      {day.toLocaleDateString('en-SG', { month: 'short' })}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Time Slots */}
-            {selectedDate && (
-              <>
-                {slotsLoading && (
-                  <div className="text-center py-6 text-gray-400 text-sm">Loading slots…</div>
-                )}
-                {slotsError && (
-                  <div className="text-center py-6 text-red-500 text-sm">{slotsError}</div>
-                )}
-                {!slotsLoading && !slotsError && slots.length === 0 && (
-                  <div className="text-center py-6 text-gray-400 text-sm">
-                    No availability on this date. Try another day.
-                  </div>
-                )}
-                {!slotsLoading && slots.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {slots.map((slot) => {
-                      const isSelected =
-                        selectedSlot?.start_time === slot.start_time &&
-                        selectedSlot?.staff_id === slot.staff_id;
-                      return (
-                        <button
-                          key={`${slot.start_time}-${slot.staff_id}`}
-                          onClick={() => handleSlotSelect(slot)}
-                          disabled={leaseLoading}
-                          className={`rounded-lg py-2 px-3 text-sm font-medium border transition-colors ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-600'
-                              : 'border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'
-                          } disabled:opacity-50`}
-                        >
-                          {formatTime(slot.start_time)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Client Details */}
-      {selectedSlot && leaseId && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-50 bg-gray-50 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              Your Details
-            </h2>
-            {countdown > 0 && (
-              <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded-full">
-                ⏱ {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')} held
+            {selectedSlot && selectedDate && step !== 3 && (
+              <span className="text-sm text-indigo-600 font-medium truncate ml-4">
+                {formatDateFull(selectedDate).split(',')[0]}, {formatTime(selectedSlot.start_time)}
               </span>
             )}
-          </div>
-          <div className="px-6 py-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full name *</label>
-              <input
-                type="text"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Jane Tan"
-              />
+          </button>
+
+          {step === 3 && (
+            <div className="px-6 py-4">
+              {/* Date row */}
+              <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-hide">
+                {days.map((day) => {
+                  const dayStr = toDateStr(day);
+                  const isSelected = selectedDate ? toDateStr(selectedDate) === dayStr : false;
+                  const isToday = toDateStr(new Date()) === dayStr;
+                  return (
+                    <button
+                      key={dayStr}
+                      onClick={() => handleDateSelect(day)}
+                      className={`shrink-0 rounded-xl px-3 py-2.5 text-center border-2 transition-all ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                          : 'border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <div className="text-xs font-medium">
+                        {isToday ? 'Today' : day.toLocaleDateString('en-SG', { weekday: 'short' })}
+                      </div>
+                      <div className="text-base font-bold mt-0.5">{day.getDate()}</div>
+                      <div className="text-xs opacity-75">
+                        {day.toLocaleDateString('en-SG', { month: 'short' })}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Time slots */}
+              {selectedDate && (
+                <div className="mt-2">
+                  {slotsLoading && (
+                    <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      <span className="text-sm">Loading available times…</span>
+                    </div>
+                  )}
+                  {slotsError && (
+                    <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600 text-center">
+                      {slotsError}
+                    </div>
+                  )}
+                  {!slotsLoading && !slotsError && slots.length === 0 && (
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-6 text-sm text-gray-500 text-center">
+                      <div className="text-2xl mb-2">😔</div>
+                      No availability on {formatDateFull(selectedDate)}.<br />
+                      <span className="text-gray-400">Please try another day.</span>
+                    </div>
+                  )}
+                  {!slotsLoading && slots.length > 0 && (
+                    <>
+                      <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wide">
+                        {slots.length} time{slots.length !== 1 ? 's' : ''} available
+                      </p>
+                      {confirmError && !leaseId && (
+                        <div className="mb-3 rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-600">
+                          {confirmError}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {slots.map((slot) => {
+                          const isSelected =
+                            selectedSlot?.start_time === slot.start_time &&
+                            selectedSlot?.staff_id === slot.staff_id;
+                          return (
+                            <button
+                              key={`${slot.start_time}-${slot.staff_id}`}
+                              onClick={() => handleSlotSelect(slot)}
+                              disabled={leaseLoading}
+                              className={`rounded-xl py-2.5 px-2 text-sm font-semibold border-2 transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                                  : 'border-gray-200 text-gray-700 hover:border-indigo-400 hover:bg-indigo-50'
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                              {leaseLoading && isSelected ? (
+                                <svg className="animate-spin h-4 w-4 mx-auto" viewBox="0 0 24 24" fill="none">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                </svg>
+                              ) : (
+                                formatTime(slot.start_time)
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!selectedDate && (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Pick a date above to see available times
+                </p>
+              )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mobile number *
-              </label>
-              <input
-                type="tel"
-                value={clientPhone}
-                onChange={(e) => setClientPhone(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="+65 9123 4567"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email (optional)
-              </label>
-              <input
-                type="email"
-                value={clientEmail}
-                onChange={(e) => setClientEmail(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="jane@example.com"
-              />
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Cancellation Policy */}
-      {selectedSlot && leaseId && (
-        <div className="bg-amber-50 border border-amber-100 rounded-2xl px-6 py-4">
-          <h3 className="text-sm font-semibold text-amber-800 mb-1">Cancellation Policy</h3>
-          <p className="text-xs text-amber-700 leading-relaxed">
-            Cancellations made more than 24 hours before your appointment are eligible for a full
-            refund. Late cancellations may receive a partial refund as per the salon&apos;s policy.
-          </p>
-        </div>
-      )}
-
-      {/* Payment */}
+      {/* ── Step 4: Your Details ───────────────────────────────────────────────── */}
       {selectedSlot && leaseId && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-50 bg-gray-50">
+          <button
+            onClick={() => setStep(4)}
+            className="w-full px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+          >
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              Payment
+              4 — Your Details
             </h2>
-          </div>
-          <div className="px-6 py-4">
-            {/* Booking summary */}
-            <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-gray-600">{selectedService?.name}</span>
-                <span className="font-medium text-gray-900">
-                  SGD {parseFloat(selectedService?.priceSgd || '0').toFixed(2)}
+            <div className="flex items-center gap-3">
+              {clientName && step !== 4 && (
+                <span className="text-sm text-indigo-600 font-medium truncate">{clientName}</span>
+              )}
+              {countdown > 0 && (
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                  countdown < 60
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-amber-50 text-amber-600'
+                }`}>
+                  {padTwo(Math.floor(countdown / 60))}:{padTwo(countdown % 60)}
                 </span>
+              )}
+            </div>
+          </button>
+
+          {step === 4 && (
+            <div className="px-6 py-5 space-y-4">
+              {countdown > 0 && countdown < 120 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+                  <span className="text-lg">⏰</span>
+                  <span>Slot held for <strong>{padTwo(Math.floor(countdown / 60))}:{padTwo(countdown % 60)}</strong> — complete your booking before it expires</span>
+                </div>
+              )}
+
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Full name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  autoComplete="name"
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                  placeholder="Jane Tan"
+                />
               </div>
-              {selectedDate && selectedSlot && (
-                <div className="flex justify-between text-gray-500">
-                  <span>
-                    {formatDate(selectedDate)} at {formatTime(selectedSlot.start_time)}
-                  </span>
-                  <span>{selectedStaff?.name}</span>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Mobile number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value)}
+                  autoComplete="tel"
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                  placeholder="+65 9123 4567"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Email <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="email"
+                  value={clientEmail}
+                  onChange={(e) => setClientEmail(e.target.value)}
+                  autoComplete="email"
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                  placeholder="jane@example.com"
+                />
+              </div>
+
+              <button
+                onClick={() => {
+                  if (!clientName.trim() || !clientPhone.trim()) {
+                    setConfirmError('Please fill in your name and mobile number');
+                    return;
+                  }
+                  setConfirmError('');
+                  setStep(5);
+                }}
+                disabled={!clientName.trim() || !clientPhone.trim()}
+                className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Continue to Review
+              </button>
+
+              {confirmError && (
+                <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+                  {confirmError}
                 </div>
               )}
             </div>
+          )}
+        </div>
+      )}
 
-            {piError && (
-              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">
-                {piError}
+      {/* ── Step 5: Confirm & Pay ──────────────────────────────────────────────── */}
+      {selectedSlot && leaseId && clientName && clientPhone && step === 5 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              5 — Review &amp; Confirm
+            </h2>
+            {countdown > 0 && (
+              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                countdown < 60 ? 'bg-red-100 text-red-600' : 'bg-amber-50 text-amber-600'
+              }`}>
+                ⏱ {padTwo(Math.floor(countdown / 60))}:{padTwo(countdown % 60)}
+              </span>
+            )}
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            {/* Booking summary card */}
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-5 border border-indigo-100 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs text-indigo-500 font-semibold uppercase tracking-wide mb-0.5">Service</p>
+                  <p className="text-base font-bold text-gray-900">{selectedService?.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{selectedService?.durationMinutes} min</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs text-indigo-500 font-semibold uppercase tracking-wide mb-0.5">Price</p>
+                  <p className="text-xl font-bold text-indigo-700">
+                    SGD {parseFloat(selectedService?.priceSgd || '0').toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-indigo-100 pt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-gray-500 mb-0.5">Stylist</p>
+                  <p className="text-sm font-semibold text-gray-800">{resolvedStaffName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-0.5">Date</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {selectedDate ? formatDateFull(selectedDate).split(',').slice(0, 2).join(',') : ''}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-0.5">Time</p>
+                  <p className="text-sm font-semibold text-gray-800">{formatTime(selectedSlot.start_time)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-0.5">Payment</p>
+                  <p className="text-sm font-semibold text-gray-800">Pay at salon</p>
+                </div>
+              </div>
+
+              <div className="border-t border-indigo-100 pt-3">
+                <p className="text-xs text-gray-500 mb-0.5">Name</p>
+                <p className="text-sm font-semibold text-gray-800">{clientName}</p>
+                <p className="text-xs text-gray-500 mt-2 mb-0.5">Mobile</p>
+                <p className="text-sm font-semibold text-gray-800">{clientPhone}</p>
+                {clientEmail && (
+                  <>
+                    <p className="text-xs text-gray-500 mt-2 mb-0.5">Email</p>
+                    <p className="text-sm font-semibold text-gray-800">{clientEmail}</p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Cancellation policy */}
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3.5">
+              <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-1">
+                Cancellation Policy
+              </h3>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Cancellations made more than 24 hours before your appointment are eligible for a
+                full refund. Late cancellations may receive a partial refund as per the salon&apos;s
+                policy. A cancellation link will be sent to you via WhatsApp.
+              </p>
+            </div>
+
+            {confirmError && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+                {confirmError}
               </div>
             )}
 
-            {!clientSecret && (
-              <button
-                onClick={handleGetPaymentIntent}
-                disabled={piLoading || !clientName.trim() || !clientPhone.trim()}
-                className="w-full rounded-xl bg-indigo-600 py-4 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-              >
-                {piLoading
-                  ? 'Setting up payment…'
-                  : `Confirm & Pay — SGD ${parseFloat(selectedService?.priceSgd || '0').toFixed(2)}`}
-              </button>
-            )}
+            {/* Confirm button */}
+            <button
+              onClick={handleConfirmBooking}
+              disabled={confirmLoading || countdown === 0}
+              className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+            >
+              {confirmLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Confirming your booking…
+                </span>
+              ) : countdown === 0 ? (
+                'Slot expired — please select a new time'
+              ) : (
+                `Confirm Booking — SGD ${parseFloat(selectedService?.priceSgd || '0').toFixed(2)}`
+              )}
+            </button>
 
-            {clientSecret && (
-              <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <PaymentForm
-                  clientSecret={clientSecret}
-                  amount={parseFloat(selectedService?.priceSgd || '0').toFixed(2)}
-                  slug={slug}
-                  leaseId={leaseId}
-                  serviceId={selectedService!.id}
-                  clientName={clientName}
-                  clientPhone={clientPhone}
-                  clientEmail={clientEmail}
-                  onSuccess={handleSuccess}
-                  onError={(msg) => setPiError(msg)}
-                />
-              </Elements>
-            )}
+            <p className="text-xs text-gray-400 text-center">
+              By confirming you agree to the salon&apos;s cancellation policy above.
+              Payment is collected at the salon.
+            </p>
           </div>
         </div>
       )}
