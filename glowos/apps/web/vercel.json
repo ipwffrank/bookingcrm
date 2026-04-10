@@ -1,0 +1,4 @@
+{
+  "installCommand": "cd ../.. && npm i -g pnpm && pnpm install",
+  "buildCommand": "cd ../.. && pnpm turbo build --filter=@glowos/web"
+}
