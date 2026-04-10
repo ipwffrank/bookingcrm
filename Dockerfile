@@ -21,4 +21,5 @@ RUN pnpm --filter @glowos/api build
 
 EXPOSE 3001
 
-CMD ["node", "services/api/dist/index.js"]
+WORKDIR /app/glowos/services/api
+CMD ["node", "dist/index.js"]
