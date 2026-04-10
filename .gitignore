@@ -7,3 +7,4 @@ dist/
 .next/
 *.tsbuildinfo
 .vercel
+twilio_2FA_recovery_code.txt

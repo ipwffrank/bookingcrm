@@ -702,8 +702,7 @@ function Step3Staff({ staffList, services, onStaffChange, onNext, onBack }: Step
   }
 
   function handleNext() {
-    const realStaff = staffList.filter((s) => !('isAnyAvailable' in s));
-    if (staffList.length === 0 && realStaff.length === 0) {
+    if (staffList.length === 0) {
       setStepError('Add at least one staff member to continue.');
       return;
     }

@@ -59,10 +59,14 @@ export default function SignupPage() {
     if (!validate()) return;
     setLoading(true);
     try {
-      await apiFetch('/auth/signup', {
+      const data = await apiFetch('/auth/signup', {
         method: 'POST',
         body: JSON.stringify(form),
       });
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('merchant', JSON.stringify(data.merchant));
       router.push('/onboarding');
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Something went wrong');

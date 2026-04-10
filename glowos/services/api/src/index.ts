@@ -11,6 +11,8 @@ import { bookingsRouter } from "./routes/bookings.js";
 import { clientsRouter } from "./routes/clients.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { webhooksRouter } from "./routes/webhooks.js";
+import { analyticsRouter } from "./routes/analytics.js";
+import { campaignsRouter } from "./routes/campaigns.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -41,6 +43,8 @@ app.route("/merchant", merchantRouter);
 app.route("/merchant/services", servicesRouter);
 app.route("/merchant/staff", staffRouter);
 app.route("/merchant/clients", clientsRouter);
+app.route("/merchant/analytics", analyticsRouter);
+app.route("/merchant/campaigns", campaignsRouter);
 app.route("/booking", bookingsRouter);
 
 // Payment routes:
