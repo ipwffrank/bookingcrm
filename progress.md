@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 11 April 2026**
+**Last updated: 11 April 2026 (Session 3)**
 
 ---
 
@@ -18,9 +18,53 @@
 - **Railway:** ipwffrank@gmail.com (project: alert-truth)
 - **Neon:** ep-quiet-hall-ambckxnr-pooler
 - **Upstash:** ultimate-chimp-84494
-- **Twilio:** ipwffrank@gmail.com — account created, credentials added to local .env (sandbox number +14155238886)
+- **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 3 — 11 April 2026)
+
+### Industry-Agnostic Rebranding
+- [x] All website copy rewritten across 12 files — serves restaurants, salons, clinics, spas, barbershops
+- [x] Business categories expanded from 5 beauty-only to 9 multi-industry (restaurant, beauty_clinic, medical_clinic, other added)
+- [x] Backend category validation updated to accept all 9 categories (auth.ts, merchant.ts, merchants schema)
+- [x] Service categories expanded with Dining/F&B and Medical/Clinical
+
+### Interactive UI — SevenRooms-inspired (Chris)
+- [x] 4 new components: FloatingCTA, TestimonialCarousel (auto-advancing), ParallaxSection, ButtonRipple
+- [x] Parallax hero orbs, animated ambient depth layers
+- [x] Micro-interactions: card-hover-lift, glow-dot icons, shimmer overlay, button ripples
+- [x] How It Works: scale-up staggered animations with glow ring hover
+- [x] Testimonials upgraded from static quote to full carousel (3 testimonials, directional slides)
+- [x] NavBar sticky CTA glow after scroll, all touch targets ≥ 44px (WCAG 2.1 AA)
+- [x] prefers-reduced-motion support across all animations
+
+### Critical Bug Fixes (E2E Audit)
+- [x] Route ordering bug fixed — `/merchant` routes now precede `/:slug` wildcard
+- [x] Cancellation refund logic fixed — correct field names, dynamic refund % displayed
+- [x] Server-component API URL fixed — `getApiUrl()` with runtime env fallback chain for Vercel
+- [x] JWT token refresh flow implemented — ApiError class, auto-refresh on 401, refresh lock
+- [x] 23 brittle `msg.includes('401')` checks replaced with `err instanceof ApiError && err.status === 401` across 7 dashboard pages
+- [x] "Business not found" replaces "Salon not found" in public booking page
+
+### Client Portal Fixes
+- [x] Client spending aggregation fixed — totalSpendSgd/totalVisits/lastVisitAt computed from completed bookings
+- [x] Slug guard added — reserved words (merchant, cancel, health) return 404 instead of "Salon not found"
+
+### Test Data
+- [x] Seed script created (`packages/db/src/seed.ts`)
+- [x] 3 branches seeded: ABC Salon - Orchard, Tampines, Jurong
+- [x] 10 today's bookings + 22 past completed + 7 future bookings for ABC Salon
+- [x] 8 test clients with profiles and spending history
+- [x] 3 bookings per branch for today
+
+### Infrastructure
+- [x] Twilio WhatsApp sandbox joined (keyword: east-written, number: +14155238886)
+- [x] Twilio credentials added to Railway env vars
+- [x] Vercel env vars set: API_URL + NEXT_PUBLIC_API_URL pointing to Railway
+- [x] All changes deployed — GitHub `a910d23`, Vercel production live
 
 ---
 
@@ -124,43 +168,30 @@
 
 ## What's NOT Done Yet
 
-### Priority 1 — Do FIRST When Resuming (12 April)
+### Priority 1 — Do FIRST When Resuming (Next Session)
 
-1. **Twilio WhatsApp — Credentials Added (Local)**
-   - [x] Twilio credentials added to local `.env` (Account SID, Auth Token, WhatsApp sandbox number +14155238886)
-   - [ ] Update Railway env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (deploy to production)
-   - [ ] Join WhatsApp sandbox: recipient must text "join <sandbox-keyword>" to +14155238886 before receiving messages
-   - [ ] Test: create a booking → WhatsApp confirmation should be received
-   - Note: sandbox uses free-form `body` messages (not content templates) — code is compatible
-
-2. **Fix Route Ordering Bug (Critical)**
-   - `/booking/:slug` wildcard catches `/booking/merchant` — "merchant" is treated as a slug
-   - Fix: in `services/api/src/index.ts`, mount merchant booking routes BEFORE the public `/:slug` routes
-   - Or rename to `/merchant/bookings` to avoid collision entirely
-   - This affects: dashboard today's bookings list, walk-in creation
-
-3. **Stripe Connect — Sign Up**
+1. **Stripe Connect — Sign Up** *(all payment code written, just needs keys)*
    - Sign up at https://stripe.com (needs SG business entity or sole proprietorship)
    - Enable Connect (Platform/Marketplace mode)
    - Get: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY
    - Set up webhook: https://bookingcrm-production.up.railway.app/webhooks/stripe → get STRIPE_WEBHOOK_SECRET
    - Update Railway env vars
-   - All payment code is already written — just needs keys
 
-### Priority 1.5 — Landing Page Imagery
+2. **Test WhatsApp Notifications End-to-End**
+   - Sandbox fully configured: keyword `east-written`, number +14155238886, Railway vars set
+   - Create a test booking → check if WhatsApp confirmation arrives on +6596721317
+   - If not: check Railway logs for BullMQ worker errors
 
-4. **Add Real Images to Landing Page**
-   - Feature section visual placeholders currently show icons — replace with salon/hospitality photography
-   - Options: export assets from Figma (Figma MCP available in Claude Desktop only, NOT Claude Code), or use high-quality stock photos (Unsplash)
+3. **Add Real Images to Landing Page**
+   - Feature section visuals show icons — replace with hospitality photography
+   - Use Unsplash (restaurants, salons, clinics, spas)
    - Add images to `glowos/apps/web/public/images/`
-   - Note: Figma MCP requires Claude Desktop app + Figma Desktop with Dev Mode enabled
 
 ### Priority 2 — Before Pilot Launch
 
-4. **End-to-End Flow Testing**
-   - Full production test: signup → onboarding → add services/staff → share booking link → client books → dashboard shows booking → check-in → complete
+4. **Full Production E2E Test**
+   - signup → onboarding → add services/staff → share booking link → client books → dashboard shows booking → check-in → complete
    - Test on mobile (responsive)
-   - Fix any remaining API path mismatches
 
 5. **Custom Domain**
    - Register glowos.sg
