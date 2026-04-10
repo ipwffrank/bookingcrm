@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd glowos && npm i -g pnpm && pnpm install && pnpm turbo build --filter=@glowos/web",
+  "outputDirectory": "glowos/apps/web/.next",
+  "installCommand": "echo 'skip'",
+  "framework": "nextjs"
+}
