@@ -12,5 +12,13 @@ export const config = {
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:3000",
   dashboardUrl: process.env.DASHBOARD_URL ?? "http://localhost:3002",
 
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
+  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? "",
+  twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM ?? "+6531591234",
+
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;

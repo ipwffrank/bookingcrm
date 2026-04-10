@@ -1,0 +1,407 @@
+import { Hono } from "hono";
+import type Stripe from "stripe";
+import { eq, and } from "drizzle-orm";
+import {
+  db,
+  merchants,
+  services,
+  slotLeases,
+  bookings,
+  clients,
+  clientProfiles,
+} from "@glowos/db";
+import { stripe } from "../lib/stripe.js";
+import { config } from "../lib/config.js";
+import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
+import { addJob } from "../lib/queue.js";
+import { scheduleReminder } from "../lib/scheduler.js";
+import type { AppVariables } from "../lib/types.js";
+
+const webhooksRouter = new Hono<{ Variables: AppVariables }>();
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Find a client by phone, or create one if not found.
+ * Duplicated from bookings.ts intentionally — webhooks module is self-contained.
+ */
+async function findOrCreateClient(
+  phone: string,
+  name?: string,
+  email?: string
+): Promise<{ id: string }> {
+  const [existing] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(eq(clients.phone, phone))
+    .limit(1);
+
+  if (existing) {
+    if (name || email) {
+      await db
+        .update(clients)
+        .set({
+          ...(name ? { name } : {}),
+          ...(email ? { email } : {}),
+        })
+        .where(eq(clients.id, existing.id));
+    }
+    return existing;
+  }
+
+  const [created] = await db
+    .insert(clients)
+    .values({ phone, name, email })
+    .returning({ id: clients.id });
+
+  if (!created) throw new Error("Failed to create client");
+  return created;
+}
+
+async function findOrCreateClientProfile(
+  merchantId: string,
+  clientId: string
+): Promise<{ id: string }> {
+  const [existing] = await db
+    .select({ id: clientProfiles.id })
+    .from(clientProfiles)
+    .where(
+      and(
+        eq(clientProfiles.merchantId, merchantId),
+        eq(clientProfiles.clientId, clientId)
+      )
+    )
+    .limit(1);
+
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(clientProfiles)
+    .values({ merchantId, clientId })
+    .returning({ id: clientProfiles.id });
+
+  if (!created) throw new Error("Failed to create client profile");
+  return created;
+}
+
+// ─── POST /webhooks/stripe ────────────────────────────────────────────────────
+//
+// IMPORTANT: Stripe requires the RAW (un-parsed) request body for signature
+// verification. In Hono we read c.req.raw.body (the ReadableStream from the
+// underlying Request object) before any JSON parsing. The route is intentionally
+// NOT wrapped with zValidator so the body is never parsed by the framework.
+
+webhooksRouter.post("/stripe", async (c) => {
+  const signature = c.req.header("stripe-signature");
+
+  if (!signature) {
+    return c.json({ error: "Bad Request", message: "Missing Stripe signature" }, 400);
+  }
+
+  // Read the raw body as text (Stripe needs the exact bytes)
+  const rawBody = await c.req.text();
+
+  // 1. Verify webhook signature — reject forged/replayed events immediately
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, signature, config.stripeWebhookSecret);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Signature verification failed";
+    console.error("[Webhook] Signature verification failed:", message);
+    return c.json({ error: "Unauthorized", message }, 401);
+  }
+
+  // 2. Acknowledge immediately — Stripe requires < 5 s response
+  //    We process synchronously here (within the request lifetime) but return
+  //    early via the response only when we're done. For heavy workloads this
+  //    should be moved to a background queue.
+
+  console.log(`[Webhook] Received event: ${event.type} id=${event.id}`);
+
+  try {
+    switch (event.type) {
+      // ── payment_intent.succeeded ─────────────────────────────────────────────
+      case "payment_intent.succeeded": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const meta = pi.metadata as {
+          merchant_id?: string;
+          lease_id?: string;
+          service_id?: string;
+          booking_source?: string;
+        };
+
+        const { merchant_id, lease_id, service_id, booking_source } = meta;
+
+        if (!merchant_id || !lease_id || !service_id) {
+          console.warn("[Webhook] payment_intent.succeeded missing required metadata, skipping", {
+            payment_intent_id: pi.id,
+          });
+          break;
+        }
+
+        // Load the lease to get slot details
+        const [lease] = await db
+          .select()
+          .from(slotLeases)
+          .where(
+            and(eq(slotLeases.id, lease_id), eq(slotLeases.merchantId, merchant_id))
+          )
+          .limit(1);
+
+        if (!lease) {
+          console.warn("[Webhook] Lease not found (may have already been consumed)", {
+            lease_id,
+            payment_intent_id: pi.id,
+          });
+          break;
+        }
+
+        // Load service for price and duration
+        const [service] = await db
+          .select({
+            priceSgd: services.priceSgd,
+            durationMinutes: services.durationMinutes,
+          })
+          .from(services)
+          .where(and(eq(services.id, service_id), eq(services.merchantId, merchant_id)))
+          .limit(1);
+
+        if (!service) {
+          console.warn("[Webhook] Service not found", { service_id });
+          break;
+        }
+
+        // Resolve customer details from the PaymentIntent's customer object
+        // or the billing_details on the latest charge.
+        let clientPhone = "";
+        let clientName: string | undefined;
+        let clientEmail: string | undefined;
+
+        // Attempt to pull details from the latest charge's billing_details
+        if (pi.latest_charge && typeof pi.latest_charge === "string") {
+          try {
+            const charge = await stripe.charges.retrieve(pi.latest_charge);
+            clientPhone = charge.billing_details?.phone ?? "";
+            clientName = charge.billing_details?.name ?? undefined;
+            clientEmail = charge.billing_details?.email ?? undefined;
+          } catch (err) {
+            console.warn("[Webhook] Failed to retrieve charge for billing details", err);
+          }
+        }
+
+        // Fall back to PaymentIntent-level receipt email
+        if (!clientEmail && pi.receipt_email) {
+          clientEmail = pi.receipt_email;
+        }
+
+        // A phone number is required to find or create a client; use a
+        // placeholder derived from the PaymentIntent ID if unavailable so we
+        // don't hard-fail the webhook.
+        if (!clientPhone) {
+          clientPhone = `pi_${pi.id}`;
+        }
+
+        const client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+        await findOrCreateClientProfile(merchant_id, client.id);
+
+        // Calculate commission amounts
+        const priceSgd = parseFloat(String(service.priceSgd));
+        const source = booking_source ?? "direct_widget";
+
+        let commissionRate = 0;
+        if (source === "google_reserve") commissionRate = 0.1;
+        else if (source === "google_gbp_link") commissionRate = 0.075;
+
+        const commissionSgd = parseFloat((priceSgd * commissionRate).toFixed(2));
+        const merchantPayoutSgd = parseFloat((priceSgd - commissionSgd).toFixed(2));
+
+        // Retrieve the charge ID
+        const chargeId =
+          typeof pi.latest_charge === "string" ? pi.latest_charge : undefined;
+
+        // Create the confirmed booking
+        const [booking] = await db
+          .insert(bookings)
+          .values({
+            merchantId: merchant_id,
+            clientId: client.id,
+            serviceId: service_id,
+            staffId: lease.staffId,
+            startTime: lease.startTime,
+            endTime: lease.endTime,
+            durationMinutes: service.durationMinutes,
+            status: "confirmed",
+            priceSgd: service.priceSgd,
+            paymentStatus: "paid",
+            paymentMethod: "card",
+            bookingSource: source,
+            commissionRate: commissionRate.toFixed(4),
+            commissionSgd: commissionSgd.toFixed(2),
+            merchantPayoutSgd: merchantPayoutSgd.toFixed(2),
+            stripePaymentIntentId: pi.id,
+            stripeChargeId: chargeId,
+          })
+          .returning();
+
+        // Delete the used lease to free the slot
+        await db.delete(slotLeases).where(eq(slotLeases.id, lease_id));
+        await invalidateAvailabilityCacheByMerchantId(merchant_id);
+
+        console.log("[Webhook] Booking created from payment_intent.succeeded", {
+          booking_id: booking?.id,
+          payment_intent_id: pi.id,
+        });
+
+        // Queue post-booking jobs
+        if (booking) {
+          await addJob("notifications", "booking_confirmation", { booking_id: booking.id });
+          await addJob("crm", "update_client_profile", { booking_id: booking.id });
+          await addJob("vip", "rescore_client", {
+            merchant_id: booking.merchantId,
+            client_id: booking.clientId,
+          });
+          await scheduleReminder(booking.id, booking.startTime);
+        }
+
+        break;
+      }
+
+      // ── payment_intent.payment_failed ────────────────────────────────────────
+      case "payment_intent.payment_failed": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const { lease_id, merchant_id } = pi.metadata as {
+          lease_id?: string;
+          merchant_id?: string;
+        };
+
+        if (!lease_id || !merchant_id) {
+          console.warn("[Webhook] payment_intent.payment_failed missing metadata", {
+            payment_intent_id: pi.id,
+          });
+          break;
+        }
+
+        // Free the slot by deleting the lease
+        await db
+          .delete(slotLeases)
+          .where(and(eq(slotLeases.id, lease_id), eq(slotLeases.merchantId, merchant_id)));
+
+        await invalidateAvailabilityCacheByMerchantId(merchant_id);
+
+        console.log("[Webhook] Lease released after payment failure", {
+          lease_id,
+          payment_intent_id: pi.id,
+          failure_message: pi.last_payment_error?.message,
+        });
+        break;
+      }
+
+      // ── charge.refunded ──────────────────────────────────────────────────────
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+
+        // Find the booking by stripe_charge_id
+        const [booking] = await db
+          .select()
+          .from(bookings)
+          .where(eq(bookings.stripeChargeId, charge.id))
+          .limit(1);
+
+        if (!booking) {
+          console.warn("[Webhook] charge.refunded: no booking found for charge", {
+            charge_id: charge.id,
+          });
+          break;
+        }
+
+        const totalRefunded = charge.amount_refunded / 100; // convert cents → SGD
+        const chargeAmount = charge.amount / 100;
+        const isFullRefund = charge.refunded && charge.amount_refunded >= charge.amount;
+
+        // Find the latest refund ID (Stripe puts most-recent first)
+        const latestRefund = charge.refunds?.data?.[0];
+
+        const updates: Partial<typeof bookings.$inferInsert> = {
+          refundAmountSgd: totalRefunded.toFixed(2),
+          stripeRefundId: latestRefund?.id,
+          updatedAt: new Date(),
+        };
+
+        if (isFullRefund) {
+          updates.paymentStatus = "refunded";
+          updates.commissionSgd = "0";
+        } else if (totalRefunded > 0) {
+          updates.paymentStatus = "partially_refunded";
+        }
+
+        await db.update(bookings).set(updates).where(eq(bookings.id, booking.id));
+
+        console.log("[Webhook] charge.refunded processed", {
+          charge_id: charge.id,
+          booking_id: booking.id,
+          refunded_sgd: totalRefunded,
+          full_refund: isFullRefund,
+        });
+
+        // Notify client of refund
+        await addJob("notifications", "refund_confirmation", { booking_id: booking.id });
+
+        break;
+      }
+
+      // ── account.updated (Connect) ────────────────────────────────────────────
+      case "account.updated": {
+        const account = event.data.object as Stripe.Account;
+
+        // Find the merchant by stripe_account_id
+        const [merchant] = await db
+          .select({ id: merchants.id })
+          .from(merchants)
+          .where(eq(merchants.stripeAccountId, account.id))
+          .limit(1);
+
+        if (!merchant) {
+          // This can fire for accounts we don't recognise — not an error
+          console.warn("[Webhook] account.updated: no merchant found for Stripe account", {
+            account_id: account.id,
+          });
+          break;
+        }
+
+        // When charges_enabled flips to true, mark the merchant as payment-ready
+        // (we surface this via the connect-status endpoint; no extra DB column needed
+        // because we always re-query Stripe for live status).
+        console.log("[Webhook] account.updated", {
+          account_id: account.id,
+          merchant_id: merchant.id,
+          charges_enabled: account.charges_enabled,
+          payouts_enabled: account.payouts_enabled,
+          details_submitted: account.details_submitted,
+        });
+
+        await db
+          .update(merchants)
+          .set({ updatedAt: new Date() })
+          .where(eq(merchants.id, merchant.id));
+
+        break;
+      }
+
+      default:
+        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+    }
+  } catch (err) {
+    // Log processing errors but still return 200 so Stripe doesn't retry
+    // indefinitely for transient errors. Persistent failures should be
+    // investigated via the Stripe dashboard event log.
+    console.error("[Webhook] Error processing event", {
+      event_type: event.type,
+      event_id: event.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return c.json({ received: true });
+});
+
+export { webhooksRouter };

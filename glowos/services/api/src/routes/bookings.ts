@@ -17,6 +17,13 @@ import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
+import { addJob } from "../lib/queue.js";
+import {
+  scheduleReminder,
+  scheduleReviewRequest,
+  scheduleNoShowReengagement,
+  scheduleRebookingPrompt,
+} from "../lib/scheduler.js";
 import type { AppVariables } from "../lib/types.js";
 
 const bookingsRouter = new Hono<{ Variables: AppVariables }>();
@@ -391,6 +398,10 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
   // Generate cancellation token
   const bookingToken = generateBookingToken(booking.id);
 
+  // Queue post-booking jobs (cash/walk-in bookings)
+  await addJob("notifications", "booking_confirmation", { booking_id: booking.id });
+  await scheduleReminder(booking.id, booking.startTime);
+
   return c.json(
     {
       booking,
@@ -560,6 +571,10 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
     .returning();
 
   await invalidateAvailabilityCacheByMerchantId(booking.merchantId);
+
+  // Queue cancellation notifications
+  await addJob("notifications", "cancellation_notification", { booking_id: bookingId });
+  await scheduleRebookingPrompt(bookingId);
 
   return c.json({
     success: true,
@@ -775,6 +790,16 @@ bookingsRouter.put("/merchant/:id/complete", requireMerchant, async (c) => {
     .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
     .returning();
 
+  // Queue post-completion jobs
+  await scheduleReviewRequest(bookingId);
+  await addJob("crm", "update_client_profile", { booking_id: bookingId });
+  if (updated) {
+    await addJob("vip", "rescore_client", {
+      merchant_id: merchantId,
+      client_id: updated.clientId,
+    });
+  }
+
   return c.json({ booking: updated });
 });
 
@@ -808,6 +833,9 @@ bookingsRouter.put("/merchant/:id/no-show", requireMerchant, async (c) => {
     .returning();
 
   await invalidateAvailabilityCacheByMerchantId(merchantId);
+
+  // Queue no-show re-engagement (24h delay)
+  await scheduleNoShowReengagement(bookingId);
 
   return c.json({ booking: updated });
 });
