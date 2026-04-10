@@ -139,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const Sidebar = () => (
     <nav className="flex flex-col h-full">
       <div className="px-6 py-5 border-b border-gray-100">
-        <span className="text-xl font-bold text-indigo-600">GlowOS</span>
+        <Link href="/" className="text-xl font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
         {merchant && (
           <p className="text-xs text-gray-500 mt-0.5 truncate">{merchant.name}</p>
         )}
@@ -235,7 +235,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           >
             <MenuIcon className="w-5 h-5" />
           </button>
-          <span className="text-lg font-bold text-indigo-600">GlowOS</span>
+          <Link href="/" className="text-lg font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
           <button
             onClick={handleLogout}
             className="text-sm text-gray-500 hover:text-gray-700"

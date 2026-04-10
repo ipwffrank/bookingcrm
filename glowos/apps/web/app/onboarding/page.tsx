@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 
@@ -1219,7 +1220,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-xl">
         {/* Header */}
         <div className="text-center mb-6">
-          <span className="text-2xl font-bold text-indigo-600">GlowOS</span>
+          <Link href="/" className="text-2xl font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
           <p className="text-gray-500 text-sm mt-1">Let&rsquo;s set up your salon in a few quick steps.</p>
         </div>
 
