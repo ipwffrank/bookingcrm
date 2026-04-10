@@ -52,7 +52,7 @@ async function seed() {
   const [abcSalon] = await db
     .select()
     .from(merchants)
-    .where(eq(merchants.slug, "abc-salon"))
+    .where(eq(merchants.slug, "abc"))
     .limit(1);
 
   if (!abcSalon) {
