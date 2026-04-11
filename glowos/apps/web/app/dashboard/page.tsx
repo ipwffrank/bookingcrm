@@ -156,7 +156,7 @@ function WalkInModal({
     setApiError('');
     const token = localStorage.getItem('access_token');
     try {
-      await apiFetch('/booking/merchant', {
+      await apiFetch('/merchant/bookings', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -415,7 +415,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
     try {
-      const data = await apiFetch(`/booking/merchant?date=${date}`, {
+      const data = await apiFetch(`/merchant/bookings?date=${date}`, {
         headers: { Authorization: `Bearer ${token}` },
       }) as { bookings: BookingRow[] };
       const sorted = [...(data.bookings ?? [])].sort(
@@ -441,7 +441,7 @@ export default function DashboardPage() {
       setError('');
       try {
         const [bookingsData, servicesData, staffData] = await Promise.all([
-          apiFetch(`/booking/merchant?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ bookings: BookingRow[] }>,
+          apiFetch(`/merchant/bookings?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ bookings: BookingRow[] }>,
           apiFetch('/merchant/services', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ services: ServiceOption[] }>,
           apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: StaffOption[] }>,
         ]);
@@ -470,7 +470,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
     try {
-      await apiFetch(`/booking/merchant/${bookingId}/${action}`, {
+      await apiFetch(`/merchant/bookings/${bookingId}/${action}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       });

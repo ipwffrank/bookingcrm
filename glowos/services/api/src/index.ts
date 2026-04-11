@@ -7,7 +7,7 @@ import { auth } from "./routes/auth.js";
 import { merchantRouter } from "./routes/merchant.js";
 import { servicesRouter } from "./routes/services.js";
 import { staffRouter } from "./routes/staff.js";
-import { bookingsRouter } from "./routes/bookings.js";
+import { bookingsRouter, merchantBookingsRouter } from "./routes/bookings.js";
 import { clientsRouter } from "./routes/clients.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { webhooksRouter } from "./routes/webhooks.js";
@@ -45,6 +45,7 @@ app.route("/merchant/staff", staffRouter);
 app.route("/merchant/clients", clientsRouter);
 app.route("/merchant/analytics", analyticsRouter);
 app.route("/merchant/campaigns", campaignsRouter);
+app.route("/merchant/bookings", merchantBookingsRouter);
 app.route("/booking", bookingsRouter);
 
 // Payment routes:

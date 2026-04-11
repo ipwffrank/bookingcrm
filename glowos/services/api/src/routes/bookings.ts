@@ -28,6 +28,10 @@ import type { AppVariables } from "../lib/types.js";
 
 const bookingsRouter = new Hono<{ Variables: AppVariables }>();
 
+// Separate router for merchant-side booking management, mounted at /merchant/bookings
+// This avoids Hono v4 route collision where /:slug wildcard can intercept /merchant literal
+export const merchantBookingsRouter = new Hono<{ Variables: AppVariables }>();
+
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 
 const leaseSchema = z.object({
@@ -304,7 +308,7 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
 
 // ─── Protected: GET /merchant/bookings ────────────────────────────────────────
 
-bookingsRouter.get("/merchant", requireMerchant, async (c) => {
+merchantBookingsRouter.get("/", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
   const dateParam = c.req.query("date");
   const statusParam = c.req.query("status");
@@ -347,7 +351,7 @@ bookingsRouter.get("/merchant", requireMerchant, async (c) => {
 
 // ─── Protected: GET /merchant/bookings/:id ────────────────────────────────────
 
-bookingsRouter.get("/merchant/:id", requireMerchant, async (c) => {
+merchantBookingsRouter.get("/:id", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
   const bookingId = c.req.param("id")!;
 
@@ -374,8 +378,8 @@ bookingsRouter.get("/merchant/:id", requireMerchant, async (c) => {
 
 // ─── Protected: POST /merchant/bookings ───────────────────────────────────────
 
-bookingsRouter.post(
-  "/merchant",
+merchantBookingsRouter.post(
+  "/",
   requireMerchant,
   zValidator(merchantBookingCreateSchema),
   async (c) => {
@@ -450,7 +454,7 @@ bookingsRouter.post(
 
 // ─── Protected: PUT /merchant/bookings/:id/check-in ───────────────────────────
 
-bookingsRouter.put("/merchant/:id/check-in", requireMerchant, async (c) => {
+merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
   const bookingId = c.req.param("id")!;
 
@@ -482,7 +486,7 @@ bookingsRouter.put("/merchant/:id/check-in", requireMerchant, async (c) => {
 
 // ─── Protected: PUT /merchant/bookings/:id/complete ───────────────────────────
 
-bookingsRouter.put("/merchant/:id/complete", requireMerchant, async (c) => {
+merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
   const bookingId = c.req.param("id")!;
 
@@ -524,7 +528,7 @@ bookingsRouter.put("/merchant/:id/complete", requireMerchant, async (c) => {
 
 // ─── Protected: PUT /merchant/bookings/:id/no-show ────────────────────────────
 
-bookingsRouter.put("/merchant/:id/no-show", requireMerchant, async (c) => {
+merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
   const bookingId = c.req.param("id")!;
 
