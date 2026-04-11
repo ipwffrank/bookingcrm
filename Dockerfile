@@ -2,7 +2,7 @@ FROM node:22-slim
 
 WORKDIR /app
 
-RUN npm i -g pnpm
+RUN npm i -g pnpm@9.15.9
 
 # Copy monorepo files
 COPY glowos/package.json glowos/pnpm-workspace.yaml glowos/pnpm-lock.yaml ./glowos/
