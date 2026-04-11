@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 11 April 2026 (Session 3)**
+**Last updated: 11 April 2026 (Session 4)**
 
 ---
 
@@ -21,6 +21,27 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 4 — 11 April 2026)
+
+### Booking Widget — Availability Endpoint Fixed
+- [x] **OOM crash fixed** — Drizzle returns PostgreSQL `time` columns as `"HH:MM:SS"` not `"HH:MM"`; `combineDateAndTime` was appending `:00` producing invalid ISO `"T09:00:00:00"` → `parseISO` returned `Invalid Date` → `generateTimeSlots` looped forever → Node heap exhausted (~477 MB) → process crash
+- [x] Fix: split on `:` and take only HH + MM parts, handles both `"HH:MM"` and `"HH:MM:SS"` from DB
+- [x] Safety guard added to `generateTimeSlots`: NaN/range checks + `MAX_SLOTS=500` cap to prevent any future infinite loop
+- [x] **`slotLeases` crash fixed** — `slot_leases` table never created; importing it from `@glowos/db` returned `undefined`; accessing `slotLeases.staffId` threw `TypeError` at query build time; replaced with empty array (slot leasing to be implemented when table is created)
+- [x] Try/catch added to availability route handler for belt-and-suspenders error containment
+
+### Workers / WhatsApp Notifications Fixed
+- [x] **BullMQ worker crash fixed** — all 3 workers (notification, crm, vip) had no `.on("error")` handler; IORedis connection failure emitted unhandled EventEmitter error → process crash; added error handlers to all workers
+- [x] **Worker startup logic fixed** — was guarded by `process.env.NODE_ENV !== "production"`, so workers never ran in Railway even with Upstash Redis configured; changed to start when `REDIS_URL` is present regardless of environment
+- [x] **WhatsApp notifications confirmed working** — end-to-end tested: booking → BullMQ job → notification worker → Twilio WhatsApp → message received ✅
+
+### Infrastructure
+- [x] `NODE_ENV=production` confirmed set in Railway variables
+- [x] `REDIS_URL` (Upstash) confirmed set in Railway variables — workers start on deploy
+- [x] Vercel auto-deploy via GitHub: confirmed connected (source shows GitHub commit, not CLI)
 
 ---
 
@@ -177,31 +198,21 @@
    - Set up webhook: https://bookingcrm-production.up.railway.app/webhooks/stripe → get STRIPE_WEBHOOK_SECRET
    - Update Railway env vars
 
-2. **Test WhatsApp Notifications End-to-End**
-   - Sandbox fully configured: keyword `east-written`, number +14155238886, Railway vars set
-   - Create a test booking → check if WhatsApp confirmation arrives on +6596721317
-   - If not: check Railway logs for BullMQ worker errors
-
-3. **Add Real Images to Landing Page**
+2. **Add Real Images to Landing Page**
    - Feature section visuals show icons — replace with hospitality photography
    - Use Unsplash (restaurants, salons, clinics, spas)
    - Add images to `glowos/apps/web/public/images/`
 
-### Priority 2 — Before Pilot Launch
-
-4. **Full Production E2E Test**
+3. **Full Production E2E Test**
    - signup → onboarding → add services/staff → share booking link → client books → dashboard shows booking → check-in → complete
    - Test on mobile (responsive)
 
-5. **Custom Domain**
+### Priority 2 — Before Pilot Launch
+
+4. **Custom Domain**
    - Register glowos.sg
    - Point to Vercel (frontend): Vercel dashboard → Domains → Add
    - Set up api.glowos.sg → Railway: Railway dashboard → Settings → Custom Domain
-
-6. **Vercel + GitHub Auto-Deploy**
-   - Connect Vercel project to GitHub repo for automatic deploys on push
-   - Currently deploying via `vercel --prod` CLI manually
-   - Vercel dashboard → Git → Connect Repository → select ipwffrank/bookingcrm → Root Directory: glowos
 
 ### Priority 3 — Phase 2
 
@@ -251,14 +262,17 @@ Bookingcrm/
 
 ---
 
-## Resume Checklist (for 11 April)
+## Resume Checklist (Next Session)
 
 ```
 1. cd ~/Desktop/Projects/Bookingcrm
 2. Read this progress.md
-3. Ask user for Twilio credentials (Account SID + Auth Token from console.twilio.com)
-4. Fix the route ordering bug in services/api/src/index.ts (#2 above)
-5. Update Railway env vars with Twilio credentials
-6. Test WhatsApp notifications end-to-end
-7. Ask user about Stripe signup status
+3. Ask user about Stripe signup status → set up STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET in Railway
+4. Add real images to landing page (Unsplash hospitality photography)
+5. Run full E2E test: signup → onboarding → booking → check-in → complete
+6. Custom domain setup (glowos.sg) if registered
 ```
+
+## Known Technical Debt
+- `slot_leases` table not yet created — availability falls back to booking-only conflict detection (no hold during checkout). Will need: schema file, migration, update availability.ts to re-enable leases.
+- Vercel deploy source shows both GitHub and CLI entries — going forward all deploys should be via git push only.
