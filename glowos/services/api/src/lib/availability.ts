@@ -28,12 +28,15 @@ interface TimeRange {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Given a date string (YYYY-MM-DD) and a time string ("HH:MM"),
- * return a Date object combining them in local (wall-clock) time.
- * We use parseISO on a combined ISO string.
+ * Given a date string (YYYY-MM-DD) and a time string from the DB ("HH:MM:SS" or "HH:MM"),
+ * return a Date object combining them.
+ * Drizzle returns time columns as "HH:MM:SS"; we take only HH:MM to avoid
+ * constructing an invalid ISO string like "T09:00:00:00" which makes parseISO
+ * return Invalid Date and causes generateTimeSlots to loop forever.
  */
 function combineDateAndTime(dateStr: string, timeStr: string): Date {
-  return parseISO(`${dateStr}T${timeStr}:00`);
+  const [hh, mm] = timeStr.split(":");
+  return parseISO(`${dateStr}T${hh}:${mm}:00`);
 }
 
 /**
@@ -46,10 +49,22 @@ function generateTimeSlots(
   slotDurationMinutes: number,
   intervalMinutes: number
 ): TimeRange[] {
+  // Guard: invalid dates or zero interval would cause an infinite loop
+  if (
+    isNaN(workStart.getTime()) ||
+    isNaN(workEnd.getTime()) ||
+    workEnd <= workStart ||
+    intervalMinutes <= 0 ||
+    slotDurationMinutes <= 0
+  ) {
+    return [];
+  }
+
   const slots: TimeRange[] = [];
   let cursor = workStart;
+  const MAX_SLOTS = 500; // safety cap — a full day at 1-min intervals is ~1440
 
-  while (true) {
+  while (slots.length < MAX_SLOTS) {
     const slotEnd = addMinutes(cursor, slotDurationMinutes);
     if (slotEnd > workEnd) break;
     slots.push({ start: new Date(cursor), end: slotEnd });
