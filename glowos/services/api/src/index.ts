@@ -112,8 +112,13 @@ serve({
 // In development, run workers in the same process for convenience.
 // In production, workers are started as a separate process (e.g. src/workers/index.ts).
 
-if (process.env.NODE_ENV !== "production") {
+// Start workers when Redis is available.
+// In production, REDIS_URL must be explicitly set (e.g. Upstash) for workers to run.
+// Without REDIS_URL the process won't crash — workers are simply skipped.
+if (process.env.REDIS_URL) {
   startWorkers();
+} else {
+  console.warn("[Workers] REDIS_URL not set — background workers disabled");
 }
 
 export default app;
