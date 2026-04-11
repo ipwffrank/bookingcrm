@@ -1,4 +1,4 @@
-import { and, eq, inArray, gte, lte, or } from "drizzle-orm";
+import { and, eq, inArray, gte, lte } from "drizzle-orm";
 import {
   db,
   services,
@@ -6,7 +6,6 @@ import {
   staffServices,
   staffHours,
   bookings,
-  slotLeases,
   merchants,
 } from "@glowos/db";
 import { addMinutes, parseISO, format, startOfDay, endOfDay, getDay } from "date-fns";
@@ -211,22 +210,9 @@ export async function getAvailability(params: {
       )
     );
 
-  const now = new Date();
-  const activeLeasesRaw = await db
-    .select({
-      staffId: slotLeases.staffId,
-      startTime: slotLeases.startTime,
-      endTime: slotLeases.endTime,
-    })
-    .from(slotLeases)
-    .where(
-      and(
-        inArray(slotLeases.staffId, staffIds),
-        gte(slotLeases.startTime, dayStart),
-        lte(slotLeases.startTime, dayEnd),
-        gte(slotLeases.expiresAt, now)
-      )
-    );
+  // Slot leases are not yet implemented (slot_leases table not yet created).
+  // Set to empty array so availability falls back to booking-only conflict detection.
+  const activeLeasesRaw: Array<{ staffId: string; startTime: Date; endTime: Date }> = [];
 
   // 7. For each staff member, compute free slots
   const allSlots: AvailableSlot[] = [];

@@ -178,5 +178,9 @@ export function createCrmWorker(): Worker {
     });
   });
 
+  worker.on("error", (err: Error) => {
+    console.error("[CrmWorker] Worker error (Redis connection issue?)", err.message);
+  });
+
   return worker;
 }

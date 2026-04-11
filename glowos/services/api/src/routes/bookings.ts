@@ -632,14 +632,18 @@ bookingsRouter.get("/:slug/availability", async (c) => {
     return c.json({ error: "Bad Request", message: "date must be in YYYY-MM-DD format" }, 400);
   }
 
-  const slots = await getAvailability({
-    merchantSlug: slug,
-    serviceId,
-    staffId: staffId ?? "any",
-    date,
-  });
-
-  return c.json({ slots });
+  try {
+    const slots = await getAvailability({
+      merchantSlug: slug,
+      serviceId,
+      staffId: staffId ?? "any",
+      date,
+    });
+    return c.json({ slots });
+  } catch (err) {
+    console.error("[availability] Error computing availability", err);
+    return c.json({ error: "Internal Server Error", message: "Failed to load availability" }, 500);
+  }
 });
 
 // ─── Public: POST /booking/:slug/lease ────────────────────────────────────────

@@ -112,7 +112,7 @@ serve({
 // In development, run workers in the same process for convenience.
 // In production, workers are started as a separate process (e.g. src/workers/index.ts).
 
-if (config.nodeEnv === "development") {
+if (process.env.NODE_ENV !== "production") {
   startWorkers();
 }
 

@@ -540,5 +540,9 @@ export function createNotificationWorker(): Worker {
     });
   });
 
+  worker.on("error", (err: Error) => {
+    console.error("[NotificationWorker] Worker error (Redis connection issue?)", err.message);
+  });
+
   return worker;
 }
