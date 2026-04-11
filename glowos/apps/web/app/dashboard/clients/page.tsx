@@ -14,9 +14,14 @@ interface ClientProfile {
   clientId: string;
   vipTier: VipTier | null;
   churnRisk: ChurnRisk | null;
+  // Aggregated fields added by session 3 API fix
   totalVisits: number | null;
   totalSpendSgd: string | null;
   lastVisitAt: string | null;
+  // RFM fields returned by current API (fallback)
+  rfmMonetary: string | null;
+  rfmFrequency: number | null;
+  lastVisitDate: string | null;
   notes: string | null;
   birthday: string | null;
 }
@@ -210,17 +215,17 @@ function ClientDetail({
             {/* Stats */}
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-gray-900">{detail.profile.totalVisits ?? 0}</p>
+                <p className="text-xl font-bold text-gray-900">{detail.profile.totalVisits ?? detail.profile.rfmFrequency ?? 0}</p>
                 <p className="text-xs text-gray-500">Visits</p>
               </div>
               <div className="bg-indigo-50 rounded-xl p-3 text-center">
                 <p className="text-xl font-bold text-indigo-700">
-                  S${parseFloat(detail.profile.totalSpendSgd ?? '0').toFixed(0)}
+                  S${parseFloat(detail.profile.totalSpendSgd ?? detail.profile.rfmMonetary ?? '0').toFixed(0)}
                 </p>
                 <p className="text-xs text-indigo-400">Spend</p>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xs font-semibold text-gray-900">{formatDate(detail.profile.lastVisitAt)}</p>
+                <p className="text-xs font-semibold text-gray-900">{formatDate(detail.profile.lastVisitAt ?? detail.profile.lastVisitDate)}</p>
                 <p className="text-xs text-gray-500">Last Visit</p>
               </div>
             </div>
@@ -476,11 +481,11 @@ export default function ClientsPage() {
                       <VipBadge tier={row.profile.vipTier} />
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="text-sm text-gray-600">{formatDate(row.profile.lastVisitAt)}</span>
+                      <span className="text-sm text-gray-600">{formatDate(row.profile.lastVisitAt ?? row.profile.lastVisitDate)}</span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <span className="text-sm font-medium text-gray-900">
-                        S${parseFloat(row.profile.totalSpendSgd ?? '0').toFixed(2)}
+                        S${parseFloat(row.profile.totalSpendSgd ?? row.profile.rfmMonetary ?? '0').toFixed(2)}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
