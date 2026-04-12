@@ -171,22 +171,21 @@ function StaffModal({
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify(payload),
-        }) as { id: string };
-        savedStaffId = created.id;
+        }) as { staff: { id: string } };
+        savedStaffId = created.staff.id;
       }
 
       // Save profile fields
       const profileBody: Record<string, unknown> = {
         is_publicly_visible: form.is_publicly_visible,
       };
-      if (form.bio) profileBody.bio = form.bio;
-      if (form.specialty_tags) {
-        profileBody.specialty_tags = form.specialty_tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean);
-      }
-      if (form.credentials) profileBody.credentials = form.credentials;
+      profileBody.bio = form.bio || undefined;
+      profileBody.credentials = form.credentials || undefined;
+      profileBody.specialty_tags = form.specialty_tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      // specialty_tags: empty array = clear all tags
 
       await apiFetch(`/merchant/staff/${savedStaffId}/profile`, {
         method: 'PATCH',
@@ -294,6 +293,7 @@ function StaffModal({
               onChange={(e) => setForm({ ...form, credentials: e.target.value })}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="e.g. MBBS, NUS Dermatology Cert"
+              maxLength={500}
             />
           </div>
 
