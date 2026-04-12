@@ -29,6 +29,13 @@ const createStaffSchema = z.object({
 
 const updateStaffSchema = createStaffSchema.partial();
 
+const updateProfileSchema = z.object({
+  bio: z.string().max(1000).optional(),
+  specialty_tags: z.array(z.string().max(50)).max(10).optional(),
+  credentials: z.string().max(500).optional(),
+  is_publicly_visible: z.boolean().optional(),
+});
+
 // ─── GET /merchant/staff ───────────────────────────────────────────────────────
 
 staffRouter.get("/", requireMerchant, async (c) => {
@@ -230,6 +237,37 @@ staffRouter.delete("/:id", requireMerchant, async (c) => {
   await invalidateAvailabilityCacheByMerchantId(merchantId);
 
   return c.json({ success: true, message: "Staff member deactivated" });
+});
+
+// ─── PATCH /merchant/staff/:id/profile ─────────────────────────────────────────
+
+staffRouter.patch("/:id/profile", requireMerchant, zValidator(updateProfileSchema), async (c) => {
+  const merchantId = c.get("merchantId");
+  const staffId = c.req.param("id");
+  const body = c.get("body") as z.infer<typeof updateProfileSchema>;
+
+  const [existing] = await db
+    .select()
+    .from(staff)
+    .where(and(eq(staff.id, staffId), eq(staff.merchantId, merchantId)))
+    .limit(1);
+
+  if (!existing) {
+    return c.json({ error: "Staff member not found" }, 404);
+  }
+
+  const [updated] = await db
+    .update(staff)
+    .set({
+      ...(body.bio !== undefined && { bio: body.bio }),
+      ...(body.specialty_tags !== undefined && { specialtyTags: body.specialty_tags }),
+      ...(body.credentials !== undefined && { credentials: body.credentials }),
+      ...(body.is_publicly_visible !== undefined && { isPubliclyVisible: body.is_publicly_visible }),
+    })
+    .where(eq(staff.id, staffId))
+    .returning();
+
+  return c.json({ staff: updated });
 });
 
 export { staffRouter };
