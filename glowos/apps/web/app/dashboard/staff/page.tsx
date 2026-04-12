@@ -26,6 +26,10 @@ interface StaffMember {
   isActive: boolean;
   isAnyAvailable: boolean;
   service_ids: string[];
+  isPubliclyVisible: boolean;
+  bio: string | null;
+  specialtyTags: string[] | null;
+  credentials: string | null;
 }
 
 interface StaffForm {
@@ -35,6 +39,10 @@ interface StaffForm {
   is_any_available: boolean;
   service_ids: string[];
   working_hours: WorkingHour[];
+  is_publicly_visible: boolean;
+  bio: string;
+  specialty_tags: string;
+  credentials: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -63,6 +71,10 @@ function blankForm(): StaffForm {
     is_any_available: false,
     service_ids: [],
     working_hours: DEFAULT_HOURS,
+    is_publicly_visible: true,
+    bio: '',
+    specialty_tags: '',
+    credentials: '',
   };
 }
 
@@ -98,6 +110,10 @@ function StaffModal({
       is_any_available: initial.isAnyAvailable,
       service_ids: initial.service_ids ?? [],
       working_hours: DEFAULT_HOURS,
+      is_publicly_visible: initial.isPubliclyVisible ?? true,
+      bio: initial.bio ?? '',
+      specialty_tags: (initial.specialtyTags ?? []).join(', '),
+      credentials: initial.credentials ?? '',
     };
   }
 
@@ -142,19 +158,42 @@ function StaffModal({
         service_ids: form.service_ids,
         working_hours: form.working_hours,
       };
+      let savedStaffId: string;
       if (initial) {
         await apiFetch(`/merchant/staff/${initial.id}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify(payload),
         });
+        savedStaffId = initial.id;
       } else {
-        await apiFetch('/merchant/staff', {
+        const created = await apiFetch('/merchant/staff', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify(payload),
-        });
+        }) as { id: string };
+        savedStaffId = created.id;
       }
+
+      // Save profile fields
+      const profileBody: Record<string, unknown> = {
+        is_publicly_visible: form.is_publicly_visible,
+      };
+      if (form.bio) profileBody.bio = form.bio;
+      if (form.specialty_tags) {
+        profileBody.specialty_tags = form.specialty_tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean);
+      }
+      if (form.credentials) profileBody.credentials = form.credentials;
+
+      await apiFetch(`/merchant/staff/${savedStaffId}/profile`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(profileBody),
+      });
+
       onSave();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save';
@@ -217,6 +256,59 @@ function StaffModal({
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="https://..."
             />
+          </div>
+
+          {/* Bio */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
+            <textarea
+              value={form.bio}
+              onChange={(e) => setForm({ ...form, bio: e.target.value })}
+              rows={3}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Brief introduction for clients..."
+              maxLength={1000}
+            />
+          </div>
+
+          {/* Specialty Tags */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Specialty Tags <span className="text-gray-400 font-normal">(comma-separated)</span>
+            </label>
+            <input
+              type="text"
+              value={form.specialty_tags}
+              onChange={(e) => setForm({ ...form, specialty_tags: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="e.g. Laser, Acne Treatment, Anti-ageing"
+            />
+          </div>
+
+          {/* Credentials */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Credentials</label>
+            <input
+              type="text"
+              value={form.credentials}
+              onChange={(e) => setForm({ ...form, credentials: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="e.g. MBBS, NUS Dermatology Cert"
+            />
+          </div>
+
+          {/* Publicly Visible */}
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="is_publicly_visible"
+              checked={form.is_publicly_visible}
+              onChange={(e) => setForm({ ...form, is_publicly_visible: e.target.checked })}
+              className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+            />
+            <label htmlFor="is_publicly_visible" className="text-sm text-gray-700">
+              Show profile on public booking page
+            </label>
           </div>
 
           <div className="flex items-center gap-3">
