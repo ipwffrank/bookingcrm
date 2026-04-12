@@ -410,8 +410,108 @@ Multi-stage procedure engine + idle time optimization, POS interface (Tier 2), s
 
 ---
 
+## Zenoti Feature Gap Analysis (verified 12 April 2026)
+
+Status key: ✅ Built · ⚠️ Partial · ❌ Missing
+
+### 1. Online Booking Engine
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Real-time availability engine | ✅ | Redis-cached, slot leasing, duration + buffer |
+| Guest flow (location → service → provider → time → pay) | ✅ | 5-step BookingWidget |
+| Booking confirmation — WhatsApp | ✅ | Twilio |
+| Booking confirmation — Email | ✅ | SendGrid added Phase 1 (Task 11) |
+| "Any available" provider | ✅ | `isAnyAvailable` flag |
+| Guest self-service cancellation | ✅ | `/cancel` page |
+| Guest self-service reschedule | ❌ | Phase 2 |
+| Group booking (multiple guests, one session) | ❌ | Phase 3 |
+| Multi-service booking (one session) | ❌ | Phase 3 |
+| Deposit / prepayment option | ❌ | Phase 2 |
+| Pay-at-location (cash/OTC) | ⚠️ | Phase 1 (Task 8) |
+| Gift card redemption | ❌ | Phase 3 |
+
+### 2. Tenant Dashboard
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Appointment calendar (day/week/month, drag-drop) | ❌ | **Phase 2 priority** — currently list-only |
+| Staff CRUD + working hours | ✅ | |
+| Staff blocked time | ❌ | Phase 2 (staff self-service calendar) |
+| Service catalog CRUD | ✅ | |
+| Service resource requirements (rooms/equipment) | ❌ | Phase 3 |
+| Location management (multi-outlet UI) | ⚠️ | Schema ready; group admin UI Phase 2 |
+| Guest CRM (profiles, notes, visit history) | ✅ | |
+| Loyalty points (earning, redemption) | ⚠️ | VIP tiers + RFM exist; points system Phase 2 |
+| Inventory tracking | ❌ | Not planned — low priority for clinic segment |
+| Financial reports | ⚠️ | Per-merchant built; cross-location Phase 2 |
+| Waitlist management | ❌ | Phase 3 |
+
+### 3. Guest-Facing Features
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Guest portal (booking history, upcoming) | ❌ | Phase 2 |
+| Loyalty balance visible to guest | ❌ | Requires guest portal (Phase 2) |
+| Memberships (recurring billing) | ❌ | Phase 3 |
+| Referral program | ❌ | Phase 3 |
+
+### 4. Revenue Growth Automation
+| Feature | Status | Gap / Note |
+|---|---|---|
+| 24h pre-appointment reminder | ✅ | `scheduleReminder` |
+| No-show re-engagement | ✅ | `scheduleNoShowReengagement` |
+| Post-cancellation rebooking prompt | ✅ | `scheduleRebookingPrompt` |
+| Review request automation | ✅ | `scheduleReviewRequest` |
+| Post-service receipt + rebook CTA | ⚠️ | Phase 1 (Task 10 + 11) |
+| Abandoned booking recovery | ❌ | Phase 2 — slot leases expire silently |
+| Upsell engine at checkout | ❌ | Phase 3 |
+| Dynamic pricing | ❌ | Phase 3 |
+
+### 5. Staff / Provider Tools
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Commission tracking (DB fields) | ⚠️ | Fields exist; no UI or management |
+| Tip tracking | ❌ | Phase 2 |
+| Performance dashboard | ⚠️ | Basic analytics built; utilization rate not calculated |
+| Provider calendar / mobile view | ❌ | Phase 2 (web-only, not native app) |
+| Payroll export | ❌ | Phase 2 |
+
+### 6. Admin / Platform Layer
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Super admin tenant management | ❌ | Phase 3 — GlowOS has no platform-level view |
+| Subscription tiers with enforced limits | ⚠️ | Field exists; limits not enforced |
+| Platform-wide analytics | ❌ | Phase 3 |
+| White-label (custom domain, branding per tenant) | ❌ | Phase 3 |
+
+### 7. Integrations
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Stripe | ⚠️ | Code written; keys not yet configured |
+| Twilio WhatsApp | ✅ | Fully configured |
+| SendGrid email | ⚠️ | Phase 1 (Task 11) — requires SENDGRID_API_KEY + sender verification |
+| Google Calendar sync | ❌ | Phase 3 |
+| Apple Calendar (iCal) | ❌ | Phase 3 |
+| Facebook / Instagram Book Now | ❌ | Phase 3 |
+| Reserve with Google | ⚠️ | Field in schema; not integrated |
+| Outbound webhooks | ❌ | Phase 2 |
+
+### 8. AI / Automation
+| Feature | Status | Gap / Note |
+|---|---|---|
+| Churn prediction (RFM scoring) | ✅ | VIP worker + `churnRisk` field |
+| Campaign targeting + send | ✅ | Campaigns page |
+| Demand forecasting | ❌ | Phase 3 |
+| AI chatbot | ❌ | Phase 3 |
+| Smart scheduling (idle-time optimization) | ❌ | Phase 3 (Module 8) |
+
+---
+
 ## Summary
 
 GlowOS has a solid, functional core. These 9 modules transform it from a booking CRM into a category-defining Clinic Operating System. The staff scheduling engine (Module 8) is the long-term moat. The group management model (Module 2) is the enterprise unlock. The POS tier (Module 9) is the commercial ceiling. Get the group data model right in Sprint 0 and all 9 modules are buildable without architectural debt.
+
+**Three gaps to close before pilot (not yet in any plan):**
+1. ✅ Email (SendGrid) — added to Phase 1 plan Task 11
+2. Appointment calendar view — Phase 2 priority, add to Phase 2 plan
+3. Guest self-service reschedule — Phase 2 priority, add to Phase 2 plan
 
 **Estimated timeline to full platform:** 13–15 months with a team of 5 core roles.

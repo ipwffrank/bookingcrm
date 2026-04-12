@@ -1686,7 +1686,366 @@ git commit -m "feat(workers): post-service receipt + rebook CTA notification seq
 
 ---
 
-## Task 11: CSV Import — API
+## Task 11: SendGrid Email — Setup + Booking Confirmation + Post-Service
+
+**Files:**
+- Modify: `glowos/services/api/package.json` (dependency)
+- Modify: `glowos/services/api/src/lib/config.ts`
+- Create: `glowos/services/api/src/lib/email.ts`
+- Modify: `glowos/services/api/src/workers/notification.worker.ts`
+
+> **Why this is Phase 1:** All notifications currently go WhatsApp-only. Any client without a WhatsApp-linked number gets nothing — no booking confirmation, no receipt. Email is the fallback channel and must exist before the pilot.
+
+- [ ] **Step 1: Install @sendgrid/mail**
+
+```bash
+cd ~/Desktop/Projects/bookingcrm/glowos/services/api
+pnpm add @sendgrid/mail
+```
+
+Expected: `@sendgrid/mail` appears in `package.json` dependencies.
+
+- [ ] **Step 2: Add SendGrid config to config.ts**
+
+In `glowos/services/api/src/lib/config.ts`, add three fields to the `config` object:
+
+```typescript
+export const config = {
+  // ... existing fields ...
+
+  sendgridApiKey: process.env.SENDGRID_API_KEY ?? "",
+  fromEmail: process.env.FROM_EMAIL ?? "noreply@glowos.sg",
+  fromName: process.env.FROM_NAME ?? "GlowOS",
+} as const;
+```
+
+- [ ] **Step 3: Create email.ts**
+
+```typescript
+// glowos/services/api/src/lib/email.ts
+import sgMail from "@sendgrid/mail";
+import { config } from "./config.js";
+
+if (config.sendgridApiKey) {
+  sgMail.setApiKey(config.sendgridApiKey);
+}
+
+// ─── sendEmail ─────────────────────────────────────────────────────────────────
+
+/**
+ * Send a transactional email via SendGrid.
+ * Silently no-ops if SENDGRID_API_KEY is not configured (dev environments).
+ * Returns true on success, false on error.
+ */
+export async function sendEmail(params: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<boolean> {
+  if (!config.sendgridApiKey) {
+    console.log("[Email] Skipped — SENDGRID_API_KEY not set", { to: params.to, subject: params.subject });
+    return false;
+  }
+
+  try {
+    await sgMail.send({
+      to: params.to,
+      from: { email: config.fromEmail, name: config.fromName },
+      subject: params.subject,
+      html: params.html,
+      text: params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+    });
+    console.log("[Email] Sent", { to: params.to, subject: params.subject });
+    return true;
+  } catch (err) {
+    console.error("[Email] Failed to send", {
+      to: params.to,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+// ─── HTML templates ────────────────────────────────────────────────────────────
+
+const baseStyle = `
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f5;
+  margin: 0;
+  padding: 0;
+`;
+
+const cardStyle = `
+  max-width: 560px;
+  margin: 32px auto;
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+`;
+
+const headerStyle = `
+  background: #1a1a2e;
+  padding: 28px 32px;
+  text-align: center;
+`;
+
+const bodyStyle = `
+  padding: 28px 32px;
+  color: #333;
+`;
+
+const rowStyle = `
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+`;
+
+const labelStyle = `color: #888;`;
+const valueStyle = `color: #111; font-weight: 500;`;
+
+const btnStyle = `
+  display: inline-block;
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: #c4a778;
+  color: #111 !important;
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+`;
+
+export function bookingConfirmationEmail(params: {
+  clientName: string;
+  merchantName: string;
+  serviceName: string;
+  staffName: string;
+  dateStr: string;
+  timeStr: string;
+  priceSgd: string;
+  cancelUrl: string;
+}): string {
+  const { clientName, merchantName, serviceName, staffName, dateStr, timeStr, priceSgd, cancelUrl } = params;
+  return `<!DOCTYPE html><html><body style="${baseStyle}">
+    <div style="${cardStyle}">
+      <div style="${headerStyle}">
+        <p style="color:#c4a778;font-size:12px;letter-spacing:2px;margin:0 0 4px;text-transform:uppercase">Booking Confirmed</p>
+        <h1 style="color:#fff;margin:0;font-size:22px">${merchantName}</h1>
+      </div>
+      <div style="${bodyStyle}">
+        <p style="margin:0 0 20px">Hi ${clientName}, your appointment is confirmed.</p>
+        <div style="${rowStyle}"><span style="${labelStyle}">Service</span><span style="${valueStyle}">${serviceName}</span></div>
+        <div style="${rowStyle}"><span style="${labelStyle}">Provider</span><span style="${valueStyle}">${staffName}</span></div>
+        <div style="${rowStyle}"><span style="${labelStyle}">Date</span><span style="${valueStyle}">${dateStr}</span></div>
+        <div style="${rowStyle}"><span style="${labelStyle}">Time</span><span style="${valueStyle}">${timeStr}</span></div>
+        <div style="${rowStyle}" style="border-bottom:none"><span style="${labelStyle}">Amount</span><span style="${valueStyle}">S$${priceSgd}</span></div>
+        <p style="margin-top:20px;font-size:13px;color:#888">Need to cancel or change? <a href="${cancelUrl}" style="color:#c4a778">Manage booking →</a></p>
+      </div>
+    </div>
+  </body></html>`;
+}
+
+export function postServiceReceiptEmail(params: {
+  clientName: string;
+  merchantName: string;
+  serviceName: string;
+  dateStr: string;
+  priceSgd: string;
+  bookingUrl: string;
+}): string {
+  const { clientName, merchantName, serviceName, dateStr, priceSgd, bookingUrl } = params;
+  return `<!DOCTYPE html><html><body style="${baseStyle}">
+    <div style="${cardStyle}">
+      <div style="${headerStyle}">
+        <p style="color:#c4a778;font-size:12px;letter-spacing:2px;margin:0 0 4px;text-transform:uppercase">Visit Receipt</p>
+        <h1 style="color:#fff;margin:0;font-size:22px">${merchantName}</h1>
+      </div>
+      <div style="${bodyStyle}">
+        <p style="margin:0 0 20px">Hi ${clientName}, thank you for visiting us!</p>
+        <div style="${rowStyle}"><span style="${labelStyle}">Service</span><span style="${valueStyle}">${serviceName}</span></div>
+        <div style="${rowStyle}"><span style="${labelStyle}">Date</span><span style="${valueStyle}">${dateStr}</span></div>
+        <div style="${rowStyle}" style="border-bottom:none"><span style="${labelStyle}">Amount</span><span style="${valueStyle}">S$${priceSgd}</span></div>
+        <div style="text-align:center">
+          <a href="${bookingUrl}" style="${btnStyle}">Book again →</a>
+        </div>
+      </div>
+    </div>
+  </body></html>`;
+}
+
+export function rebookCtaEmail(params: {
+  clientName: string;
+  merchantName: string;
+  serviceName: string;
+  bookingUrl: string;
+}): string {
+  const { clientName, merchantName, serviceName, bookingUrl } = params;
+  return `<!DOCTYPE html><html><body style="${baseStyle}">
+    <div style="${cardStyle}">
+      <div style="${headerStyle}">
+        <p style="color:#c4a778;font-size:12px;letter-spacing:2px;margin:0 0 4px;text-transform:uppercase">We miss you</p>
+        <h1 style="color:#fff;margin:0;font-size:22px">${merchantName}</h1>
+      </div>
+      <div style="${bodyStyle}">
+        <p style="margin:0 0 16px">Hi ${clientName},</p>
+        <p style="margin:0 0 20px;color:#555">It's been a couple of days since your <strong>${serviceName}</strong> at ${merchantName}. Ready for your next visit?</p>
+        <div style="text-align:center">
+          <a href="${bookingUrl}" style="${btnStyle}">Book your next appointment →</a>
+        </div>
+      </div>
+    </div>
+  </body></html>`;
+}
+```
+
+- [ ] **Step 4: Add email import to notification.worker.ts**
+
+At the top of `glowos/services/api/src/workers/notification.worker.ts`, add the email import alongside the twilio import:
+
+```typescript
+import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
+```
+
+- [ ] **Step 5: Add email to handleBookingConfirmation**
+
+In `notification.worker.ts`, find the `handleBookingConfirmation` function. After the existing `await sendWhatsApp(...)` and `await logNotification(...)` calls for the client, add email sending:
+
+```typescript
+  // Email confirmation (if client has email)
+  if (client.email) {
+    const html = bookingConfirmationEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      staffName: staffMember.name,
+      dateStr,
+      timeStr,
+      priceSgd: price,
+      cancelUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Booking confirmed — ${service.name} at ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "booking_confirmation",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Booking confirmation email for ${service.name}`,
+      status: emailSent ? "sent" : "failed",
+    });
+  }
+```
+
+- [ ] **Step 6: Add email to post_service_receipt handler**
+
+In the `post_service_receipt` case added in Task 10, after the `await sendWhatsApp(...)` call, add:
+
+```typescript
+  // Email receipt (if client has email)
+  if (client.email) {
+    const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+    const html = postServiceReceiptEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      dateStr: new Date(booking.startTime).toLocaleDateString("en-SG", {
+        day: "numeric", month: "long", year: "numeric",
+      }),
+      priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
+      bookingUrl,
+    });
+    await sendEmail({
+      to: client.email,
+      subject: `Your visit receipt — ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_receipt",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Post-service receipt email`,
+      status: "sent",
+    });
+  }
+```
+
+- [ ] **Step 7: Add email to post_service_rebook handler**
+
+In the `post_service_rebook` case added in Task 10, after the `await sendWhatsApp(...)` call, add:
+
+```typescript
+  // Email rebook CTA (if client has email)
+  if (client.email) {
+    const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+    const html = rebookCtaEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      bookingUrl,
+    });
+    await sendEmail({
+      to: client.email,
+      subject: `Time for your next visit at ${merchant.name}?`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_rebook",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Rebook CTA email`,
+      status: "sent",
+    });
+  }
+```
+
+- [ ] **Step 8: Add env vars to local .env and Railway**
+
+In `glowos/.env`, add:
+
+```bash
+SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+FROM_EMAIL=noreply@glowos.sg
+FROM_NAME=GlowOS
+```
+
+> To get `SENDGRID_API_KEY`: sign up at sendgrid.com → Settings → API Keys → Create API Key (Mail Send permission only). Verify your sender email (`FROM_EMAIL`) under Sender Authentication first, otherwise SendGrid will reject the send.
+
+In Railway (bookingcrm service → Variables tab), add the same three vars.
+
+- [ ] **Step 9: Verify API compiles and starts**
+
+```bash
+cd ~/Desktop/Projects/bookingcrm/glowos/services/api
+npx tsx src/index.ts
+```
+
+Expected: No TypeScript errors. `[Email] Skipped — SENDGRID_API_KEY not set` will appear in logs if the key is not yet set — this is expected and safe. Stop with Ctrl+C.
+
+- [ ] **Step 10: Commit**
+
+```bash
+cd ~/Desktop/Projects/bookingcrm
+git add glowos/services/api/package.json glowos/services/api/src/lib/config.ts glowos/services/api/src/lib/email.ts glowos/services/api/src/workers/notification.worker.ts
+git commit -m "feat(email): SendGrid email for booking confirmation + post-service receipt + rebook CTA"
+```
+
+---
+
+## Task 12: CSV Import — API
 
 **Files:**
 - Modify: `glowos/services/api/src/routes/clients.ts`
@@ -1800,7 +2159,7 @@ git commit -m "feat(api): CSV client import endpoint (batch up to 500 records)"
 
 ---
 
-## Task 12: CSV Import — UI
+## Task 13: CSV Import — UI
 
 **Files:**
 - Create: `glowos/apps/web/app/dashboard/import/page.tsx`
@@ -2025,7 +2384,7 @@ git commit -m "feat(ui): CSV client import page with preview and results"
 
 ---
 
-## Task 13: Final Integration Check + Deploy
+## Task 14: Final Integration Check + Deploy
 
 - [ ] **Step 1: Run typecheck across all packages**
 
