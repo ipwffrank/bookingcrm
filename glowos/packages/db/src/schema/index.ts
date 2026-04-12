@@ -8,3 +8,6 @@ export * from "./payouts.js";
 export * from "./campaigns.js";
 export * from "./reviews.js";
 export * from "./notifications.js";
+export * from "./groups";
+export * from "./consult";
+export * from "./post-service";
