@@ -31,6 +31,7 @@ export const merchants = pgTable("merchants", {
   payoutFrequency: varchar("payout_frequency", { length: 20 }).notNull().default("weekly"),
   googleActionsStatus: varchar("google_actions_status", { length: 50 }).notNull().default("pending"),
   cancellationPolicy: jsonb("cancellation_policy"),
+  groupId: uuid("group_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

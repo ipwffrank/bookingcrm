@@ -19,6 +19,14 @@ export const clients = pgTable("clients", {
   phone: varchar("phone", { length: 20 }).notNull().unique(),
   email: varchar("email", { length: 255 }),
   name: varchar("name", { length: 255 }),
+  acquisitionSource: varchar("acquisition_source", { length: 30 })
+    .notNull()
+    .default("online_booking")
+    .$type<"online_booking" | "walkin" | "import" | "social">(),
+  preferredContactChannel: varchar("preferred_contact_channel", { length: 20 })
+    .notNull()
+    .default("whatsapp")
+    .$type<"email" | "whatsapp">(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

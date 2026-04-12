@@ -26,6 +26,12 @@ export const services = pgTable(
     bufferMinutes: integer("buffer_minutes").notNull().default(0),
     priceSgd: numeric("price_sgd", { precision: 10, scale: 2 }).notNull(),
     isActive: boolean("is_active").notNull().default(true),
+    slotType: varchar("slot_type", { length: 20 })
+      .notNull()
+      .default("standard")
+      .$type<"standard" | "consult" | "treatment">(),
+    requiresConsultFirst: boolean("requires_consult_first").notNull().default(false),
+    consultServiceId: uuid("consult_service_id"),
     displayOrder: integer("display_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

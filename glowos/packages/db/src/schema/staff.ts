@@ -25,6 +25,10 @@ export const staff = pgTable("staff", {
   isActive: boolean("is_active").notNull().default(true),
   isAnyAvailable: boolean("is_any_available").notNull().default(false),
   displayOrder: integer("display_order").notNull().default(0),
+  bio: text("bio"),
+  specialtyTags: text("specialty_tags").array(),
+  credentials: text("credentials"),
+  isPubliclyVisible: boolean("is_publicly_visible").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
