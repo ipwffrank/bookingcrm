@@ -52,32 +52,49 @@ The 9 modules cluster into 4 capability domains:
 
 **What it is:** A company-level group layer above branches. Group admins control data sharing policy across outlets: whether customer profiles, marketing, and HR are shared or branch-independent.
 
+**Confirmed hierarchy:** Group → Merchants (each `merchants` record = one branch). No intermediate level.
+
 **DB Changes:**
-- New table: `groups` — `id, name, owner_merchant_id, settings JSONB, created_at`
-- New table: `group_settings` — `group_id, shared_customer_profiles BOOLEAN, shared_marketing BOOLEAN, shared_hr BOOLEAN`
-- Extend `merchants`: add `group_id UUID FK` (nullable)
-- New table: `group_admins` — `group_id, user_id, role`
-- Add `group_id FK` to `branches`
+- New table: `groups` — `id, name, created_at`
+- New table: `group_settings` — `group_id FK, profile_sharing_level ENUM('none','identity_only','selective','full_history') DEFAULT 'none', shared_marketing BOOLEAN DEFAULT false, shared_hr BOOLEAN DEFAULT false, cross_branch_staff BOOLEAN DEFAULT false`
+- Extend `merchants`: add `group_id UUID FK` (nullable — single-outlet merchants unaffected)
+- New table: `group_users` — `id, group_id FK, email, password_hash, name, role ENUM('group_owner'), created_at` — **separate auth from merchant_users**
+- New table: `staff_merchants` — `staff_id FK, merchant_id FK, PRIMARY KEY (staff_id, merchant_id)` — enables cross-branch staff when `cross_branch_staff` is ON
+
+**Profile Sharing Levels (enforced in query service layer, never raw joins):**
+- `none` — branches fully isolated; Branch B sees nothing about Branch A clients
+- `identity_only` — Branch B sees name/phone/email only
+- `selective` — identity + visit dates + total spend; `clientProfiles.notes` stays branch-private
+- `full_history` — complete visit history, treatment notes, spend across all group branches
 
 **New API Endpoints:**
 - `POST /groups` — create group
-- `GET /groups/:id` — fetch group + branches + settings
-- `PATCH /groups/:id/settings` — toggle sharing flags
-- `GET /groups/:id/branches` — list branches
-- `POST /groups/:id/branches/:branch_id` — attach branch to group
+- `GET /groups/:id` — fetch group + merchants + settings
+- `PATCH /groups/:id/settings` — update profile_sharing_level and other flags
+- `GET /groups/:id/merchants` — list all branch merchants
+- `POST /groups/:id/merchants/:merchant_id` — attach branch to group
 - `GET /groups/:id/analytics` — group-level analytics roll-up
+- `POST /auth/group/signup` — create group admin account
+- `POST /auth/group/login` — group admin login (returns group-scoped JWT)
+- `POST /auth/group/refresh` — refresh group admin token
+- `POST /merchant/staff/:id/branches` — assign staff to additional branch (requires `cross_branch_staff` ON)
 
 **New Frontend:**
+- Group admin login page (separate from merchant login)
 - Group admin dashboard: branch switcher, settings panel
-- Settings panel: 3 toggles (shared profiles / shared marketing / shared HR)
+- Settings panel: profile sharing level selector (4 options, not a simple toggle), marketing toggle, HR toggle, cross-branch staff toggle
 - Branch directory (public): outlet list with addresses, hours, practitioners
-- Booking widget: branch selector + "you are booking at [Branch]" banner
+- Booking widget: "you are booking at [Branch Name]" confirmation banner
 
 **Dependencies:** None upstream — this is a foundational module
 **Complexity:** High
-**Phase:** 1 (schema/architecture) / 2 (full UI)
+**Phase:** 1 (schema + group_users auth) / 2 (full admin UI)
 
-**Architecture note:** Treat `group` as a coordination layer, not a new tenancy root. Each `merchant` retains its own data isolation boundary. The `group` record holds cross-merchant configuration only. A single `clients` table with one record per person — a `client_branch_access` join table controls visibility when profiles are NOT shared. Never duplicate client records.
+**Architecture notes:**
+- `group` is a coordination layer, not a new tenancy root. Each merchant retains its own data isolation boundary.
+- Every client lookup must go through a `resolveClientVisibility(clientId, merchantId, groupId, profileSharingLevel)` service function — never raw cross-merchant joins.
+- Cross-branch availability: when `cross_branch_staff` is ON, `availability.ts` must check `staff_merchants` for all branches a staff member is assigned to before opening a slot.
+- Group admin JWT carries `{ groupId, role: 'group_owner' }` — a different shape from merchant JWT `{ merchantId, role }`. The `requireGroupAdmin` middleware enforces this.
 
 ---
 
@@ -290,20 +307,36 @@ Migrate only: active client profiles, outstanding credits, last 12 months of vis
 
 ## Architecture Decisions
 
-### 1. Multi-Tenancy: Group as Coordination Layer
-Treat `group` as a coordination layer over existing `merchant` tenants — not a new tenancy root. Each merchant retains its own data isolation boundary. The `group` record holds cross-merchant configuration only. Cross-branch queries must go through an explicit policy layer service function.
+> These decisions are locked based on founder clarifications (12 April 2026). Do not revisit without explicit founder sign-off.
 
-### 2. Shared Client Profiles: One Record, Policy-Controlled Visibility
-A single `clients` table — one record per person. `group_id` on the client record indicates group membership when profiles are shared. A `client_branch_access` join table controls branch visibility when NOT shared. Never duplicate client records.
+### 1. Hierarchy: Group → Merchants (merchant = branch)
+Confirmed: each `merchants` record is one branch. `groups` sits above. No intermediate level. `merchants.groupId` FK links a branch to its group. Single-outlet merchants have `groupId = null` and are unaffected by all group logic.
 
-### 3. Payment Ledger First
-Model payments as a unified ledger first, gateway second. Every transaction gets a `payments` record. `payment_method` and `is_gateway_processed` distinguish Stripe from cash/OTC. Stripe remains the online gateway. POS Terminal is a Phase 3 extension.
+### 2. Profile Sharing: Four-Level Enum, Not Boolean
+`group_settings.profileSharingLevel` is an ENUM with four values: `none`, `identity_only`, `selective`, `full_history`. Group admin sets this in their dashboard. Definition of each level:
+- `none`: branches fully isolated — no cross-branch client visibility
+- `identity_only`: name, phone, email only — confirms the person exists
+- `selective`: identity + visit dates + total spend; `clientProfiles.notes` stays branch-private
+- `full_history`: everything — complete visit history, treatment notes, skin condition notes
 
-### 4. Social Auth Separation
-Social login is for end-customers (public booking widget) only. Staff auth remains JWT. Keep the two systems completely separate. Use NextAuth.js or lightweight OAuth library for customer social auth.
+**Critical rule:** All client lookups must pass through `resolveClientVisibility(clientId, merchantId, groupId, sharingLevel)` in the service layer. No raw cross-merchant joins allowed anywhere in the codebase.
 
-### 5. BullMQ Queue Architecture
-Add two new queues: `post-service-sequence` and `procedure-stage-transitions`. Use Bull delayed jobs for timed post-service steps. Confirm Upstash Redis connection count and concurrency limits before Phase 2 launches.
+### 3. Group Admin: Separate Auth System
+Group admins are NOT merchant users. They have their own table (`group_users`), their own login endpoints (`/auth/group/*`), and their own JWT shape (`{ groupId, role: 'group_owner' }`). The `requireGroupAdmin` middleware is distinct from `requireMerchant`. Group admin dashboard is a separate Next.js route tree (`/group-admin/*`).
+
+### 4. Cross-Branch Staff: Opt-in via `staff_merchants` Join Table
+`staff.merchantId` stays as the home branch. The new `staff_merchants` join table lists all branch assignments for a staff member. This table is only populated when `group_settings.crossBranchStaff = true` and the group admin explicitly assigns a staff member to an additional branch.
+
+Availability calculation (`availability.ts`) must be updated to: when `crossBranchStaff` is ON for the group, query `staff_merchants` and block any slot where the staff member has a confirmed booking at ANY of their assigned branches — not just the current merchant.
+
+### 5. Payment Ledger First
+Every transaction gets a `payments` record regardless of method. `bookings.paymentMethod` (already exists as varchar) accepts `'stripe' | 'cash' | 'otc'`. Cash/OTC bookings have `paymentStatus: 'completed'` set at creation. Stripe remains the online gateway. POS Terminal is a Phase 3 extension.
+
+### 6. Social Auth Separation
+Social login is for end-customers (public booking widget) only. Merchant staff auth remains JWT. Group admin auth remains JWT. Keep all three auth systems separate. Use a lightweight OAuth library for customer social auth in Phase 2.
+
+### 7. BullMQ Queue Architecture
+Two new queues: `post-service-sequence` (receipt + rebook CTA) and `procedure-stage-transitions` (Phase 3). Use Bull delayed jobs for timed steps. Confirm Upstash Redis concurrency limits before Phase 2.
 
 ---
 
