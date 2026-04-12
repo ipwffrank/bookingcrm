@@ -580,7 +580,17 @@ bookingsRouter.get("/:slug/staff", async (c) => {
   }
 
   const staffList = await db
-    .select()
+    .select({
+      id: staff.id,
+      name: staff.name,
+      title: staff.title,
+      photoUrl: staff.photoUrl,
+      bio: staff.bio,
+      specialtyTags: staff.specialtyTags,
+      credentials: staff.credentials,
+      displayOrder: staff.displayOrder,
+      isAnyAvailable: staff.isAnyAvailable,
+    })
     .from(staff)
     .where(
       and(

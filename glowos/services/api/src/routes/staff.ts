@@ -243,8 +243,18 @@ staffRouter.delete("/:id", requireMerchant, async (c) => {
 
 staffRouter.patch("/:id/profile", requireMerchant, zValidator(updateProfileSchema), async (c) => {
   const merchantId = c.get("merchantId");
-  const staffId = c.req.param("id");
+  const staffId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof updateProfileSchema>;
+
+  const hasAnyField =
+    body.bio !== undefined ||
+    body.specialty_tags !== undefined ||
+    body.credentials !== undefined ||
+    body.is_publicly_visible !== undefined;
+
+  if (!hasAnyField) {
+    return c.json({ error: "Bad Request", message: "No fields provided" }, 400);
+  }
 
   const [existing] = await db
     .select()
@@ -253,7 +263,7 @@ staffRouter.patch("/:id/profile", requireMerchant, zValidator(updateProfileSchem
     .limit(1);
 
   if (!existing) {
-    return c.json({ error: "Staff member not found" }, 404);
+    return c.json({ error: "Not Found", message: "Staff member not found" }, 404);
   }
 
   const [updated] = await db
@@ -264,7 +274,7 @@ staffRouter.patch("/:id/profile", requireMerchant, zValidator(updateProfileSchem
       ...(body.credentials !== undefined && { credentials: body.credentials }),
       ...(body.is_publicly_visible !== undefined && { isPubliclyVisible: body.is_publicly_visible }),
     })
-    .where(eq(staff.id, staffId))
+    .where(and(eq(staff.id, staffId), eq(staff.merchantId, merchantId)))
     .returning();
 
   return c.json({ staff: updated });
