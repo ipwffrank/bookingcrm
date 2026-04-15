@@ -13,6 +13,7 @@ import {
 } from "@glowos/db";
 import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
+import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,35 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     status: clientSid ? "sent" : "failed",
     twilioSid: clientSid || undefined,
   });
+
+  // Email confirmation (if client has email)
+  if (client.email) {
+    const html = bookingConfirmationEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      staffName: staffMember.name,
+      dateStr,
+      timeStr,
+      priceSgd: price,
+      cancelUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Booking confirmed — ${service.name} at ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "booking_confirmation",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Booking confirmation email for ${service.name}`,
+      status: emailSent ? "sent" : "failed",
+    });
+  }
 
   // Merchant alert
   if (merchant.phone) {
@@ -514,6 +544,25 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
     twilioSid: sid || undefined,
   });
 
+  if (client.email) {
+    const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+    const html = postServiceReceiptEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      dateStr: new Date(booking.startTime).toLocaleDateString("en-SG", {
+        day: "numeric", month: "long", year: "numeric",
+      }),
+      priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
+      bookingUrl,
+    });
+    await sendEmail({
+      to: client.email,
+      subject: `Your visit receipt — ${merchant.name}`,
+      html,
+    });
+  }
+
   console.log("[NotificationWorker] post_service_receipt handled", { bookingId });
 }
 
@@ -551,6 +600,20 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
     status: sid ? "sent" : "failed",
     twilioSid: sid || undefined,
   });
+
+  if (client.email) {
+    const html = rebookCtaEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      bookingUrl,
+    });
+    await sendEmail({
+      to: client.email,
+      subject: `Time for your next visit at ${merchant.name}?`,
+      html,
+    });
+  }
 
   console.log("[NotificationWorker] post_service_rebook handled", { bookingId });
 }
