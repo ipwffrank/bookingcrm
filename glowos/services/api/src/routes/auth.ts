@@ -165,6 +165,8 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
     return c.json({ error: "Unauthorized", message: "Invalid email or password" }, 401);
   }
 
+  // NOTE: groupUsers has no isActive column in schema v1. When account deactivation
+  // is added, add an active check here parallel to the merchant path above.
   const accessToken = generateGroupAccessToken({
     userId: groupUser.id,
     groupId: group.id,
