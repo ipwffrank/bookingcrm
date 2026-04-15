@@ -556,10 +556,20 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
       priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
       bookingUrl,
     });
-    await sendEmail({
+    const emailSent = await sendEmail({
       to: client.email,
       subject: `Your visit receipt — ${merchant.name}`,
       html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_receipt",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Post-service receipt email`,
+      status: emailSent ? "sent" : "failed",
     });
   }
 
@@ -608,10 +618,20 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
       serviceName: service.name,
       bookingUrl,
     });
-    await sendEmail({
+    const emailSent = await sendEmail({
       to: client.email,
       subject: `Time for your next visit at ${merchant.name}?`,
       html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_rebook",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Rebook CTA email`,
+      status: emailSent ? "sent" : "failed",
     });
   }
 
