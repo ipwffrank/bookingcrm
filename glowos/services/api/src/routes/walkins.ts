@@ -63,6 +63,17 @@ walkinsRouter.post("/register", requireMerchant, zValidator(walkinRegisterSchema
     return c.json({ error: "Service not found" }, 404);
   }
 
+  // Verify staff belongs to this merchant
+  const [staffMember] = await db
+    .select({ id: staff.id })
+    .from(staff)
+    .where(and(eq(staff.id, body.staff_id), eq(staff.merchantId, merchantId)))
+    .limit(1);
+
+  if (!staffMember) {
+    return c.json({ error: "Staff not found" }, 404);
+  }
+
   // Find or create client by phone
   let client = await db
     .select()
