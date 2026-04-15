@@ -24,6 +24,8 @@ interface SalonData {
     durationMinutes: number;
     priceSgd: string;
     category: string;
+    slotType: 'standard' | 'consult' | 'treatment';
+    requiresConsultFirst: boolean;
   }>;
   staff: Array<{
     id: string;

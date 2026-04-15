@@ -18,6 +18,9 @@ interface Service {
   priceSgd: string;
   displayOrder: number;
   isActive: boolean;
+  slotType: 'standard' | 'consult' | 'treatment';
+  requiresConsultFirst: boolean;
+  consultServiceId: string | null;
 }
 
 interface ServiceForm {
@@ -27,6 +30,9 @@ interface ServiceForm {
   duration_minutes: string;
   buffer_minutes: string;
   price_sgd: string;
+  slot_type: 'standard' | 'consult' | 'treatment';
+  requires_consult_first: boolean;
+  consult_service_id: string;
 }
 
 const CATEGORIES: { value: Category; label: string }[] = [
@@ -62,7 +68,7 @@ function Spinner() {
 }
 
 function blankForm(): ServiceForm {
-  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '' };
+  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '', slot_type: 'standard', requires_consult_first: false, consult_service_id: '' };
 }
 
 type FormErrors = Partial<Record<keyof ServiceForm, string>>;
@@ -84,10 +90,12 @@ function validateForm(form: ServiceForm): FormErrors {
 
 function ServiceModal({
   initial,
+  services,
   onClose,
   onSave,
 }: {
   initial: Service | null;
+  services: Service[];
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -101,6 +109,9 @@ function ServiceModal({
           duration_minutes: String(initial.durationMinutes),
           buffer_minutes: String(initial.bufferMinutes),
           price_sgd: String(initial.priceSgd),
+          slot_type: initial.slotType ?? 'standard',
+          requires_consult_first: initial.requiresConsultFirst ?? false,
+          consult_service_id: initial.consultServiceId ?? '',
         }
       : blankForm()
   );
@@ -125,6 +136,9 @@ function ServiceModal({
         duration_minutes: parseInt(form.duration_minutes, 10),
         buffer_minutes: parseInt(form.buffer_minutes, 10),
         price_sgd: parseFloat(form.price_sgd),
+        slot_type: form.slot_type,
+        requires_consult_first: form.requires_consult_first,
+        consult_service_id: form.consult_service_id || null,
       };
       if (initial) {
         await apiFetch(`/merchant/services/${initial.id}`, {
@@ -152,9 +166,11 @@ function ServiceModal({
     }
   }
 
-  function field(key: keyof ServiceForm) {
+  type StringFormKey = { [K in keyof ServiceForm]: ServiceForm[K] extends string ? K : never }[keyof ServiceForm];
+
+  function field(key: StringFormKey) {
     return {
-      value: form[key],
+      value: form[key] as string,
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
         setForm({ ...form, [key]: e.target.value }),
     };
@@ -195,6 +211,61 @@ function ServiceModal({
               ))}
             </select>
           </div>
+
+          {/* Booking Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Booking Type</label>
+            <select
+              value={form.slot_type}
+              onChange={(e) => setForm({ ...form, slot_type: e.target.value as 'standard' | 'consult' | 'treatment' })}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+            >
+              <option value="standard">Standard — book directly</option>
+              <option value="consult">Consultation — assess client first</option>
+              <option value="treatment">Treatment — requires prior consult</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              &quot;Consultation&quot; slots let staff assess the client before recommending a treatment.
+              &quot;Treatment&quot; slots can be linked to require a consult booking first.
+            </p>
+          </div>
+
+          {/* Requires Consult First (only shown for treatment type) */}
+          {form.slot_type === 'treatment' && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="requires_consult_first"
+                  checked={form.requires_consult_first}
+                  onChange={(e) => setForm({ ...form, requires_consult_first: e.target.checked })}
+                  className="w-4 h-4 rounded"
+                />
+                <label htmlFor="requires_consult_first" className="text-sm text-gray-300">
+                  Require consultation booking before this treatment
+                </label>
+              </div>
+              {form.requires_consult_first && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Consultation service (optional)
+                  </label>
+                  <select
+                    value={form.consult_service_id}
+                    onChange={(e) => setForm({ ...form, consult_service_id: e.target.value })}
+                    className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+                  >
+                    <option value="">— any consultation —</option>
+                    {services
+                      .filter((s) => s.slotType === 'consult')
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -383,6 +454,7 @@ export default function ServicesPage() {
       {modalOpen && (
         <ServiceModal
           initial={editing}
+          services={services}
           onClose={() => setModalOpen(false)}
           onSave={() => {
             setModalOpen(false);
