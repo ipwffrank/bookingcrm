@@ -12,6 +12,7 @@ import {
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
+import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const walkinsRouter = new Hono<{ Variables: AppVariables }>();
@@ -141,6 +142,8 @@ walkinsRouter.post("/register", requireMerchant, zValidator(walkinRegisterSchema
     })
     .returning();
 
+  await invalidateAvailabilityCacheByMerchantId(merchantId);
+
   return c.json({ booking, client }, 201);
 });
 
@@ -161,6 +164,10 @@ walkinsRouter.post("/bookings/:id/record-payment", requireMerchant, zValidator(r
     return c.json({ error: "Booking not found" }, 404);
   }
 
+  if (existing.paymentStatus === "completed") {
+    return c.json({ error: "Payment already recorded" }, 409);
+  }
+
   const [updated] = await db
     .update(bookings)
     .set({
@@ -169,7 +176,7 @@ walkinsRouter.post("/bookings/:id/record-payment", requireMerchant, zValidator(r
       ...(body.amount_sgd && { priceSgd: body.amount_sgd.toString() }),
       updatedAt: new Date(),
     })
-    .where(eq(bookings.id, bookingId))
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
     .returning();
 
   return c.json({ booking: updated });
@@ -193,7 +200,7 @@ walkinsRouter.get("/today", requireMerchant, async (c) => {
     .from(bookings)
     .innerJoin(clients, eq(bookings.clientId, clients.id))
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .innerJoin(staff, eq(bookings.staffId, staff.id))
+    .leftJoin(staff, eq(bookings.staffId, staff.id))
     .where(
       and(
         eq(bookings.merchantId, merchantId),
