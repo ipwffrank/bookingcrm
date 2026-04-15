@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, asc } from "drizzle-orm";
 import { z } from "zod";
-import { db, services, consultOutcomes } from "@glowos/db";
+import { db, services, consultOutcomes, bookings } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
@@ -166,7 +166,30 @@ const consultOutcomeSchema = z.object({
 // ─── POST /merchant/services/consult-outcomes ──────────────────────────────────
 
 servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutcomeSchema), async (c) => {
+  const merchantId = c.get("merchantId");
   const body = c.get("body") as z.infer<typeof consultOutcomeSchema>;
+
+  // Fix 1: Verify the booking belongs to the authenticated merchant
+  const [booking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.id, body.booking_id), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!booking) {
+    return c.json({ error: "Booking not found" }, 404);
+  }
+
+  // Fix 3: Prevent duplicate outcome records
+  const [existingOutcome] = await db
+    .select({ id: consultOutcomes.id })
+    .from(consultOutcomes)
+    .where(eq(consultOutcomes.bookingId, body.booking_id))
+    .limit(1);
+
+  if (existingOutcome) {
+    return c.json({ error: "An outcome already exists for this booking" }, 409);
+  }
 
   const [outcome] = await db
     .insert(consultOutcomes)
@@ -185,7 +208,19 @@ servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutc
 // ─── GET /merchant/services/consult-outcomes/:bookingId ────────────────────────
 
 servicesRouter.get("/consult-outcomes/:bookingId", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId");
   const bookingId = c.req.param("bookingId");
+
+  // Fix 2: Verify the booking belongs to the authenticated merchant
+  const [booking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!booking) {
+    return c.json({ error: "Booking not found" }, 404);
+  }
 
   const [outcome] = await db
     .select()
@@ -194,7 +229,7 @@ servicesRouter.get("/consult-outcomes/:bookingId", requireMerchant, async (c) =>
     .limit(1);
 
   if (!outcome) {
-    return c.json({ outcome: null });
+    return c.json({ error: "No outcome found" }, 404);
   }
 
   return c.json({ outcome });
