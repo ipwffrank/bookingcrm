@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { db, merchants, merchantUsers } from "@glowos/db";
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../lib/jwt.js";
+import { db, merchants, merchantUsers, groupUsers, groups } from "@glowos/db";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken, generateGroupAccessToken } from "../lib/jwt.js";
 import { generateSlug, ensureUniqueSlug } from "../lib/slug.js";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -117,54 +117,68 @@ auth.post("/signup", zValidator(signupSchema), async (c) => {
 auth.post("/login", zValidator(loginSchema), async (c) => {
   const body = c.get("body") as z.infer<typeof loginSchema>;
 
-  // Find user by email, join merchant
+  // ── Try merchant user first ────────────────────────────────────────────────
   const [row] = await db
-    .select({
-      user: merchantUsers,
-      merchant: merchants,
-    })
+    .select({ user: merchantUsers, merchant: merchants })
     .from(merchantUsers)
     .innerJoin(merchants, eq(merchantUsers.merchantId, merchants.id))
     .where(eq(merchantUsers.email, body.email))
     .limit(1);
 
-  if (!row) {
+  if (row) {
+    const { user, merchant } = row;
+
+    const passwordValid = await bcrypt.compare(body.password, user.passwordHash);
+    if (!passwordValid) {
+      return c.json({ error: "Unauthorized", message: "Invalid email or password" }, 401);
+    }
+
+    if (!user.isActive) {
+      return c.json({ error: "Forbidden", message: "Your account has been deactivated" }, 403);
+    }
+
+    await db.update(merchantUsers).set({ lastLoginAt: new Date() }).where(eq(merchantUsers.id, user.id));
+
+    const accessToken = generateAccessToken({ userId: user.id, merchantId: merchant.id, role: user.role });
+    const refreshToken = generateRefreshToken({ userId: user.id });
+    const { passwordHash: _pw, ...safeUser } = user;
+
+    return c.json({ userType: "merchant", user: safeUser, merchant, access_token: accessToken, refresh_token: refreshToken });
+  }
+
+  // ── Fall back to group user ────────────────────────────────────────────────
+  const [groupRow] = await db
+    .select({ groupUser: groupUsers, group: groups })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(eq(groupUsers.email, body.email))
+    .limit(1);
+
+  if (!groupRow) {
     return c.json({ error: "Unauthorized", message: "Invalid email or password" }, 401);
   }
 
-  const { user, merchant } = row;
+  const { groupUser, group } = groupRow;
 
-  // Verify password
-  const passwordValid = await bcrypt.compare(body.password, user.passwordHash);
+  const passwordValid = await bcrypt.compare(body.password, groupUser.passwordHash);
   if (!passwordValid) {
     return c.json({ error: "Unauthorized", message: "Invalid email or password" }, 401);
   }
 
-  // Check account is active
-  if (!user.isActive) {
-    return c.json({ error: "Forbidden", message: "Your account has been deactivated" }, 403);
-  }
-
-  // Update last_login_at
-  await db
-    .update(merchantUsers)
-    .set({ lastLoginAt: new Date() })
-    .where(eq(merchantUsers.id, user.id));
-
-  const accessToken = generateAccessToken({
-    userId: user.id,
-    merchantId: merchant.id,
-    role: user.role,
+  const accessToken = generateGroupAccessToken({
+    userId: groupUser.id,
+    groupId: group.id,
+    role: "group_owner",
+    userType: "group_admin",
   });
-  const refreshToken = generateRefreshToken({ userId: user.id });
 
-  const { passwordHash: _pw, ...safeUser } = user;
+  const { passwordHash: _gpw, ...safeGroupUser } = groupUser;
 
   return c.json({
-    user: safeUser,
-    merchant,
+    userType: "group_admin",
+    user: safeGroupUser,
+    group,
     access_token: accessToken,
-    refresh_token: refreshToken,
   });
 });
 
