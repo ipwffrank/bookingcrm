@@ -14,6 +14,7 @@ import { webhooksRouter } from "./routes/webhooks.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { campaignsRouter } from "./routes/campaigns.js";
 import { walkinsRouter } from "./routes/walkins.js";
+import { groupRouter } from "./routes/group.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -60,6 +61,7 @@ app.route("/booking", bookingsRouter);
 //   /booking/:slug/create-payment-intent  → POST  (public)
 app.route("/merchant/payments", paymentsRouter);
 app.route("/booking", paymentsRouter);
+app.route("/group", groupRouter);
 
 // Health check
 app.get("/health", (c) => {
