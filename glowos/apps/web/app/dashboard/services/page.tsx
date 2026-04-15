@@ -214,11 +214,11 @@ function ServiceModal({
 
           {/* Booking Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Booking Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Booking Type</label>
             <select
               value={form.slot_type}
               onChange={(e) => setForm({ ...form, slot_type: e.target.value as 'standard' | 'consult' | 'treatment' })}
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="standard">Standard — book directly</option>
               <option value="consult">Consultation — assess client first</option>
@@ -241,23 +241,23 @@ function ServiceModal({
                   onChange={(e) => setForm({ ...form, requires_consult_first: e.target.checked })}
                   className="w-4 h-4 rounded"
                 />
-                <label htmlFor="requires_consult_first" className="text-sm text-gray-300">
+                <label htmlFor="requires_consult_first" className="text-sm text-gray-700">
                   Require consultation booking before this treatment
                 </label>
               </div>
               {form.requires_consult_first && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Consultation service (optional)
                   </label>
                   <select
                     value={form.consult_service_id}
                     onChange={(e) => setForm({ ...form, consult_service_id: e.target.value })}
-                    className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">— any consultation —</option>
                     {services
-                      .filter((s) => s.slotType === 'consult')
+                      .filter((s) => s.slotType === 'consult' && s.id !== initial?.id)
                       .map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
