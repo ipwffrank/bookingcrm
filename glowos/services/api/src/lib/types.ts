@@ -6,5 +6,6 @@ export type AppVariables = {
   userId: string;
   merchantId: string;
   userRole: string;
+  groupId: string;
   body: unknown;
 };

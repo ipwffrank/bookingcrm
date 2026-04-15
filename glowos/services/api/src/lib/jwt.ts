@@ -32,6 +32,25 @@ export function verifyRefreshToken(token: string): RefreshTokenPayload & jwt.Jwt
   return jwt.verify(token, config.jwtSecret + "_refresh") as RefreshTokenPayload & jwt.JwtPayload;
 }
 
+export interface GroupAccessTokenPayload {
+  userId: string;
+  groupId: string;
+  role: "group_owner";
+  userType: "group_admin";
+}
+
+export function generateGroupAccessToken(payload: GroupAccessTokenPayload): string {
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: "7d" });
+}
+
+export function verifyGroupAccessToken(token: string): GroupAccessTokenPayload & jwt.JwtPayload {
+  const decoded = jwt.verify(token, config.jwtSecret) as GroupAccessTokenPayload & jwt.JwtPayload;
+  if (decoded.userType !== "group_admin") {
+    throw new Error("Token is not a group admin token");
+  }
+  return decoded;
+}
+
 /**
  * Generates an HMAC-based token for booking cancellation links.
  * Not a JWT — purely a signed token tied to a specific bookingId.
