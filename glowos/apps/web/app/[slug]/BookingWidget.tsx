@@ -18,6 +18,9 @@ interface StaffMember {
   name: string;
   photoUrl: string | null;
   title: string | null;
+  bio: string | null;
+  specialtyTags: string[] | null;
+  isAnyAvailable: boolean;
 }
 
 interface Merchant {
@@ -141,7 +144,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const days = next30Days();
 
   const staffWithAny: StaffMember[] = [
-    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member' },
+    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member', bio: null, specialtyTags: null, isAnyAvailable: true },
     ...staff,
   ];
 
@@ -388,7 +391,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
               {staffWithAny.map((s) => (
                 <label
                   key={s.id}
-                  className={`flex items-center gap-3 px-6 py-4 cursor-pointer transition-colors ${
+                  className={`flex items-start gap-3 px-6 py-4 cursor-pointer transition-colors ${
                     selectedStaff?.id === s.id
                       ? 'bg-indigo-50 border-l-4 border-indigo-500'
                       : 'hover:bg-indigo-50 border-l-4 border-transparent'
@@ -400,7 +403,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     value={s.id}
                     checked={selectedStaff?.id === s.id}
                     onChange={() => handleStaffSelect(s)}
-                    className="accent-indigo-600 shrink-0"
+                    className="accent-indigo-600 shrink-0 mt-1"
                   />
                   {s.id === 'any' ? (
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 border-2 border-dashed border-indigo-300 flex items-center justify-center text-indigo-400 text-lg shrink-0">
@@ -421,6 +424,21 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   <div>
                     <div className="text-sm font-semibold text-gray-900">{s.name}</div>
                     {s.title && <div className="text-xs text-gray-400 mt-0.5">{s.title}</div>}
+                    {s.bio && (
+                      <p className="text-xs text-gray-400 mt-1 line-clamp-2">{s.bio}</p>
+                    )}
+                    {s.specialtyTags && s.specialtyTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {s.specialtyTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="text-xs bg-gray-700 text-gray-300 rounded-full px-2 py-0.5"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </label>
               ))}

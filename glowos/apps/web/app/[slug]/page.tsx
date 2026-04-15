@@ -30,6 +30,9 @@ interface SalonData {
     name: string;
     photoUrl: string | null;
     title: string | null;
+    bio: string | null;
+    specialtyTags: string[] | null;
+    isAnyAvailable: boolean;
   }>;
 }
 
