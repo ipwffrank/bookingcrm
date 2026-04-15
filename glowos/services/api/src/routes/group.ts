@@ -15,6 +15,9 @@ function parseDateRange(fromStr: string | undefined, toStr: string | undefined):
   if (isNaN(from.getTime()) || isNaN(to.getTime())) {
     throw new Error("INVALID_DATE");
   }
+  if (from >= to) {
+    throw new Error("INVALID_DATE");
+  }
   return { from, to };
 }
 
@@ -218,8 +221,8 @@ groupRouter.get("/branches/:merchantId", async (c) => {
 groupRouter.get("/clients", async (c) => {
   const groupId = c.get("groupId")!;
   const search = c.req.query("search") ?? "";
-  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
-  const limit = Math.min(50, Math.max(1, parseInt(c.req.query("limit") ?? "20", 10)));
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(c.req.query("limit") ?? "20", 10) || 20));
   const offset = (page - 1) * limit;
   let from: Date, to: Date;
   try {
