@@ -229,4 +229,86 @@ clientsRouter.put(
   }
 );
 
+// ─── POST /merchant/clients/import ────────────────────────────────────────────
+// Accepts a JSON array of client records (parsed from CSV by the frontend)
+
+const importClientSchema = z.object({
+  name: z.string().min(1),
+  phone: z.string().min(1),
+  email: z.string().email().optional().or(z.literal("")),
+  notes: z.string().optional(),
+  birthday: z.string().optional(),
+});
+
+const importBatchSchema = z.object({
+  clients: z.array(importClientSchema).min(1).max(500),
+});
+
+clientsRouter.post("/import", requireMerchant, zValidator(importBatchSchema), async (c) => {
+  const merchantId = c.get("merchantId");
+  const body = c.get("body") as z.infer<typeof importBatchSchema>;
+
+  const results = {
+    created: 0,
+    skipped: 0,
+    errors: [] as { phone: string; reason: string }[],
+  };
+
+  for (const record of body.clients) {
+    try {
+      // Check if client already exists by phone
+      const [existing] = await db
+        .select()
+        .from(clients)
+        .where(eq(clients.phone, record.phone))
+        .limit(1);
+
+      let clientId: string;
+
+      if (existing) {
+        clientId = existing.id;
+        // Update name/email if currently null
+        if (!existing.name && record.name) {
+          await db.update(clients).set({ name: record.name }).where(eq(clients.id, existing.id));
+        }
+      } else {
+        const [created] = await db
+          .insert(clients)
+          .values({
+            phone: record.phone,
+            email: record.email || null,
+            name: record.name,
+            acquisitionSource: "import",
+          })
+          .returning();
+        clientId = created.id;
+        results.created++;
+      }
+
+      // Ensure client profile exists for this merchant
+      const [existingProfile] = await db
+        .select()
+        .from(clientProfiles)
+        .where(and(eq(clientProfiles.merchantId, merchantId), eq(clientProfiles.clientId, clientId)))
+        .limit(1);
+
+      if (!existingProfile) {
+        await db.insert(clientProfiles).values({
+          merchantId,
+          clientId,
+          notes: record.notes ?? null,
+          birthday: record.birthday ?? null,
+        });
+        if (existing) results.created++; // profile is new even if client existed
+      } else {
+        results.skipped++;
+      }
+    } catch (err) {
+      results.errors.push({ phone: record.phone, reason: String(err) });
+    }
+  }
+
+  return c.json({ results });
+});
+
 export { clientsRouter };
