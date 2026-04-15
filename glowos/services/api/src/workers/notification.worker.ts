@@ -45,6 +45,14 @@ interface RebookingPromptData {
   booking_url?: string;
 }
 
+interface PostServiceReceiptData {
+  booking_id: string;
+}
+
+interface PostServiceRebookData {
+  booking_id: string;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -470,6 +478,83 @@ async function handleRebookingPrompt(
   console.log("[NotificationWorker] rebooking_prompt handled", { bookingId });
 }
 
+async function handlePostServiceReceipt(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] post_service_receipt: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, client } = row;
+
+  if (!client.phone) {
+    console.warn("[NotificationWorker] post_service_receipt: client has no phone", { bookingId });
+    return;
+  }
+
+  const receiptMessage =
+    `✅ *Service Complete — ${merchant.name}*\n\n` +
+    `Hi ${client.name ?? "there"}, thank you for visiting us!\n\n` +
+    `*Service:* ${service.name}\n` +
+    `*Amount:* S$${booking.priceSgd}\n` +
+    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" })}\n\n` +
+    `We hope to see you again soon! 🌟`;
+
+  const sid = await sendWhatsApp(client.phone, receiptMessage);
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "post_service_receipt",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: receiptMessage,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  console.log("[NotificationWorker] post_service_receipt handled", { bookingId });
+}
+
+async function handlePostServiceRebook(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] post_service_rebook: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, client } = row;
+
+  if (!client.phone) {
+    console.warn("[NotificationWorker] post_service_rebook: client has no phone", { bookingId });
+    return;
+  }
+
+  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+  const rebookMessage =
+    `💆 *Time for your next visit?*\n\n` +
+    `Hi ${client.name ?? "there"}! It's been a couple of days since your *${service.name}* at ${merchant.name}.\n\n` +
+    `Ready to book again? Tap the link below:\n${bookingUrl}\n\n` +
+    `See you soon! ✨`;
+
+  const sid = await sendWhatsApp(client.phone, rebookMessage);
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "post_service_rebook",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: rebookMessage,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  console.log("[NotificationWorker] post_service_rebook handled", { bookingId });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -516,6 +601,16 @@ export function createNotificationWorker(): Worker {
         case "rebooking_prompt": {
           const data = job.data as RebookingPromptData;
           await handleRebookingPrompt(data.booking_id, data.booking_url);
+          break;
+        }
+        case "post_service_receipt": {
+          const data = job.data as PostServiceReceiptData;
+          await handlePostServiceReceipt(data.booking_id);
+          break;
+        }
+        case "post_service_rebook": {
+          const data = job.data as PostServiceRebookData;
+          await handlePostServiceRebook(data.booking_id);
           break;
         }
         default:
