@@ -2,7 +2,7 @@ import type { Context, Next } from "hono";
 import { eq } from "drizzle-orm";
 import { db } from "@glowos/db";
 import { groupUsers } from "@glowos/db";
-import { verifyGroupAccessToken } from "../lib/jwt.js";
+import { verifyGroupAccessToken, type GroupAccessTokenPayload } from "../lib/jwt.js";
 import type { AppVariables } from "../lib/types.js";
 
 type AppContext = Context<{ Variables: AppVariables }>;
@@ -19,7 +19,7 @@ export async function requireGroupAdmin(c: AppContext, next: Next) {
 
   const token = authHeader.slice(7);
 
-  let payload: { userId: string; groupId: string };
+  let payload: GroupAccessTokenPayload;
   try {
     payload = verifyGroupAccessToken(token);
   } catch {
@@ -28,11 +28,13 @@ export async function requireGroupAdmin(c: AppContext, next: Next) {
 
   // Verify user still exists in groupUsers
   const [user] = await db
-    .select({ id: groupUsers.id, groupId: groupUsers.groupId })
+    .select({ id: groupUsers.id, groupId: groupUsers.groupId, role: groupUsers.role })
     .from(groupUsers)
     .where(eq(groupUsers.id, payload.userId))
     .limit(1);
 
+  // NOTE: groupUsers has no isActive column yet. If one is added later,
+  // add the active check here (parallel to requireMerchant's isActive guard).
   if (!user) {
     return c.json({ error: "Unauthorized", message: "Group user not found" }, 401);
   }
@@ -44,6 +46,7 @@ export async function requireGroupAdmin(c: AppContext, next: Next) {
 
   c.set("userId", user.id);
   c.set("groupId", user.groupId);
+  c.set("userRole", user.role);
 
   await next();
 }
