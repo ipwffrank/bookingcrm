@@ -151,7 +151,7 @@ walkinsRouter.post("/register", requireMerchant, zValidator(walkinRegisterSchema
 
 walkinsRouter.post("/bookings/:id/record-payment", requireMerchant, zValidator(recordPaymentSchema), async (c) => {
   const merchantId = c.get("merchantId");
-  const bookingId = c.req.param("id");
+  const bookingId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof recordPaymentSchema>;
 
   const [existing] = await db

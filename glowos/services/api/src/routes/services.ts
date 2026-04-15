@@ -209,7 +209,7 @@ servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutc
 
 servicesRouter.get("/consult-outcomes/:bookingId", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId");
-  const bookingId = c.req.param("bookingId");
+  const bookingId = c.req.param("bookingId")!;
 
   // Fix 2: Verify the booking belongs to the authenticated merchant
   const [booking] = await db
