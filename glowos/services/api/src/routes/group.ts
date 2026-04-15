@@ -12,13 +12,21 @@ function parseDateRange(fromStr: string | undefined, toStr: string | undefined):
   const now = new Date();
   const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
   const to = toStr ? new Date(toStr) : now;
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    throw new Error("INVALID_DATE");
+  }
   return { from, to };
 }
 
 // ─── GET /group/overview ────────────────────────────────────────────────────────
 groupRouter.get("/overview", async (c) => {
   const groupId = c.get("groupId")!;
-  const { from, to } = parseDateRange(c.req.query("from"), c.req.query("to"));
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
 
   // 1. Get all merchantIds for this group
   const merchantRows = await db
@@ -49,7 +57,8 @@ groupRouter.get("/overview", async (c) => {
     .select({ merchantId: bookings.merchantId, revenue: sum(bookings.priceSgd) })
     .from(bookings)
     .where(and(inArray(bookings.merchantId, merchantIds), eq(bookings.status, "completed"), gte(bookings.startTime, from), lt(bookings.startTime, to)))
-    .groupBy(bookings.merchantId);
+    .groupBy(bookings.merchantId)
+    .orderBy(desc(sum(bookings.priceSgd)));
 
   // 5. Ops health: confirmed+completed+in_progress booking count per branch
   const opsRows = await db
@@ -63,7 +72,8 @@ groupRouter.get("/overview", async (c) => {
         lt(bookings.startTime, to)
       )
     )
-    .groupBy(bookings.merchantId);
+    .groupBy(bookings.merchantId)
+    .orderBy(desc(count(bookings.id)));
 
   // 6. Top 5 clients by total spend in period
   const topClientsRows = await db
@@ -86,12 +96,12 @@ groupRouter.get("/overview", async (c) => {
       merchantId: r.merchantId,
       name: nameMap[r.merchantId] ?? "Unknown",
       revenue: parseFloat(r.revenue ?? "0"),
-    })).sort((a, b) => b.revenue - a.revenue),
+    })),
     opsHealth: opsRows.map((r) => ({
       merchantId: r.merchantId,
       name: nameMap[r.merchantId] ?? "Unknown",
       bookingCount: r.bookingCount,
-    })).sort((a, b) => b.bookingCount - a.bookingCount),
+    })),
     topClients: topClientsRows.map((r) => ({
       id: r.id,
       name: r.name ?? "Unknown",
@@ -104,7 +114,12 @@ groupRouter.get("/overview", async (c) => {
 // ─── GET /group/branches ────────────────────────────────────────────────────────
 groupRouter.get("/branches", async (c) => {
   const groupId = c.get("groupId")!;
-  const { from, to } = parseDateRange(c.req.query("from"), c.req.query("to"));
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
 
   const merchantRows = await db
     .select({ id: merchants.id, name: merchants.name, addressLine1: merchants.addressLine1, category: merchants.category })
@@ -145,7 +160,12 @@ groupRouter.get("/branches", async (c) => {
 groupRouter.get("/branches/:merchantId", async (c) => {
   const groupId = c.get("groupId")!;
   const merchantId = c.req.param("merchantId")!;
-  const { from, to } = parseDateRange(c.req.query("from"), c.req.query("to"));
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
 
   // Verify this merchant belongs to the group
   const [merchant] = await db
@@ -201,6 +221,12 @@ groupRouter.get("/clients", async (c) => {
   const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10));
   const limit = Math.min(50, Math.max(1, parseInt(c.req.query("limit") ?? "20", 10)));
   const offset = (page - 1) * limit;
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
 
   // Get all merchantIds for this group
   const merchantRows = await db
@@ -221,6 +247,9 @@ groupRouter.get("/clients", async (c) => {
 
   const baseWhere = and(
     inArray(bookings.merchantId, merchantIds),
+    eq(bookings.status, "completed"),
+    gte(bookings.startTime, from),
+    lt(bookings.startTime, to),
     searchFilter
   );
 
@@ -243,7 +272,7 @@ groupRouter.get("/clients", async (c) => {
       lastVisit: sql<Date | null>`MAX(${bookings.startTime})`,
     })
     .from(clients)
-    .innerJoin(bookings, and(eq(clients.id, bookings.clientId), eq(bookings.status, "completed")))
+    .innerJoin(bookings, eq(clients.id, bookings.clientId))
     .where(baseWhere)
     .groupBy(clients.id, clients.name, clients.phone, clients.email)
     .orderBy(desc(sum(bookings.priceSgd)))
