@@ -282,7 +282,6 @@ clientsRouter.post("/import", requireMerchant, zValidator(importBatchSchema), as
           })
           .returning();
         clientId = created.id;
-        results.created++;
       }
 
       // Ensure client profile exists for this merchant
@@ -299,7 +298,7 @@ clientsRouter.post("/import", requireMerchant, zValidator(importBatchSchema), as
           notes: record.notes ?? null,
           birthday: record.birthday ?? null,
         });
-        if (existing) results.created++; // profile is new even if client existed
+        results.created++; // Always: a new profile (and possibly client) was created
       } else {
         results.skipped++;
       }
