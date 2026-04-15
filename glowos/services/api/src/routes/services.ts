@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, asc } from "drizzle-orm";
 import { z } from "zod";
-import { db, services } from "@glowos/db";
+import { db, services, consultOutcomes, bookings } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
@@ -26,6 +26,9 @@ const createServiceSchema = z.object({
   buffer_minutes: z.number().int().min(0).optional().default(0),
   price_sgd: z.number().positive("Price must be positive"),
   display_order: z.number().int().min(0).optional().default(0),
+  slot_type: z.enum(["standard", "consult", "treatment"]).optional().default("standard"),
+  requires_consult_first: z.boolean().optional().default(false),
+  consult_service_id: z.string().uuid().nullable().optional(),
 });
 
 const updateServiceSchema = createServiceSchema.partial();
@@ -67,6 +70,9 @@ servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async
       bufferMinutes: body.buffer_minutes,
       priceSgd: String(body.price_sgd),
       displayOrder: body.display_order,
+      slotType: body.slot_type,
+      requiresConsultFirst: body.requires_consult_first,
+      consultServiceId: body.consult_service_id ?? null,
     })
     .returning();
 
@@ -103,6 +109,9 @@ servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), asy
   if (body.buffer_minutes !== undefined) updateData.bufferMinutes = body.buffer_minutes;
   if (body.price_sgd !== undefined) updateData.priceSgd = String(body.price_sgd);
   if (body.display_order !== undefined) updateData.displayOrder = body.display_order;
+  if (body.slot_type !== undefined) updateData.slotType = body.slot_type;
+  if (body.requires_consult_first !== undefined) updateData.requiresConsultFirst = body.requires_consult_first;
+  if (body.consult_service_id !== undefined) updateData.consultServiceId = body.consult_service_id;
 
   if (Object.keys(updateData).length === 0) {
     return c.json({ error: "Bad Request", message: "No fields provided to update" }, 400);
@@ -143,6 +152,87 @@ servicesRouter.delete("/:id", requireMerchant, async (c) => {
   await invalidateAvailabilityCacheByMerchantId(merchantId);
 
   return c.json({ success: true, message: "Service deactivated" });
+});
+
+// ─── Schemas for consult outcomes ─────────────────────────────────────────────
+
+const consultOutcomeSchema = z.object({
+  booking_id: z.string().uuid(),
+  recommended_service_id: z.string().uuid().nullable().optional(),
+  notes: z.string().max(2000).optional(),
+  follow_up_booking_id: z.string().uuid().nullable().optional(),
+});
+
+// ─── POST /merchant/services/consult-outcomes ──────────────────────────────────
+
+servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutcomeSchema), async (c) => {
+  const merchantId = c.get("merchantId");
+  const body = c.get("body") as z.infer<typeof consultOutcomeSchema>;
+
+  // Fix 1: Verify the booking belongs to the authenticated merchant
+  const [booking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.id, body.booking_id), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!booking) {
+    return c.json({ error: "Booking not found" }, 404);
+  }
+
+  // Fix 3: Prevent duplicate outcome records
+  const [existingOutcome] = await db
+    .select({ id: consultOutcomes.id })
+    .from(consultOutcomes)
+    .where(eq(consultOutcomes.bookingId, body.booking_id))
+    .limit(1);
+
+  if (existingOutcome) {
+    return c.json({ error: "An outcome already exists for this booking" }, 409);
+  }
+
+  const [outcome] = await db
+    .insert(consultOutcomes)
+    .values({
+      bookingId: body.booking_id,
+      recommendedServiceId: body.recommended_service_id ?? null,
+      notes: body.notes ?? null,
+      followUpBookingId: body.follow_up_booking_id ?? null,
+      createdByStaffId: null,
+    })
+    .returning();
+
+  return c.json({ outcome }, 201);
+});
+
+// ─── GET /merchant/services/consult-outcomes/:bookingId ────────────────────────
+
+servicesRouter.get("/consult-outcomes/:bookingId", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId");
+  const bookingId = c.req.param("bookingId")!;
+
+  // Fix 2: Verify the booking belongs to the authenticated merchant
+  const [booking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!booking) {
+    return c.json({ error: "Booking not found" }, 404);
+  }
+
+  const [outcome] = await db
+    .select()
+    .from(consultOutcomes)
+    .where(eq(consultOutcomes.bookingId, bookingId))
+    .limit(1);
+
+  if (!outcome) {
+    return c.json({ error: "No outcome found" }, 404);
+  }
+
+  return c.json({ outcome });
 });
 
 export { servicesRouter };

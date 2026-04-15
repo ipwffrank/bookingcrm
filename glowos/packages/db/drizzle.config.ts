@@ -5,7 +5,21 @@ import type { Config } from "drizzle-kit";
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 export default {
-  schema: "./src/schema/index.ts",
+  schema: [
+    "./src/schema/merchants.ts",
+    "./src/schema/merchant-users.ts",
+    "./src/schema/services.ts",
+    "./src/schema/staff.ts",
+    "./src/schema/clients.ts",
+    "./src/schema/bookings.ts",
+    "./src/schema/payouts.ts",
+    "./src/schema/campaigns.ts",
+    "./src/schema/reviews.ts",
+    "./src/schema/notifications.ts",
+    "./src/schema/groups.ts",
+    "./src/schema/consult.ts",
+    "./src/schema/post-service.ts",
+  ],
   out: "./src/migrations",
   dialect: "postgresql",
   dbCredentials: {

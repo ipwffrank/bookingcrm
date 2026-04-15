@@ -31,6 +31,10 @@ export const merchants = pgTable("merchants", {
   payoutFrequency: varchar("payout_frequency", { length: 20 }).notNull().default("weekly"),
   googleActionsStatus: varchar("google_actions_status", { length: 50 }).notNull().default("pending"),
   cancellationPolicy: jsonb("cancellation_policy"),
+  // Intentionally bare UUID (no .references()) — adding a FK to groups.id would create
+  // a circular import: merchants.ts ← groups.ts ← merchants.ts (via staffMerchants).
+  // The application layer enforces referential integrity via resolveClientVisibility().
+  groupId: uuid("group_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

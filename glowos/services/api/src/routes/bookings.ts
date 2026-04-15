@@ -23,6 +23,7 @@ import {
   scheduleReviewRequest,
   scheduleNoShowReengagement,
   scheduleRebookingPrompt,
+  schedulePostServiceSequence,
 } from "../lib/scheduler.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -515,6 +516,7 @@ merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
 
   // Queue post-completion jobs
   await scheduleReviewRequest(bookingId);
+  await schedulePostServiceSequence(bookingId);
   await addJob("crm", "update_client_profile", { booking_id: bookingId });
   if (updated) {
     await addJob("vip", "rescore_client", {
@@ -561,6 +563,47 @@ merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
   await scheduleNoShowReengagement(bookingId);
 
   return c.json({ booking: updated });
+});
+
+// ─── GET /booking/:slug/staff ──────────────────────────────────────────────────
+// Public — returns visible staff with profile fields for the booking widget
+
+bookingsRouter.get("/:slug/staff", async (c) => {
+  const slug = c.req.param("slug");
+
+  const [merchant] = await db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Business not found" }, 404);
+  }
+
+  const staffList = await db
+    .select({
+      id: staff.id,
+      name: staff.name,
+      title: staff.title,
+      photoUrl: staff.photoUrl,
+      bio: staff.bio,
+      specialtyTags: staff.specialtyTags,
+      credentials: staff.credentials,
+      displayOrder: staff.displayOrder,
+      isAnyAvailable: staff.isAnyAvailable,
+    })
+    .from(staff)
+    .where(
+      and(
+        eq(staff.merchantId, merchant.id),
+        eq(staff.isActive, true),
+        eq(staff.isPubliclyVisible, true)
+      )
+    )
+    .orderBy(staff.displayOrder);
+
+  return c.json({ staff: staffList });
 });
 
 // ─── Public: GET /booking/:slug ────────────────────────────────────────────────

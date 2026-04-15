@@ -74,3 +74,32 @@ export async function scheduleRebookingPrompt(bookingId: string): Promise<void> 
   );
   console.log("[Scheduler] Rebooking prompt scheduled", { bookingId, delayMs: delay });
 }
+
+// ─── schedulePostServiceSequence ───────────────────────────────────────────────
+
+/**
+ * Queue the post-service receipt immediately, and the rebook CTA after 48 hours.
+ */
+export async function schedulePostServiceSequence(bookingId: string): Promise<void> {
+  // Receipt: send immediately (1 second delay to let the DB commit settle)
+  await addJob(
+    "notifications",
+    "post_service_receipt",
+    { booking_id: bookingId },
+    { delay: 1000 }
+  );
+
+  // Rebook CTA: send 48 hours later
+  const rebookDelay = 48 * 60 * 60 * 1000;
+  await addJob(
+    "notifications",
+    "post_service_rebook",
+    { booking_id: bookingId },
+    { delay: rebookDelay }
+  );
+
+  console.log("[Scheduler] Post-service sequence scheduled", {
+    bookingId,
+    rebookCTAAt: new Date(Date.now() + rebookDelay).toISOString(),
+  });
+}

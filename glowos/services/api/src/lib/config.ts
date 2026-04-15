@@ -27,5 +27,9 @@ export const config = {
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? "",
   twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM ?? "+6531591234",
 
+  sendgridApiKey: process.env.SENDGRID_API_KEY ?? "",
+  fromEmail: process.env.FROM_EMAIL ?? "noreply@glowos.sg",
+  fromName: process.env.FROM_NAME ?? "GlowOS",
+
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;

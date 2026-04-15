@@ -13,6 +13,7 @@ import {
 } from "@glowos/db";
 import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
+import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,14 @@ interface NoShowReengagementData {
 interface RebookingPromptData {
   booking_id: string;
   booking_url?: string;
+}
+
+interface PostServiceReceiptData {
+  booking_id: string;
+}
+
+interface PostServiceRebookData {
+  booking_id: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -162,6 +171,35 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     status: clientSid ? "sent" : "failed",
     twilioSid: clientSid || undefined,
   });
+
+  // Email confirmation (if client has email)
+  if (client.email) {
+    const html = bookingConfirmationEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      staffName: staffMember.name,
+      dateStr,
+      timeStr,
+      priceSgd: price,
+      cancelUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Booking confirmed — ${service.name} at ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "booking_confirmation",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Booking confirmation email for ${service.name}`,
+      status: emailSent ? "sent" : "failed",
+    });
+  }
 
   // Merchant alert
   if (merchant.phone) {
@@ -470,6 +508,136 @@ async function handleRebookingPrompt(
   console.log("[NotificationWorker] rebooking_prompt handled", { bookingId });
 }
 
+async function handlePostServiceReceipt(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] post_service_receipt: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, client } = row;
+
+  if (!client.phone) {
+    console.warn("[NotificationWorker] post_service_receipt: client has no phone", { bookingId });
+    return;
+  }
+
+  const receiptMessage =
+    `✅ *Service Complete — ${merchant.name}*\n\n` +
+    `Hi ${client.name ?? "there"}, thank you for visiting us!\n\n` +
+    `*Service:* ${service.name}\n` +
+    `*Amount:* S$${booking.priceSgd}\n` +
+    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" })}\n\n` +
+    `We hope to see you again soon! 🌟`;
+
+  const sid = await sendWhatsApp(client.phone, receiptMessage);
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "post_service_receipt",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: receiptMessage,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  if (client.email) {
+    const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+    const html = postServiceReceiptEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      dateStr: new Date(booking.startTime).toLocaleDateString("en-SG", {
+        day: "numeric", month: "long", year: "numeric",
+      }),
+      priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
+      bookingUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Your visit receipt — ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_receipt",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Post-service receipt email`,
+      status: emailSent ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] post_service_receipt handled", { bookingId });
+}
+
+async function handlePostServiceRebook(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] post_service_rebook: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, client } = row;
+
+  if (!client.phone) {
+    console.warn("[NotificationWorker] post_service_rebook: client has no phone", { bookingId });
+    return;
+  }
+
+  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+  const rebookMessage =
+    `💆 *Time for your next visit?*\n\n` +
+    `Hi ${client.name ?? "there"}! It's been a couple of days since your *${service.name}* at ${merchant.name}.\n\n` +
+    `Ready to book again? Tap the link below:\n${bookingUrl}\n\n` +
+    `See you soon! ✨`;
+
+  const sid = await sendWhatsApp(client.phone, rebookMessage);
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "post_service_rebook",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: rebookMessage,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  if (client.email) {
+    const html = rebookCtaEmail({
+      clientName: client.name ?? "there",
+      merchantName: merchant.name,
+      serviceName: service.name,
+      bookingUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Time for your next visit at ${merchant.name}?`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "post_service_rebook",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Rebook CTA email`,
+      status: emailSent ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] post_service_rebook handled", { bookingId });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -516,6 +684,16 @@ export function createNotificationWorker(): Worker {
         case "rebooking_prompt": {
           const data = job.data as RebookingPromptData;
           await handleRebookingPrompt(data.booking_id, data.booking_url);
+          break;
+        }
+        case "post_service_receipt": {
+          const data = job.data as PostServiceReceiptData;
+          await handlePostServiceReceipt(data.booking_id);
+          break;
+        }
+        case "post_service_rebook": {
+          const data = job.data as PostServiceRebookData;
+          await handlePostServiceRebook(data.booking_id);
           break;
         }
         default:
