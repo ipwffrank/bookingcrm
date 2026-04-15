@@ -25,11 +25,19 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.setItem('merchant', JSON.stringify(data.merchant));
-      router.push('/dashboard');
+
+      if (data.userType === 'group_admin') {
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('group', JSON.stringify(data.group));
+        router.push('/dashboard/group/overview');
+      } else {
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('merchant', JSON.stringify(data.merchant));
+        router.push('/dashboard');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
