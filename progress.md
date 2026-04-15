@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 11 April 2026 (Session 4)**
+**Last updated: 15 April 2026 (Session 6)**
 
 ---
 
@@ -21,6 +21,145 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 6 — 15 April 2026)
+
+### Phase 1 — Clinical Credibility (ALL 14 Tasks COMPLETE ✅)
+
+**Branch:** `feature/phase1-clinical-credibility` — pushed to GitHub, ready for PR/merge
+**16 commits** from Task 5 through Task 14 (typecheck fix)
+
+#### Task 5 ✅ — Staff profile cards in BookingWidget (commits `775f5d3`)
+- `StaffMember` interface extended with `bio`, `specialtyTags`, `isAnyAvailable`
+- Staff cards in booking widget show bio (line-clamp-2) + specialty tag pills
+- Service description rendering confirmed present in service selection step
+- `page.tsx` `SalonData.staff` type kept in sync
+
+#### Task 6 ✅ — Consult slot type API (commits `fbe9d03`, `b27dafa`)
+- `createServiceSchema` / `updateServiceSchema` extended with `slot_type`, `requires_consult_first`, `consult_service_id`
+- POST/PUT service handlers save new fields
+- `POST /merchant/services/consult-outcomes` + `GET /merchant/services/consult-outcomes/:bookingId` added
+- Security fix: booking ownership checks + duplicate prevention on consult outcome endpoints
+
+#### Task 7 ✅ — Consult slot type admin UI + widget gating (commits `404c205`, `bde27cf`)
+- Services admin page: "Booking Type" select (standard/consult/treatment), conditional "Requires Consult First" checkbox + consult service picker (excludes self from picker)
+- BookingWidget: amber "Book a consultation first" banner on treatment services with `requiresConsultFirst: true`
+- Modal styles fixed to match light-mode design system
+
+#### Task 8 ✅ — Walk-in registration + payment recording API (commits `3f76973`, `ba6ca3b`, `8276a90`)
+- Created `walkins.ts`: `POST /register`, `POST /bookings/:id/record-payment`, `GET /today`
+- Mounted at `/merchant/walkins` in index.ts
+- Security: service + staff ownership checks; merchantId on UPDATE; payment idempotency guard; availability cache invalidation; leftJoin for staff
+
+#### Task 9 ✅ — Walk-in panel UI (commit `33c3076`)
+- Created `app/dashboard/walkins/page.tsx`: client info, service/staff selectors, cash/OTC/Stripe payment toggle, notes
+- Walk-ins nav item added to sidebar
+
+#### Task 10 ✅ — Post-service comms scheduler + worker (commit `80375de`)
+- `schedulePostServiceSequence(bookingId)`: queues `post_service_receipt` (1s delay) + `post_service_rebook` (48h delay)
+- `handlePostServiceReceipt`: WhatsApp receipt with service/amount/date
+- `handlePostServiceRebook`: WhatsApp rebook CTA with booking URL
+- Triggered in `PUT /merchant/bookings/:id/complete`
+
+#### Task 11 ✅ — SendGrid email setup (commits `45a39f5`, `ced3d1f`)
+- `@sendgrid/mail` installed; `config.ts` extended with `sendgridApiKey`, `fromEmail`, `fromName`
+- `email.ts` created: `sendEmail()` + 3 HTML templates (booking confirmation, receipt, rebook CTA)
+- Silent no-op when `SENDGRID_API_KEY` not set (safe for dev)
+- Email added to: `handleBookingConfirmation`, `handlePostServiceReceipt`, `handlePostServiceRebook`
+- All email sends logged to `notification_log` with `channel: "email"`
+
+#### Task 12 ✅ — CSV import API (commits `c0bfba1`, `352cfa1`)
+- `POST /merchant/clients/import`: accepts up to 500 records, find-or-create client+profile, returns `{ created, skipped, errors[] }`
+- Counter logic fixed: tracks merchant-client profiles, not raw client rows
+
+#### Task 13 ✅ — CSV import UI (commit `726df9b`)
+- Created `app/dashboard/import/page.tsx`: file picker, `parseCSV()` client-side parser, preview table (50 rows), import button, results panel
+- "Import Clients" nav item added to sidebar
+
+#### Task 14 ✅ — Final integration check + deploy (commit `d1b5496`)
+- Typecheck: 0 errors across all packages (`pnpm turbo typecheck` 6/6 tasks)
+- API starts clean: server + 3 workers start successfully
+- Fixed: `c.req.param()` non-null assertion in `services.ts` + `walkins.ts`
+- Branch pushed to GitHub: `feature/phase1-clinical-credibility`
+
+---
+
+### Resume Checklist (Next Session — Phase 1 merge + Phase 2 planning)
+
+```
+1. cd ~/Desktop/Projects/Bookingcrm
+2. Read this progress.md
+3. Merge feature/phase1-clinical-credibility → main (PR or direct)
+4. Deploy: git push → Railway auto-deploys API; vercel --prod for frontend
+5. Set env vars in Railway: SENDGRID_API_KEY, FROM_EMAIL, FROM_NAME
+6. Verify production: glowos-nine.vercel.app/dashboard/staff, /walkins, /import
+7. Sign up for Stripe (still pending from Session 5 TODO list)
+8. Begin Phase 2 planning (group admin UI, promotions, subscription tiers, staff calendar)
+```
+
+---
+
+## What's Completed (Session 5 — 12 April 2026)
+
+### Phase 1 — Clinical Credibility (Tasks 1–4 of 14 complete)
+
+**Branch:** `feature/phase1-clinical-credibility`
+**Worktree:** `.worktrees/phase1-clinical-credibility`
+**Plan file:** `docs/superpowers/plans/2026-04-12-phase1-clinical-credibility.md`
+**Spec file:** `docs/superpowers/specs/2026-04-12-glowos-clinic-platform-design.md`
+
+#### Task 1 ✅ — Schema extensions (commit `cd73535`)
+- `staff`: added `bio`, `specialtyTags` (text[]), `credentials`, `isPubliclyVisible`
+- `services`: added `slotType` (standard/consult/treatment), `requiresConsultFirst`, `consultServiceId`
+- `clients`: added `acquisitionSource` (online_booking/walkin/import/social), `preferredContactChannel` (email/whatsapp)
+- `merchants`: added `groupId` (bare UUID, no FK — circular import prevention documented in comment)
+
+#### Task 2 ✅ — New schema tables + DB migration pushed (commits `4c97dfc`, `83f6497`, `a509619`)
+- New file `glowos/packages/db/src/schema/groups.ts`: `groups`, `groupSettings`, `groupUsers`, `staffMerchants` tables
+  - `profileSharingLevel` is a 4-level enum (none/identity_only/selective/full_history) — NOT a boolean
+  - `groupUsers` is a separate auth table from `merchant_users`
+  - `staffMerchants` composite PK — home branch stays in `staff.merchantId`, this lists additional branches only
+- New file `glowos/packages/db/src/schema/consult.ts`: `consultOutcomes` table
+- New file `glowos/packages/db/src/schema/post-service.ts`: `postServiceSequences` table
+- Migration `0001_lush_ken_ellis.sql` generated + pushed to Neon ✅ (all 6 new tables live in DB)
+
+#### Task 3 ✅ — Staff profile API (commits `031ab43`, `947338a`)
+- `PATCH /merchant/staff/:id/profile` — authenticated partial update with empty-body guard, merchantId scope on UPDATE
+- `GET /booking/:slug/staff` — public endpoint for booking widget, returns 9-column projection (no sensitive fields), filters `isActive=true AND isPubliclyVisible=true`
+
+#### Task 4 ✅ — Staff profile admin UI (commits `aa81e42`, `43969ac`)
+- `glowos/apps/web/app/dashboard/staff/page.tsx`: bio textarea, specialty tags (comma-string), credentials, publicly-visible checkbox
+- Profile PATCH called after main staff save; always sends `is_publicly_visible`; sends bio/credentials/specialty_tags unconditionally (|| undefined to omit when blank)
+- Fixed: POST response shape correctly cast as `{ staff: { id } }` not `{ id }`
+
+#### Remaining Tasks (5–14 — next session picks up here)
+
+| Task | Description | Status |
+|---|---|---|
+| 5 | Staff profile cards in BookingWidget (bio, specialty tags, service descriptions) | ⏳ next |
+| 6 | Consult slot type API (extend services PATCH + consult outcome endpoints) | pending |
+| 7 | Consult slot type admin UI + widget gating | pending |
+| 8 | Walk-in registration + payment recording API | pending |
+| 9 | Walk-in panel UI | pending |
+| 10 | Post-service comms scheduler + worker | pending |
+| 11 | SendGrid email setup (new lib + dual-channel notifications) | pending |
+| 12 | CSV import API | pending |
+| 13 | CSV import UI | pending |
+| 14 | Final integration check + deploy | pending |
+
+### Resume Checklist (Next Session — Phase 1 continued)
+
+```
+1. cd ~/Desktop/Projects/bookingcrm
+2. Read this progress.md
+3. git worktree list  →  should show .worktrees/phase1-clinical-credibility on branch feature/phase1-clinical-credibility
+4. Read docs/superpowers/plans/2026-04-12-phase1-clinical-credibility.md  →  Task 5 is next
+5. Continue subagent-driven development from Task 5
+   - Task 5: BookingWidget staff cards (bio, specialty tags, service descriptions)
+   - All tasks follow spec compliance review → code quality review → mark complete → next task
+```
 
 ---
 
