@@ -30,7 +30,7 @@ function pctChange(current: number, previous: number): number | null {
 // ─── GET /merchant/analytics/summary ─────────────────────────────────────────
 
 analyticsRouter.get("/summary", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
   const days = getPeriodDays(periodParam);
   const { start, end, prevStart, prevEnd } = getPeriodBounds(days);
@@ -138,7 +138,7 @@ analyticsRouter.get("/summary", requireMerchant, async (c) => {
 // ─── GET /merchant/analytics/revenue ─────────────────────────────────────────
 
 analyticsRouter.get("/revenue", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
   const days = getPeriodDays(periodParam);
   const { start, end } = getPeriodBounds(days);
@@ -174,7 +174,7 @@ analyticsRouter.get("/revenue", requireMerchant, async (c) => {
 // ─── GET /merchant/analytics/staff-performance ───────────────────────────────
 
 analyticsRouter.get("/staff-performance", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
   const days = getPeriodDays(periodParam);
   const { start, end } = getPeriodBounds(days);
@@ -235,7 +235,7 @@ analyticsRouter.get("/staff-performance", requireMerchant, async (c) => {
 // ─── GET /merchant/analytics/top-services ────────────────────────────────────
 
 analyticsRouter.get("/top-services", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
   const days = getPeriodDays(periodParam);
   const { start, end } = getPeriodBounds(days);
@@ -274,7 +274,7 @@ analyticsRouter.get("/top-services", requireMerchant, async (c) => {
 // ─── GET /merchant/analytics/booking-sources ─────────────────────────────────
 
 analyticsRouter.get("/booking-sources", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
   const days = getPeriodDays(periodParam);
   const { start, end } = getPeriodBounds(days);

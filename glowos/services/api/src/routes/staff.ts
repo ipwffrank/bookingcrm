@@ -39,7 +39,7 @@ const updateProfileSchema = z.object({
 // ─── GET /merchant/staff ───────────────────────────────────────────────────────
 
 staffRouter.get("/", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
 
   const staffList = await db
     .select()
@@ -76,7 +76,7 @@ staffRouter.get("/", requireMerchant, async (c) => {
 // ─── POST /merchant/staff ──────────────────────────────────────────────────────
 
 staffRouter.post("/", requireMerchant, zValidator(createStaffSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const body = c.get("body") as z.infer<typeof createStaffSchema>;
 
   // Create staff record
@@ -133,7 +133,7 @@ staffRouter.post("/", requireMerchant, zValidator(createStaffSchema), async (c) 
 // ─── PUT /merchant/staff/:id ───────────────────────────────────────────────────
 
 staffRouter.put("/:id", requireMerchant, zValidator(updateStaffSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const staffId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof updateStaffSchema>;
 
@@ -216,7 +216,7 @@ staffRouter.put("/:id", requireMerchant, zValidator(updateStaffSchema), async (c
 // ─── DELETE /merchant/staff/:id ────────────────────────────────────────────────
 
 staffRouter.delete("/:id", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const staffId = c.req.param("id")!;
 
   const [existing] = await db
@@ -242,7 +242,7 @@ staffRouter.delete("/:id", requireMerchant, async (c) => {
 // ─── PATCH /merchant/staff/:id/profile ─────────────────────────────────────────
 
 staffRouter.patch("/:id/profile", requireMerchant, zValidator(updateProfileSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const staffId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof updateProfileSchema>;
 

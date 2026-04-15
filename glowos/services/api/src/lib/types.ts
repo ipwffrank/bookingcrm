@@ -4,8 +4,8 @@
  */
 export type AppVariables = {
   userId: string;
-  merchantId: string;
+  merchantId?: string;
   userRole: string;
-  groupId: string;
+  groupId?: string;
   body: unknown;
 };

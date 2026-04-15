@@ -61,7 +61,7 @@ paymentsRouter.post(
   requireRole("owner"),
   zValidator(connectAccountSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof connectAccountSchema>;
 
     // Load merchant
@@ -128,7 +128,7 @@ paymentsRouter.get(
   requireMerchant,
   requireRole("owner"),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
 
     const [merchant] = await db
       .select({ stripeAccountId: merchants.stripeAccountId })
@@ -169,7 +169,7 @@ paymentsRouter.post(
   requireMerchant,
   requireRole("owner"),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
 
     const [merchant] = await db
       .select({ stripeAccountId: merchants.stripeAccountId })
@@ -197,7 +197,7 @@ paymentsRouter.post(
 // ─── GET /merchant/payouts ────────────────────────────────────────────────────
 
 paymentsRouter.get("/payouts", requireMerchant, requireRole("owner"), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const statusParam = c.req.query("status");
   const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10), 100);
   const offset = parseInt(c.req.query("offset") ?? "0", 10);
@@ -235,7 +235,7 @@ paymentsRouter.get("/payouts", requireMerchant, requireRole("owner"), async (c) 
 // ─── GET /merchant/payouts/:id ────────────────────────────────────────────────
 
 paymentsRouter.get("/payouts/:id", requireMerchant, requireRole("owner"), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const payoutId = c.req.param("id")!;
 
   const [payout] = await db
@@ -367,7 +367,7 @@ paymentsRouter.post(
   requireRole("owner", "manager"),
   zValidator(refundSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const bookingId = c.req.param("id")!;
     const body = c.get("body") as z.infer<typeof refundSchema>;
 

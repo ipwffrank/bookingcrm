@@ -36,7 +36,7 @@ const updateServiceSchema = createServiceSchema.partial();
 // ─── GET /merchant/services ────────────────────────────────────────────────────
 
 servicesRouter.get("/", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const activeParam = c.req.query("active");
 
   const conditions = [eq(services.merchantId, merchantId)];
@@ -56,7 +56,7 @@ servicesRouter.get("/", requireMerchant, async (c) => {
 // ─── POST /merchant/services ───────────────────────────────────────────────────
 
 servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const body = c.get("body") as z.infer<typeof createServiceSchema>;
 
   const [created] = await db
@@ -86,7 +86,7 @@ servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async
 // ─── PUT /merchant/services/:id ────────────────────────────────────────────────
 
 servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const serviceId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof updateServiceSchema>;
 
@@ -131,7 +131,7 @@ servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), asy
 // ─── DELETE /merchant/services/:id ────────────────────────────────────────────
 
 servicesRouter.delete("/:id", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const serviceId = c.req.param("id")!;
 
   const [existing] = await db
@@ -166,7 +166,7 @@ const consultOutcomeSchema = z.object({
 // ─── POST /merchant/services/consult-outcomes ──────────────────────────────────
 
 servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutcomeSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const body = c.get("body") as z.infer<typeof consultOutcomeSchema>;
 
   // Fix 1: Verify the booking belongs to the authenticated merchant
@@ -208,7 +208,7 @@ servicesRouter.post("/consult-outcomes", requireMerchant, zValidator(consultOutc
 // ─── GET /merchant/services/consult-outcomes/:bookingId ────────────────────────
 
 servicesRouter.get("/consult-outcomes/:bookingId", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("bookingId")!;
 
   // Fix 2: Verify the booking belongs to the authenticated merchant

@@ -40,11 +40,11 @@ export interface GroupAccessTokenPayload {
 }
 
 export function generateGroupAccessToken(payload: GroupAccessTokenPayload): string {
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: "7d" });
+  return jwt.sign(payload, config.jwtSecret + "_group", { expiresIn: "7d" });
 }
 
 export function verifyGroupAccessToken(token: string): GroupAccessTokenPayload & jwt.JwtPayload {
-  const decoded = jwt.verify(token, config.jwtSecret) as GroupAccessTokenPayload & jwt.JwtPayload;
+  const decoded = jwt.verify(token, config.jwtSecret + "_group") as GroupAccessTokenPayload & jwt.JwtPayload;
   if (decoded.userType !== "group_admin") {
     throw new Error("Token is not a group admin token");
   }

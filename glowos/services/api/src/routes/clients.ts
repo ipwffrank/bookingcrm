@@ -18,7 +18,7 @@ const updateClientNotesSchema = z.object({
 // ─── GET /merchant/clients ─────────────────────────────────────────────────────
 
 clientsRouter.get("/", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const tierParam = c.req.query("tier");
   const searchParam = c.req.query("search");
   const churnRiskParam = c.req.query("churn_risk");
@@ -123,7 +123,7 @@ clientsRouter.get("/", requireMerchant, async (c) => {
 // ─── GET /merchant/clients/:id ────────────────────────────────────────────────
 
 clientsRouter.get("/:id", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const profileId = c.req.param("id")!;
 
   const [row] = await db
@@ -196,7 +196,7 @@ clientsRouter.put(
   requireMerchant,
   zValidator(updateClientNotesSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const profileId = c.req.param("id")!;
     const body = c.get("body") as z.infer<typeof updateClientNotesSchema>;
 
@@ -245,7 +245,7 @@ const importBatchSchema = z.object({
 });
 
 clientsRouter.post("/import", requireMerchant, zValidator(importBatchSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const body = c.get("body") as z.infer<typeof importBatchSchema>;
 
   const results = {

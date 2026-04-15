@@ -39,7 +39,7 @@ const recordPaymentSchema = z.object({
 // ─── POST /merchant/walkins/register ──────────────────────────────────────────
 
 walkinsRouter.post("/register", requireMerchant, zValidator(walkinRegisterSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const body = c.get("body") as z.infer<typeof walkinRegisterSchema>;
 
   // Load merchant for payout config
@@ -150,7 +150,7 @@ walkinsRouter.post("/register", requireMerchant, zValidator(walkinRegisterSchema
 // ─── POST /merchant/walkins/bookings/:id/record-payment ────────────────────────
 
 walkinsRouter.post("/bookings/:id/record-payment", requireMerchant, zValidator(recordPaymentSchema), async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof recordPaymentSchema>;
 
@@ -185,7 +185,7 @@ walkinsRouter.post("/bookings/:id/record-payment", requireMerchant, zValidator(r
 // ─── GET /merchant/walkins/today ───────────────────────────────────────────────
 
 walkinsRouter.get("/today", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);

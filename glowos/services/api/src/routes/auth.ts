@@ -219,7 +219,7 @@ auth.post("/logout", requireMerchant, async (c) => {
 
 auth.get("/me", requireMerchant, async (c) => {
   const userId = c.get("userId");
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
 
   const [row] = await db
     .select({ user: merchantUsers, merchant: merchants })

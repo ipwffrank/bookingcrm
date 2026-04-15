@@ -27,7 +27,7 @@ const updateMerchantSchema = z.object({
 // ─── GET /merchant/me ──────────────────────────────────────────────────────────
 
 merchantRouter.get("/me", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
 
   const [merchant] = await db
     .select()
@@ -50,7 +50,7 @@ merchantRouter.put(
   requireRole("owner"),
   zValidator(updateMerchantSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof updateMerchantSchema>;
 
     if (Object.keys(body).length === 0) {
@@ -85,7 +85,7 @@ merchantRouter.put(
   requireRole("owner"),
   zValidator(cancellationPolicySchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof cancellationPolicySchema>;
 
     const [updated] = await db
@@ -109,7 +109,7 @@ merchantRouter.post(
   requireMerchant,
   requireRole("owner"),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
 
     const [updated] = await db
       .update(merchants)

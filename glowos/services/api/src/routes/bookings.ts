@@ -310,7 +310,7 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
 // ─── Protected: GET /merchant/bookings ────────────────────────────────────────
 
 merchantBookingsRouter.get("/", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const dateParam = c.req.query("date");
   const statusParam = c.req.query("status");
   const staffIdParam = c.req.query("staff_id");
@@ -353,7 +353,7 @@ merchantBookingsRouter.get("/", requireMerchant, async (c) => {
 // ─── Protected: GET /merchant/bookings/:id ────────────────────────────────────
 
 merchantBookingsRouter.get("/:id", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
 
   const [row] = await db
@@ -384,7 +384,7 @@ merchantBookingsRouter.post(
   requireMerchant,
   zValidator(merchantBookingCreateSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof merchantBookingCreateSchema>;
 
     // Load service
@@ -456,7 +456,7 @@ merchantBookingsRouter.post(
 // ─── Protected: PUT /merchant/bookings/:id/check-in ───────────────────────────
 
 merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
 
   const [existing] = await db
@@ -488,7 +488,7 @@ merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
 // ─── Protected: PUT /merchant/bookings/:id/complete ───────────────────────────
 
 merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
 
   const [existing] = await db
@@ -531,7 +531,7 @@ merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
 // ─── Protected: PUT /merchant/bookings/:id/no-show ────────────────────────────
 
 merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
 
   const [existing] = await db

@@ -37,7 +37,7 @@ const createCampaignSchema = z.object({
 // ─── GET /merchant/campaigns ───────────────────────────────────────────────────
 
 campaignsRouter.get("/", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
 
   const rows = await db
     .select()
@@ -55,7 +55,7 @@ campaignsRouter.post(
   requireMerchant,
   zValidator(createCampaignSchema),
   async (c) => {
-    const merchantId = c.get("merchantId");
+    const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof createCampaignSchema>;
 
     const [campaign] = await db
@@ -86,7 +86,7 @@ campaignsRouter.post(
 // ─── GET /merchant/campaigns/:id ──────────────────────────────────────────────
 
 campaignsRouter.get("/:id", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const campaignId = c.req.param("id")!;
 
   const [campaign] = await db
@@ -120,7 +120,7 @@ campaignsRouter.get("/:id", requireMerchant, async (c) => {
 // ─── POST /merchant/campaigns/:id/send ────────────────────────────────────────
 
 campaignsRouter.post("/:id/send", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const campaignId = c.req.param("id")!;
 
   const [campaign] = await db
@@ -231,7 +231,7 @@ campaignsRouter.post("/:id/send", requireMerchant, async (c) => {
 // ─── GET /merchant/campaigns/:id/results ──────────────────────────────────────
 
 campaignsRouter.get("/:id/results", requireMerchant, async (c) => {
-  const merchantId = c.get("merchantId");
+  const merchantId = c.get("merchantId")!;
   const campaignId = c.req.param("id")!;
 
   const [campaign] = await db
