@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import type { EventInput, EventClickArg, EventDropArg } from '@fullcalendar/core';
+import type { EventInput, EventClickArg, EventDropArg, DatesSetArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { apiFetch } from '../../lib/api';
 
@@ -212,7 +212,7 @@ export default function RosterPage() {
           eventResize={handleEventResize}
           eventClick={handleEventClick}
           dateClick={handleDateClick}
-          datesSet={(info) => {
+          datesSet={(info: DatesSetArg) => {
             setDateRange({ start: info.startStr, end: info.endStr });
             loadEvents(info.startStr, info.endStr);
           }}

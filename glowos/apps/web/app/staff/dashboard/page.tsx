@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import type { EventInput, EventDropArg, EventClickArg } from '@fullcalendar/core';
+import type { EventInput, EventDropArg, EventClickArg, DatesSetArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { apiFetch } from '../../lib/api';
 
@@ -179,7 +179,7 @@ export default function StaffSchedulePage() {
           eventResize={handleEventResize}
           eventClick={handleEventClick}
           dateClick={handleDateClick}
-          datesSet={(info) => { setDateRange({ start: info.startStr, end: info.endStr }); loadEvents(info.startStr, info.endStr); }}
+          datesSet={(info: DatesSetArg) => { setDateRange({ start: info.startStr, end: info.endStr }); loadEvents(info.startStr, info.endStr); }}
           height="auto"
           slotMinTime="07:00:00"
           slotMaxTime="22:00:00"

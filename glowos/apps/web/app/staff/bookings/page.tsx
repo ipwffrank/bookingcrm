@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import dayGridPlugin from '@fullcalendar/daygrid';
-import type { EventInput, EventClickArg } from '@fullcalendar/core';
+import type { EventInput, EventClickArg, DatesSetArg } from '@fullcalendar/core';
 import { apiFetch } from '../../lib/api';
 
 interface Booking {
@@ -83,7 +83,7 @@ export default function StaffAllBookingsPage() {
           events={events}
           editable={false}
           eventClick={(info: EventClickArg) => setSelected(info.event.extendedProps.booking as Booking)}
-          datesSet={(info) => loadBookings(info.startStr, info.endStr)}
+          datesSet={(info: DatesSetArg) => loadBookings(info.startStr, info.endStr)}
           height="auto"
           slotMinTime="07:00:00"
           slotMaxTime="22:00:00"
