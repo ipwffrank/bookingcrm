@@ -35,6 +35,14 @@ function localDateStr(d: Date) {
 function localTimeStr(d: Date) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+function isFutureDuty(date: string, startTime: string): boolean {
+  const today = localDateStr(new Date());
+  if (date > today) return true;
+  if (date < today) return false;
+  // same day — compare time
+  const now = localTimeStr(new Date());
+  return startTime > now;
+}
 
 export default function StaffSchedulePage() {
   const [events, setEvents] = useState<EventInput[]>([]);
@@ -43,6 +51,7 @@ export default function StaffSchedulePage() {
   const [form, setForm] = useState({ date: '', startTime: '09:00', endTime: '17:00', notes: '' });
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadEvents = useCallback(async (start: string, end: string) => {
     const from = start.slice(0, 10);
@@ -176,8 +185,34 @@ export default function StaffSchedulePage() {
     }
   }
 
+  async function handleDelete() {
+    if (!editDuty) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch(`/merchant/duties/${editDuty.id}`, { method: 'DELETE' });
+      setShowModal(false);
+      if (dateRange) loadEvents(dateRange.start, dateRange.end);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-4 font-manrope">
+      <style>{`
+        /* Hour lines — solid, visible */
+        .fc .fc-timegrid-slot { border-bottom-color: #d1d5db; }
+        /* Half-hour (minor) lines — dashed, lighter */
+        .fc .fc-timegrid-slot-minor { border-top: 1px dashed #e5e7eb !important; }
+        /* Time label column */
+        .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #374151; }
+        .fc .fc-timegrid-slot-label.fc-timegrid-slot-minor { font-size: 9px; font-weight: 400; color: #9ca3af; }
+        /* Column separator */
+        .fc .fc-timegrid-col { border-right: 1px solid #e5e7eb; }
+      `}</style>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">My Schedule</h1>
@@ -236,6 +271,15 @@ export default function StaffSchedulePage() {
             {error && <p className="text-xs text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button onClick={handleSave} className="flex-1 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors">Save</button>
+              {editDuty && isFutureDuty(editDuty.date, editDuty.startTime) && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="py-2 px-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
+                >
+                  {deleting ? '…' : 'Delete'}
+                </button>
+              )}
               <button onClick={() => setShowModal(false)} className="py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">Cancel</button>
             </div>
           </div>

@@ -82,6 +82,10 @@ export default function CalendarPage() {
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
   const [clientSnippet, setClientSnippet] = useState<ClientSnippet | null>(null);
   const [snippetLoading, setSnippetLoading] = useState(false);
+  const [showReschedule,   setShowReschedule]   = useState(false);
+  const [rescheduleForm,   setRescheduleForm]   = useState({ date: '', time: '' });
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [rescheduleError,  setRescheduleError]  = useState<string | null>(null);
   const [showDutyModal, setShowDutyModal] = useState(false);
   const [editDuty,      setEditDuty]      = useState<Duty | null>(null);
   const [dutyForm,      setDutyForm]      = useState({ staffId: '', date: '', startTime: '09:00', endTime: '17:00', notes: '' });
@@ -275,10 +279,38 @@ export default function CalendarPage() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Reschedule ────────────────────────────────────────────────────────────────
+  async function handleReschedule() {
+    if (!selBooking || !rescheduleForm.date || !rescheduleForm.time) return;
+    setRescheduleSaving(true);
+    setRescheduleError(null);
+    try {
+      const [y, mo, dd] = rescheduleForm.date.split('-').map(Number);
+      const [h, m]      = rescheduleForm.time.split(':').map(Number);
+      const newStart    = new Date(y, mo - 1, dd, h, m, 0, 0); // local time → UTC via toISOString
+      await apiFetch(`/merchant/bookings/${selBooking.id}/reschedule`, {
+        method: 'PATCH',
+        body: JSON.stringify({ start_time: newStart.toISOString() }),
+      });
+      setShowReschedule(false);
+      setSelBooking(null);
+      setClientSnippet(null);
+      // Navigate to the new date so the booking is visible
+      setDate(newStart);
+      await load();
+    } catch (err) {
+      setRescheduleError(err instanceof Error ? err.message : 'Failed to reschedule');
+    } finally {
+      setRescheduleSaving(false);
+    }
+  }
+
   // ── Client snippet fetch ──────────────────────────────────────────────────────
   async function openBooking(b: Booking) {
     setSelBooking(b);
     setClientSnippet(null);
+    setShowReschedule(false);
+    setRescheduleError(null);
     if (!b.clientId) return;
     setSnippetLoading(true);
     try {
@@ -886,7 +918,7 @@ export default function CalendarPage() {
       {selBooking && (
         <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
-          <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); }} />
+          <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} />
           {/* Panel */}
           <div className="w-full max-w-sm bg-white shadow-2xl flex flex-col font-manrope overflow-hidden">
 
@@ -907,7 +939,7 @@ export default function CalendarPage() {
                 {selBooking.priceSgd && (
                   <span className="text-sm font-semibold text-[#1a2313]">${parseFloat(selBooking.priceSgd).toFixed(2)}</span>
                 )}
-                <button onClick={() => { setSelBooking(null); setClientSnippet(null); }} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                <button onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -991,7 +1023,51 @@ export default function CalendarPage() {
 
             {/* Quick actions */}
             <div className="px-5 py-4 border-t border-gray-100 space-y-2 shrink-0">
-              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
+
+              {/* Reschedule form — expands inline when triggered */}
+              {showReschedule && (selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
+                <div className="bg-gray-50 rounded-xl p-3 space-y-2 mb-1">
+                  <p className="text-xs font-semibold text-gray-700">Reschedule to</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Date</label>
+                      <input
+                        type="date"
+                        value={rescheduleForm.date}
+                        onChange={e => setRescheduleForm(f => ({ ...f, date: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Time</label>
+                      <input
+                        type="time"
+                        value={rescheduleForm.time}
+                        onChange={e => setRescheduleForm(f => ({ ...f, time: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                      />
+                    </div>
+                  </div>
+                  {rescheduleError && <p className="text-[11px] text-red-600">{rescheduleError}</p>}
+                  <div className="flex gap-2 pt-0.5">
+                    <button
+                      onClick={handleReschedule}
+                      disabled={rescheduleSaving || !rescheduleForm.date || !rescheduleForm.time}
+                      className="flex-1 py-1.5 bg-[#1a2313] text-white text-xs font-semibold rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors"
+                    >
+                      {rescheduleSaving ? 'Saving…' : 'Confirm'}
+                    </button>
+                    <button
+                      onClick={() => { setShowReschedule(false); setRescheduleError(null); }}
+                      className="py-1.5 px-3 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showReschedule && (
                 <div className="flex gap-2">
                   {selBooking.status === 'confirmed' && (
                     <button
@@ -1017,8 +1093,28 @@ export default function CalendarPage() {
                   </button>
                 </div>
               )}
+
+              {/* Reschedule trigger button */}
+              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showReschedule && (
+                <button
+                  onClick={() => {
+                    const d = new Date(selBooking.startTime);
+                    setRescheduleForm({
+                      date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+                      time: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
+                    });
+                    setShowReschedule(true);
+                    setRescheduleError(null);
+                  }}
+                  className="w-full py-2 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/></svg>
+                  Reschedule
+                </button>
+              )}
+
               <button
-                onClick={() => { setSelBooking(null); setClientSnippet(null); }}
+                onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }}
                 className="w-full py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
               >
                 Close

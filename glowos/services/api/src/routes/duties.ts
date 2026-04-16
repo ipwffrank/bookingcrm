@@ -177,19 +177,34 @@ dutiesRouter.patch("/:id", zValidator(updateDutySchema), async (c) => {
   return c.json({ duty: updated });
 });
 
-// DELETE /merchant/duties/:id — admin only
-dutiesRouter.delete("/:id", requireAdmin(), async (c) => {
+// DELETE /merchant/duties/:id — admin or own staff (future duties only for staff)
+dutiesRouter.delete("/:id", async (c) => {
   const merchantId = c.get("merchantId")!;
+  const userRole = c.get("userRole");
+  const contextStaffId = c.get("staffId");
   const dutyId = c.req.param("id")!;
 
   const [existing] = await db
-    .select({ id: staffDuties.id })
+    .select()
     .from(staffDuties)
     .where(and(eq(staffDuties.id, dutyId), eq(staffDuties.merchantId, merchantId)))
     .limit(1);
 
   if (!existing) {
     return c.json({ error: "Not Found", message: "Duty block not found" }, 404);
+  }
+
+  // Staff can only delete their own duty blocks
+  if (userRole === "staff" && existing.staffId !== contextStaffId) {
+    return c.json({ error: "Forbidden", message: "You can only delete your own duty blocks" }, 403);
+  }
+
+  // Staff can only delete future duties (date >= today)
+  if (userRole === "staff") {
+    const today = new Date().toISOString().slice(0, 10);
+    if (existing.date < today) {
+      return c.json({ error: "Forbidden", message: "You can only delete future duty blocks" }, 403);
+    }
   }
 
   await db.delete(staffDuties).where(eq(staffDuties.id, dutyId));
