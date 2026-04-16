@@ -1,6 +1,7 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 
@@ -799,7 +800,6 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
 function BookingPageTab({ merchant }: { merchant: Merchant }) {
   const bookingUrl = `https://glowos-nine.vercel.app/${merchant.slug}`;
   const [copied, setCopied] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   function handleCopy() {
     void navigator.clipboard.writeText(bookingUrl).then(() => {
@@ -808,56 +808,6 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
     });
   }
 
-  // Draw a simple QR-code-style visual (URL text encoded as a visual grid pattern)
-  // Since we can't use a library, we render a prominent URL display with visual accent
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const SIZE = 200;
-    canvas.width = SIZE;
-    canvas.height = SIZE;
-
-    // Build a simple pseudo-QR pattern based on the URL string
-    const text = bookingUrl;
-    const cellSize = 8;
-    const cols = Math.floor(SIZE / cellSize);
-    const rows = Math.floor(SIZE / cellSize);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Deterministic grid based on URL bytes
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const idx = (r * cols + c) % text.length;
-        const charCode = text.charCodeAt(idx);
-        // XOR with position for variation
-        const val = (charCode ^ (r * 7 + c * 13)) % 2;
-        if (val === 0) {
-          ctx.fillStyle = '#4f46e5';
-          ctx.fillRect(c * cellSize, r * cellSize, cellSize - 1, cellSize - 1);
-        }
-      }
-    }
-
-    // Draw finder patterns (top-left, top-right, bottom-left corners)
-    function drawFinder(x: number, y: number) {
-      if (!ctx) return;
-      ctx.fillStyle = '#4f46e5';
-      ctx.fillRect(x, y, 7 * cellSize, 7 * cellSize);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x + cellSize, y + cellSize, 5 * cellSize, 5 * cellSize);
-      ctx.fillStyle = '#4f46e5';
-      ctx.fillRect(x + 2 * cellSize, y + 2 * cellSize, 3 * cellSize, 3 * cellSize);
-    }
-
-    drawFinder(0, 0);
-    drawFinder(SIZE - 7 * cellSize, 0);
-    drawFinder(0, SIZE - 7 * cellSize);
-  }, [bookingUrl]);
 
   return (
     <div className="space-y-6">
@@ -912,7 +862,7 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
         <p className="text-xs text-gray-500 mb-4">Print this QR code and display it at your location for walk-in clients to scan.</p>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
           <div className="p-4 bg-white border-2 border-gray-200 rounded-xl shadow-sm">
-            <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
+            <QRCodeSVG value={bookingUrl} size={192} fgColor="#4f46e5" bgColor="#ffffff" />
           </div>
           <div className="space-y-3">
             <p className="text-xs text-gray-500 max-w-xs">
