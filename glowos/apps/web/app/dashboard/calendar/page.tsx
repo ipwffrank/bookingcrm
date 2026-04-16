@@ -3,12 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { apiFetch } from '../../lib/api';
 
-// ─── Grid constants ────────────────────────────────────────────────────────────
-const DAY_START_H  = 7;
-const DAY_END_H    = 22;
-const PX_PER_MIN   = 2;        // 2 px / minute → 1 hr = 120 px
-const SNAP_MIN     = 15;       // snap to 15-min increments
-const TOTAL_PX     = (DAY_END_H - DAY_START_H) * 60 * PX_PER_MIN; // 1 800 px
+// ─── Grid constants (static) ───────────────────────────────────────────────────
+const DAY_START_H = 7;
+const DAY_END_H   = 22;
+const SNAP_MIN    = 15;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Staff { id: string; name: string; }
@@ -46,7 +44,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   in_progress: { label: 'In Progress', cls: 'bg-blue-50 text-blue-700' },
 };
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Static helpers (no PX_PER_MIN dependency) ────────────────────────────────
 function timeStrToMin(t: string) {
   const [h, m] = t.split(':').map(Number);
   return (h ?? 0) * 60 + (m ?? 0);
@@ -58,10 +56,8 @@ function isoToLocalMin(iso: string) {
   const d = new Date(iso);
   return d.getHours() * 60 + d.getMinutes();
 }
-function snap(min: number) { return Math.round(min / SNAP_MIN) * SNAP_MIN; }
+function snap(min: number)                        { return Math.round(min / SNAP_MIN) * SNAP_MIN; }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
-function topPx(min: number) { return (min - DAY_START_H * 60) * PX_PER_MIN; }
-function heightPx(sm: number, em: number) { return Math.max(PX_PER_MIN * 15, (em - sm) * PX_PER_MIN); }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function CalendarPage() {
@@ -70,6 +66,7 @@ export default function CalendarPage() {
   const [duties,     setDuties]     = useState<Duty[]>([]);
   const [bookings,   setBookings]   = useState<Booking[]>([]);
   const [loading,    setLoading]    = useState(false);
+  const [density,    setDensity]    = useState<'compact' | 'comfortable'>('comfortable');
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
@@ -79,12 +76,21 @@ export default function CalendarPage() {
   const [dutyError,     setDutyError]     = useState<string | null>(null);
   const [dutySaving,    setDutySaving]    = useState(false);
 
-  // Drag — refs for zero-overhead mousemove, state for visual re-renders
-  const dragData  = useRef<{ type: 'move' | 'resize'; duty: Duty; startY: number; origStart: number; origEnd: number; } | null>(null);
-  const dragVizR  = useRef<DragViz | null>(null);
-  const [, bump]  = useState(0);   // force re-render during drag without heavy state
-  const colRefs   = useRef<Record<string, HTMLDivElement | null>>({});
-  const loadRef   = useRef<() => Promise<void>>(async () => {});
+  // Drag — refs for zero-overhead mousemove, bump state for visual re-renders
+  const dragData = useRef<{ type: 'move' | 'resize'; duty: Duty; startY: number; origStart: number; origEnd: number; } | null>(null);
+  const dragVizR = useRef<DragViz | null>(null);
+  const [, bump] = useState(0);
+  const colRefs  = useRef<Record<string, HTMLDivElement | null>>({});
+  const loadRef  = useRef<() => Promise<void>>(async () => {});
+  const ppmRef   = useRef(2); // kept in sync with ppm for stable drag effect
+
+  // ── Dynamic grid helpers (depend on density) ─────────────────────────────────
+  const ppm      = density === 'compact' ? 1.5 : 2;   // px per minute
+  const totalPx  = (DAY_END_H - DAY_START_H) * 60 * ppm;
+  const topPx    = (min: number) => (min - DAY_START_H * 60) * ppm;
+  const heightPx = (sm: number, em: number) => Math.max(ppm * 15, (em - sm) * ppm);
+
+  useEffect(() => { ppmRef.current = ppm; }, [ppm]);
 
   const dateStr = date.toISOString().slice(0, 10);
 
@@ -115,9 +121,32 @@ export default function CalendarPage() {
     } finally { setLoading(false); }
   }, [dateStr]);
 
-  // Keep loadRef current so stable effects can call it
   useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { load(); }, [load]);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      switch (e.key) {
+        case 'b': case 'B':
+          setEditDuty(null); setDutyError(null);
+          setDutyForm({ staffId: '', date: dateStr, startTime: '09:00', endTime: '17:00', notes: '' });
+          setShowDutyModal(true);
+          break;
+        case 'ArrowLeft':  e.preventDefault(); setDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; }); break;
+        case 'ArrowRight': e.preventDefault(); setDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; }); break;
+        case 't': case 'T': setDate(new Date()); break;
+        case 'c': case 'C': setDensity(d => d === 'compact' ? 'comfortable' : 'compact'); break;
+        case 'Escape':
+          setShowDutyModal(false); setSelBooking(null); setDutyError(null);
+          break;
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dateStr]);
 
   // ── Occupancy ─────────────────────────────────────────────────────────────────
   function occupancy(staffId: string) {
@@ -139,7 +168,7 @@ export default function CalendarPage() {
     bump(n => n + 1);
   }
 
-  // Stable event listener (runs once)
+  // Stable mouse event listeners (runs once — uses ppmRef for current ppm)
   useEffect(() => {
     function staffAtX(clientX: number): string {
       for (const [staffId, el] of Object.entries(colRefs.current)) {
@@ -153,7 +182,7 @@ export default function CalendarPage() {
     function onMove(e: MouseEvent) {
       const d = dragData.current;
       if (!d) return;
-      const deltaMin = (e.clientY - d.startY) / PX_PER_MIN;
+      const deltaMin = (e.clientY - d.startY) / ppmRef.current;
 
       if (d.type === 'move') {
         const dur = d.origEnd - d.origStart;
@@ -196,12 +225,20 @@ export default function CalendarPage() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup',   onUp);
     };
-  }, []); // stable — no deps needed thanks to refs
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Booking actions ───────────────────────────────────────────────────────────
+  async function bookingAction(id: string, action: 'check-in' | 'complete' | 'no-show') {
+    try {
+      await apiFetch(`/merchant/bookings/${id}/${action}`, { method: 'PUT' });
+      await load();
+    } catch { /* stale status — ignore */ }
+  }
 
   // ── Duty CRUD ─────────────────────────────────────────────────────────────────
   function openNewDuty(staffId: string, relYPx: number) {
     if (dragData.current) return;
-    const rawMin  = relYPx / PX_PER_MIN + DAY_START_H * 60;
+    const rawMin   = relYPx / ppm + DAY_START_H * 60;
     const startMin = clamp(snap(rawMin), DAY_START_H * 60, (DAY_END_H - 1) * 60);
     setEditDuty(null); setDutyError(null);
     setDutyForm({ staffId, date: dateStr, startTime: minToStr(startMin), endTime: minToStr(Math.min(startMin + 60, DAY_END_H * 60)), notes: '' });
@@ -239,17 +276,35 @@ export default function CalendarPage() {
     finally { setDutySaving(false); }
   }
 
-  // ── Booking status actions ────────────────────────────────────────────────────
-  async function bookingAction(id: string, action: 'check-in' | 'complete' | 'no-show') {
-    try {
-      await apiFetch(`/merchant/bookings/${id}/${action}`, { method: 'PUT' });
-      await load();
-    } catch { /* ignore — stale status */ }
-  }
-
   // ── Navigation ────────────────────────────────────────────────────────────────
   function nav(delta: number) {
     setDate(d => { const n = new Date(d); n.setDate(n.getDate() + delta); return n; });
+  }
+
+  // ── Off-duty ranges for a staff member ───────────────────────────────────────
+  function offDutyRanges(staffId: string): { start: number; end: number }[] {
+    const staffDuties = duties
+      .filter(d => d.staffId === staffId)
+      .sort((a, b) => timeStrToMin(a.startTime) - timeStrToMin(b.startTime));
+
+    if (staffDuties.length === 0) {
+      return [{ start: DAY_START_H * 60, end: DAY_END_H * 60 }];
+    }
+
+    const ranges: { start: number; end: number }[] = [];
+    const first = staffDuties[0]!;
+    const last  = staffDuties[staffDuties.length - 1]!;
+
+    if (timeStrToMin(first.startTime) > DAY_START_H * 60)
+      ranges.push({ start: DAY_START_H * 60, end: timeStrToMin(first.startTime) });
+
+    for (let i = 0; i < staffDuties.length - 1; i++)
+      ranges.push({ start: timeStrToMin(staffDuties[i]!.endTime), end: timeStrToMin(staffDuties[i + 1]!.startTime) });
+
+    if (timeStrToMin(last.endTime) < DAY_END_H * 60)
+      ranges.push({ start: timeStrToMin(last.endTime), end: DAY_END_H * 60 });
+
+    return ranges;
   }
 
   // ── Time labels ───────────────────────────────────────────────────────────────
@@ -259,19 +314,16 @@ export default function CalendarPage() {
     timeLabels.push({ min: h * 60, label });
   }
 
-  // Now indicator (only for today)
+  // Now indicator
   const isToday = dateStr === new Date().toISOString().slice(0, 10);
-  const now = new Date();
-  const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : null;
+  const nowMin  = isToday ? new Date().getHours() * 60 + new Date().getMinutes() : null;
 
-  const dateLabel = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  const viz = dragVizR.current;
-
-  // ── Day stats (for status bar) ────────────────────────────────────────────────
+  // Day stats
   const dayStats = (() => {
-    const active = bookings.filter(b => b.status !== 'cancelled');
     const byStatus = (s: string) => bookings.filter(b => b.status === s).length;
-    const revenue  = active.reduce((sum, b) => sum + parseFloat(b.priceSgd ?? '0'), 0);
+    const revenue  = bookings
+      .filter(b => b.status !== 'cancelled')
+      .reduce((sum, b) => sum + parseFloat(b.priceSgd ?? '0'), 0);
     return {
       total:      bookings.length,
       confirmed:  byStatus('confirmed'),
@@ -283,6 +335,9 @@ export default function CalendarPage() {
     };
   })();
 
+  const dateLabel = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const viz = dragVizR.current;
+
   // ─── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4 font-manrope" style={{ userSelect: 'none' }}>
@@ -291,18 +346,43 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Calendar</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Click any empty slot to schedule a block · Drag blocks to move or reassign</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Click empty slot to add block · Drag to move or reassign
+            <span className="ml-2 text-gray-300">·</span>
+            <span className="ml-2 text-gray-300 font-mono text-[10px]">B</span>
+            <span className="ml-0.5 text-gray-400 text-[10px]"> add block</span>
+            <span className="ml-2 text-gray-300 font-mono text-[10px]">← →</span>
+            <span className="ml-0.5 text-gray-400 text-[10px]"> navigate</span>
+            <span className="ml-2 text-gray-300 font-mono text-[10px]">C</span>
+            <span className="ml-0.5 text-gray-400 text-[10px]"> density</span>
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setEditDuty(null); setDutyError(null);
-            setDutyForm({ staffId: staffList[0]?.id ?? '', date: dateStr, startTime: '09:00', endTime: '17:00', notes: '' });
-            setShowDutyModal(true);
-          }}
-          className="px-4 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors"
-        >
-          + Add Block
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Density toggle */}
+          <button
+            onClick={() => setDensity(d => d === 'compact' ? 'comfortable' : 'compact')}
+            title="Toggle compact/comfortable view (C)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {density === 'comfortable'
+                ? <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M3 12h18M3 17h18" />
+                : <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M3 10h18M3 14h18M3 18h18" />
+              }
+            </svg>
+            {density === 'comfortable' ? 'Comfortable' : 'Compact'}
+          </button>
+          <button
+            onClick={() => {
+              setEditDuty(null); setDutyError(null);
+              setDutyForm({ staffId: staffList[0]?.id ?? '', date: dateStr, startTime: '09:00', endTime: '17:00', notes: '' });
+              setShowDutyModal(true);
+            }}
+            className="px-4 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors"
+          >
+            + Add Block
+          </button>
+        </div>
       </div>
 
       {/* ── Date navigation ── */}
@@ -325,7 +405,6 @@ export default function CalendarPage() {
 
         {/* Staff column headers */}
         <div className="flex border-b border-gray-100 bg-white z-20 shrink-0">
-          {/* Gutter spacer */}
           <div className="w-14 shrink-0 border-r border-gray-100" />
           {staffList.map((s, i) => {
             const occ   = occupancy(s.id);
@@ -360,14 +439,14 @@ export default function CalendarPage() {
           })}
         </div>
 
-        {/* Scrollable body */}
+        {/* Scrollable grid body */}
         <div className="overflow-y-auto overflow-x-auto flex-1" style={{ maxHeight: 'calc(100vh - 300px)' }}>
-          <div className="flex" style={{ minHeight: TOTAL_PX }}>
+          <div className="flex" style={{ minHeight: totalPx }}>
 
             {/* Time gutter */}
-            <div className="w-14 shrink-0 border-r border-gray-100 relative bg-white sticky left-0 z-10" style={{ height: TOTAL_PX }}>
+            <div className="w-14 shrink-0 border-r border-gray-100 relative bg-white sticky left-0 z-10" style={{ height: totalPx }}>
               {timeLabels.map(({ min, label }) => (
-                <div key={min} className="absolute right-2 pr-0.5" style={{ top: topPx(min) - 9, left: 0 }}>
+                <div key={min} className="absolute right-2" style={{ top: topPx(min) - 9, left: 0 }}>
                   <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{label}</span>
                 </div>
               ))}
@@ -378,7 +457,7 @@ export default function CalendarPage() {
               const color       = STAFF_COLORS[colIdx % STAFF_COLORS.length]!;
               const staffDuties = duties.filter(d => d.staffId === s.id);
               const staffBooks  = bookings.filter(b => b.staffId === s.id);
-              // Drag ghost: show in target column if it isn't the duty's home column
+              const offRanges   = offDutyRanges(s.id);
               const ghostHere   = viz && viz.staffId === s.id && !staffDuties.find(d => d.id === viz.dutyId);
 
               return (
@@ -386,7 +465,7 @@ export default function CalendarPage() {
                   key={s.id}
                   ref={el => { colRefs.current[s.id] = el; }}
                   className="flex-1 min-w-[160px] border-r border-gray-100 last:border-r-0 relative cursor-cell"
-                  style={{ height: TOTAL_PX }}
+                  style={{ height: totalPx }}
                   onClick={e => {
                     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                     openNewDuty(s.id, e.clientY - rect.top);
@@ -399,6 +478,20 @@ export default function CalendarPage() {
                   {/* 30-min sub-lines */}
                   {timeLabels.slice(0, -1).map(({ min }) => (
                     <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-50" style={{ top: topPx(min + 30) }} />
+                  ))}
+
+                  {/* Off-duty hatching */}
+                  {offRanges.map((r, i) => (
+                    <div
+                      key={i}
+                      className="absolute inset-x-0 pointer-events-none"
+                      style={{
+                        top:    topPx(r.start),
+                        height: heightPx(r.start, r.end),
+                        background: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.018) 5px, rgba(0,0,0,0.018) 10px)',
+                        backgroundColor: 'rgba(248,250,252,0.7)',
+                      }}
+                    />
                   ))}
 
                   {/* Now indicator */}
@@ -415,7 +508,6 @@ export default function CalendarPage() {
                   {/* Duty blocks */}
                   {staffDuties.map(duty => {
                     const isDragging = viz?.dutyId === duty.id;
-                    // If block is being dragged to another column, hide it here
                     if (isDragging && viz && viz.staffId !== s.id) return null;
                     const sm = isDragging && viz ? viz.startMin : timeStrToMin(duty.startTime);
                     const em = isDragging && viz ? viz.endMin   : timeStrToMin(duty.endTime);
@@ -436,19 +528,16 @@ export default function CalendarPage() {
                       >
                         <div className="px-2 pt-1.5 pb-4 h-full flex flex-col pointer-events-none">
                           <span className="text-[10px] text-white/60 font-mono">{minToStr(sm)}–{minToStr(em)}</span>
-                          {duty.notes && (
-                            <span className="text-[11px] text-white/90 mt-0.5 truncate">{duty.notes}</span>
-                          )}
-                          {heightPx(sm, em) < 48 ? null : (
-                            <span className="text-[10px] text-white/40 mt-auto">On duty</span>
+                          {duty.notes && <span className="text-[11px] text-white/90 mt-0.5 truncate">{duty.notes}</span>}
+                          {heightPx(sm, em) >= 48 && (
+                            <span className="text-[10px] text-white/30 mt-auto">On duty</span>
                           )}
                         </div>
-                        {/* Resize handle */}
                         <div
-                          className="absolute bottom-0 inset-x-0 h-3 cursor-s-resize flex items-center justify-center group pointer-events-auto"
+                          className="absolute bottom-0 inset-x-0 h-3 cursor-s-resize flex items-center justify-center pointer-events-auto"
                           onMouseDown={e => { e.stopPropagation(); startDrag(e, duty, 'resize'); }}
                         >
-                          <div className="w-6 h-px bg-white/25 group-hover:bg-white/60 transition-colors" />
+                          <div className="w-6 h-px bg-white/30 hover:bg-white/60 transition-colors" />
                         </div>
                       </div>
                     );
@@ -489,7 +578,7 @@ export default function CalendarPage() {
                         }}
                         onClick={e => { e.stopPropagation(); setSelBooking(b); }}
                       >
-                        {/* Quick action buttons — visible on hover */}
+                        {/* Quick action buttons */}
                         <div className="absolute top-1 right-1 hidden group-hover/card:flex items-center gap-0.5 z-20">
                           {canCheckIn && (
                             <button
@@ -549,7 +638,6 @@ export default function CalendarPage() {
 
         {/* Status bar */}
         <div className="border-t border-gray-100 bg-gray-50/40 shrink-0">
-          {/* Stat counters */}
           <div className="flex items-center gap-0 divide-x divide-gray-100 px-1 py-2">
             <div className="flex flex-col items-center px-4">
               <span className="text-base font-bold text-gray-900 tabular-nums leading-none">{dayStats.total}</span>
@@ -591,8 +679,8 @@ export default function CalendarPage() {
               </span>
               <span className="text-[10px] text-gray-400 mt-0.5">Est. Revenue</span>
             </div>
-            {/* Legend — pushed right */}
-            <div className="ml-auto flex items-center gap-3 pl-4 border-l-0 pr-4">
+            {/* Legend */}
+            <div className="flex items-center gap-3 pl-4 pr-4 ml-auto border-l-0">
               <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
                 <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: DUTY_BG }} />
                 Duty
@@ -704,24 +792,27 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* ── Booking detail drawer ── */}
+      {/* ── Booking detail ── */}
       {selBooking && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm font-manrope overflow-hidden">
-            {/* Header strip */}
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900">{selBooking.clientName ?? 'Client'}</h2>
                 <p className="text-xs text-gray-400 mt-0.5">{selBooking.serviceName}</p>
               </div>
-              {STATUS_META[selBooking.status] && (
-                <span className={`text-[10px] font-semibold px-2 py-1 rounded-md ${STATUS_META[selBooking.status]!.cls}`}>
-                  {STATUS_META[selBooking.status]!.label}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {selBooking.priceSgd && (
+                  <span className="text-sm font-semibold text-[#1a2313]">${parseFloat(selBooking.priceSgd).toFixed(2)}</span>
+                )}
+                {STATUS_META[selBooking.status] && (
+                  <span className={`text-[10px] font-semibold px-2 py-1 rounded-md ${STATUS_META[selBooking.status]!.cls}`}>
+                    {STATUS_META[selBooking.status]!.label}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Details */}
             <div className="px-5 py-4 space-y-3">
               {[
                 ['Staff',  selBooking.staffName ?? '—'],
@@ -735,6 +826,34 @@ export default function CalendarPage() {
                 </div>
               ))}
             </div>
+
+            {/* Quick actions inside drawer too */}
+            {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
+              <div className="px-5 pb-4 flex gap-2">
+                {selBooking.status === 'confirmed' && (
+                  <button
+                    onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); }}
+                    className="flex-1 py-2 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Check In
+                  </button>
+                )}
+                {selBooking.status === 'in_progress' && (
+                  <button
+                    onClick={() => { bookingAction(selBooking.id, 'complete'); setSelBooking(null); }}
+                    className="flex-1 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-colors"
+                  >
+                    Mark Complete
+                  </button>
+                )}
+                <button
+                  onClick={() => { bookingAction(selBooking.id, 'no-show'); setSelBooking(null); }}
+                  className="py-2 px-4 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors"
+                >
+                  No Show
+                </button>
+              </div>
+            )}
 
             <div className="px-5 pb-5">
               <button
