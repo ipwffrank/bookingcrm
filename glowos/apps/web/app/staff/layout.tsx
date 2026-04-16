@@ -37,7 +37,6 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   }
 
   const NAV = [
-    { href: '/staff/dashboard', label: 'My Schedule' },
     { href: '/staff/bookings', label: 'All Bookings' },
     { href: '/staff/my-bookings', label: 'My Bookings' },
   ];
