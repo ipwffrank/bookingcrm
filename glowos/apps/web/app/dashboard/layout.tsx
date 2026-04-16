@@ -218,6 +218,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </nav>
   );
 
+  // Group admin routes have their own layout — don't render branch admin chrome
+  if (pathname.startsWith('/dashboard/group')) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Desktop sidebar */}
