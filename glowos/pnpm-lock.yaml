@@ -63,6 +63,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@fullcalendar/core':
+        specifier: ^6.1.20
+        version: 6.1.20
       '@fullcalendar/daygrid':
         specifier: ^6.1.20
         version: 6.1.20(@fullcalendar/core@6.1.20)
