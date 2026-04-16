@@ -29,6 +29,13 @@
       "when": 1776328109718,
       "tag": "0003_magenta_husk",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1776328960209,
+      "tag": "0004_goofy_captain_universe",
+      "breakpoints": true
     }
   ]
 }
