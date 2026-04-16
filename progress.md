@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 15 April 2026 (Session 6)**
+**Last updated: 16 April 2026 (Session 7)**
 
 ---
 
@@ -21,6 +21,133 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 7 — 16 April 2026)
+
+### Bug Fixes & Polish
+
+#### Duty block save "invalid, invalid" error ✅
+- **Root cause:** PostgreSQL `time` columns return `"HH:MM:SS"` (with seconds) but Zod regex only accepted `"HH:MM"`. When editing an existing duty, the form sent the raw DB value → two regex failures → "Invalid, Invalid".
+- **Fix:** Frontend strips seconds with `.slice(0, 5)` when populating edit forms (both admin calendar + staff bookings). API regex now accepts `HH:MM` or `HH:MM:SS`. New `toHHMM()` helper normalizes to `HH:MM` before DB writes. Custom error messages on all duty schema validators.
+
+#### Admin calendar grid lines ✅
+- Hour lines: `border-gray-200` → `border-gray-300`
+- Half-hour sub-lines: `border-dashed border-gray-100` → `border-dashed border-gray-200`
+- `:30` gutter labels: `text-gray-300` → `text-gray-400`
+
+#### Walk-in page redesign ✅
+- Complete redesign from dark theme to light theme matching dashboard
+- White `rounded-xl border border-gray-200` cards, `font-manrope`
+- Proper font colors, consistent button styles
+
+#### Staff "All Bookings" empty calendar ✅
+- Removed `normaliseBookings()` that expected nested structure; API returns flat rows
+
+### New Features
+
+#### Analytics — 4 new sections ✅
+- **API:** 4 new endpoints in `services/api/src/routes/analytics.ts`:
+  - `GET /merchant/analytics/cancellation-rate` — completed/cancelled/no-show rates
+  - `GET /merchant/analytics/peak-hours` — hour × day-of-week booking counts (Singapore TZ)
+  - `GET /merchant/analytics/client-retention` — new vs returning clients
+  - `GET /merchant/analytics/revenue-by-dow` — 7-day revenue + booking count array
+- **Frontend:** 4 new components in analytics page:
+  - `CancellationRates` — horizontal progress bars
+  - `ClientRetention` — segmented bar (indigo=new, violet=returning)
+  - `RevByDow` — purple bar chart with hover tooltips
+  - `PeakHoursHeatmap` — 13h × 7d grid (8am–8pm), GitHub-style heat legend
+
+#### Staff portal — merged My Schedule into All Bookings ✅
+- Removed separate "My Schedule" tab; duty block management now inside "All Bookings"
+- Staff can see firm-wide bookings (colored by staff) alongside their own duty blocks (dark green)
+- Drag/drop duties, click to add/edit, delete future blocks only
+- FullCalendar with `interactionPlugin` for drag/resize
+- Legend: "Dark blocks = your schedule · Coloured = firm bookings"
+
+#### Staff duty self-management ✅
+- Staff can delete their own **future** duty blocks (not past)
+- Backend: DELETE endpoint checks `staffId` ownership + date >= today
+- Frontend: Delete button only visible for future blocks; "Past blocks cannot be edited or deleted" hint
+
+#### Responsive layout + collapsible sidebar ✅
+- **Desktop sidebar collapse:** Toggle button at bottom of sidebar shrinks to icon-only mode (`w-14`). State persists in `localStorage`. Smooth CSS transition on width + content margin.
+- **Staff portal mobile:** Added mobile top bar with hamburger menu + slide-out sidebar overlay (was desktop-only before).
+- **Content pages:** Calendar shows amber hint on small screens; campaigns stat grid responsive; walk-in form stacks on xs; main content `min-w-0` prevents overflow.
+
+#### Rich client profile snippet in calendar ✅
+- **API:** `/merchant/clients/for-client/:clientId` now returns service history (last 10 bookings with service name, staff, date, price) alongside existing profile data.
+- **Frontend:** Booking detail panel now shows:
+  - Client name, phone, email
+  - Visit count, revenue, last visit date (stat cards)
+  - VIP tier badge + marketing opt-in status badge
+  - Internal notes (amber box)
+  - Past services list (scrollable, last 10 — service, staff, date, price)
+  - Reviews placeholder ("coming soon")
+
+### Commits (Session 7)
+| Hash | Description |
+|---|---|
+| `7c5d3d9` | feat: booking reschedule, client profiles, clearer time grid |
+| `1a47490` | feat: cross-day reschedule, staff delete duty, clearer grid lines |
+| `25c5608` | redesign: walkins page to match dashboard light theme |
+| `5c13417` | fix: staff All Bookings calendar was always empty |
+| `71044e3` | feat: merge My Schedule into All Bookings for staff portal |
+| `7611823` | feat: analytics metrics, admin calendar grid clarity |
+| `a9daec4` | fix: add descriptive error messages to duty PATCH schema |
+| `5aa3966` | feat: responsive layout + collapsible sidebar |
+| `c0ce325` | fix: duty edit/save fails due to DB time format with seconds |
+| `7d235b7` | feat: rich client profile snippet in calendar booking panel |
+
+---
+
+## Feature Completion Status
+
+### Fully Built ✅
+| Feature | Notes |
+|---|---|
+| Analytics/Reports | 9 sections: summary, revenue, staff perf, top services, booking sources, cancellation rate, peak hours heatmap, client retention, revenue by DOW |
+| Online booking page | 5-step wizard at `/{slug}` with slot leasing, staff selection, date/time picker |
+| Appointment reminders | WhatsApp + email via BullMQ (24h reminder, 30min review, no-show re-engagement, rebook CTA) |
+| Services management UI | Full CRUD with consult/treatment slot types |
+| Staff management UI | Full CRUD with profiles, working hours, specialty tags |
+| Settings page | 5 tabs: profile, cancellation policy, payments (Stripe Connect), booking page (QR), account |
+| Client CRM | VIP tiers, churn risk, search/filters, rich profile snippet |
+| Campaigns | Email/WhatsApp/SMS blasts with audience filtering |
+| CSV import | Client import with preview + validation |
+| Walk-in bookings | Light-theme form, service/staff/payment selection |
+| Calendar (admin) | Custom resource grid, drag/drop duties + booking reschedule, density toggle |
+| Calendar (staff) | FullCalendar with duty management merged into All Bookings |
+| Responsive layout | Mobile hamburger, collapsible desktop sidebar, responsive grids |
+
+### Remaining Gaps
+| Feature | Priority | Notes |
+|---|---|---|
+| Stripe payment in booking checkout | **High** | Connect is wired in settings but checkout doesn't collect payment |
+| Holiday/closure management | **High** | No way to block out dates (CNY, Deepavali etc.) — slots still show |
+| Client reviews | **Medium** | Placeholder in profile snippet; needs collection flow + display |
+| Embed booking widget | **Medium** | Generate `<iframe>` or `<script>` snippet for merchant websites |
+| SMS fallback | **Medium** | Twilio infrastructure exists; add SMS when WhatsApp delivery fails |
+| Notification preferences | **Low** | Let merchant toggle which reminders fire + customize templates |
+| Custom domain mapping | **Low** | Custom booking URLs instead of `/{slug}` |
+| Push notifications | **Low** | Mobile/web push for real-time booking alerts |
+
+---
+
+## Resume Checklist (Next Session)
+
+```
+1. cd ~/Desktop/Projects/Bookingcrm/glowos
+2. Read progress.md
+3. git log --oneline -5  →  should see 7d235b7 as latest
+4. Pick next feature from "Remaining Gaps" table above
+5. Recommended order:
+   a. Stripe payment in booking checkout (highest user friction)
+   b. Holiday/closure management (prevents incorrect availability)
+   c. Client reviews infrastructure (post-service flow)
+   d. Embed widget (distribution channel)
+```
 
 ---
 
@@ -86,21 +213,6 @@
 
 ---
 
-### Resume Checklist (Next Session — Phase 1 merge + Phase 2 planning)
-
-```
-1. cd ~/Desktop/Projects/Bookingcrm
-2. Read this progress.md
-3. Merge feature/phase1-clinical-credibility → main (PR or direct)
-4. Deploy: git push → Railway auto-deploys API; vercel --prod for frontend
-5. Set env vars in Railway: SENDGRID_API_KEY, FROM_EMAIL, FROM_NAME
-6. Verify production: glowos-nine.vercel.app/dashboard/staff, /walkins, /import
-7. Sign up for Stripe (still pending from Session 5 TODO list)
-8. Begin Phase 2 planning (group admin UI, promotions, subscription tiers, staff calendar)
-```
-
----
-
 ## What's Completed (Session 5 — 12 April 2026)
 
 ### Phase 1 — Clinical Credibility (Tasks 1–4 of 14 complete)
@@ -111,253 +223,39 @@
 **Spec file:** `docs/superpowers/specs/2026-04-12-glowos-clinic-platform-design.md`
 
 #### Task 1 ✅ — Schema extensions (commit `cd73535`)
-- `staff`: added `bio`, `specialtyTags` (text[]), `credentials`, `isPubliclyVisible`
-- `services`: added `slotType` (standard/consult/treatment), `requiresConsultFirst`, `consultServiceId`
-- `clients`: added `acquisitionSource` (online_booking/walkin/import/social), `preferredContactChannel` (email/whatsapp)
-- `merchants`: added `groupId` (bare UUID, no FK — circular import prevention documented in comment)
-
-#### Task 2 ✅ — New schema tables + DB migration pushed (commits `4c97dfc`, `83f6497`, `a509619`)
-- New file `glowos/packages/db/src/schema/groups.ts`: `groups`, `groupSettings`, `groupUsers`, `staffMerchants` tables
-  - `profileSharingLevel` is a 4-level enum (none/identity_only/selective/full_history) — NOT a boolean
-  - `groupUsers` is a separate auth table from `merchant_users`
-  - `staffMerchants` composite PK — home branch stays in `staff.merchantId`, this lists additional branches only
-- New file `glowos/packages/db/src/schema/consult.ts`: `consultOutcomes` table
-- New file `glowos/packages/db/src/schema/post-service.ts`: `postServiceSequences` table
-- Migration `0001_lush_ken_ellis.sql` generated + pushed to Neon ✅ (all 6 new tables live in DB)
-
-#### Task 3 ✅ — Staff profile API (commits `031ab43`, `947338a`)
-- `PATCH /merchant/staff/:id/profile` — authenticated partial update with empty-body guard, merchantId scope on UPDATE
-- `GET /booking/:slug/staff` — public endpoint for booking widget, returns 9-column projection (no sensitive fields), filters `isActive=true AND isPubliclyVisible=true`
-
-#### Task 4 ✅ — Staff profile admin UI (commits `aa81e42`, `43969ac`)
-- `glowos/apps/web/app/dashboard/staff/page.tsx`: bio textarea, specialty tags (comma-string), credentials, publicly-visible checkbox
-- Profile PATCH called after main staff save; always sends `is_publicly_visible`; sends bio/credentials/specialty_tags unconditionally (|| undefined to omit when blank)
-- Fixed: POST response shape correctly cast as `{ staff: { id } }` not `{ id }`
-
-#### Remaining Tasks (5–14 — next session picks up here)
-
-| Task | Description | Status |
-|---|---|---|
-| 5 | Staff profile cards in BookingWidget (bio, specialty tags, service descriptions) | ⏳ next |
-| 6 | Consult slot type API (extend services PATCH + consult outcome endpoints) | pending |
-| 7 | Consult slot type admin UI + widget gating | pending |
-| 8 | Walk-in registration + payment recording API | pending |
-| 9 | Walk-in panel UI | pending |
-| 10 | Post-service comms scheduler + worker | pending |
-| 11 | SendGrid email setup (new lib + dual-channel notifications) | pending |
-| 12 | CSV import API | pending |
-| 13 | CSV import UI | pending |
-| 14 | Final integration check + deploy | pending |
-
-### Resume Checklist (Next Session — Phase 1 continued)
-
-```
-1. cd ~/Desktop/Projects/bookingcrm
-2. Read this progress.md
-3. git worktree list  →  should show .worktrees/phase1-clinical-credibility on branch feature/phase1-clinical-credibility
-4. Read docs/superpowers/plans/2026-04-12-phase1-clinical-credibility.md  →  Task 5 is next
-5. Continue subagent-driven development from Task 5
-   - Task 5: BookingWidget staff cards (bio, specialty tags, service descriptions)
-   - All tasks follow spec compliance review → code quality review → mark complete → next task
-```
+#### Task 2 ✅ — New schema tables + DB migration pushed
+#### Task 3 ✅ — Staff profile API
+#### Task 4 ✅ — Staff profile admin UI
 
 ---
 
 ## What's Completed (Session 4 — 11 April 2026)
 
 ### Booking Widget — Availability Endpoint Fixed
-- [x] **OOM crash fixed** — Drizzle returns PostgreSQL `time` columns as `"HH:MM:SS"` not `"HH:MM"`; `combineDateAndTime` was appending `:00` producing invalid ISO `"T09:00:00:00"` → `parseISO` returned `Invalid Date` → `generateTimeSlots` looped forever → Node heap exhausted (~477 MB) → process crash
-- [x] Fix: split on `:` and take only HH + MM parts, handles both `"HH:MM"` and `"HH:MM:SS"` from DB
-- [x] Safety guard added to `generateTimeSlots`: NaN/range checks + `MAX_SLOTS=500` cap to prevent any future infinite loop
-- [x] **`slotLeases` crash fixed** — `slot_leases` table never created; importing it from `@glowos/db` returned `undefined`; accessing `slotLeases.staffId` threw `TypeError` at query build time; replaced with empty array (slot leasing to be implemented when table is created)
-- [x] Try/catch added to availability route handler for belt-and-suspenders error containment
-
-### Workers / WhatsApp Notifications Fixed
-- [x] **BullMQ worker crash fixed** — all 3 workers (notification, crm, vip) had no `.on("error")` handler; IORedis connection failure emitted unhandled EventEmitter error → process crash; added error handlers to all workers
-- [x] **Worker startup logic fixed** — was guarded by `process.env.NODE_ENV !== "production"`, so workers never ran in Railway even with Upstash Redis configured; changed to start when `REDIS_URL` is present regardless of environment
-- [x] **WhatsApp notifications confirmed working** — end-to-end tested: booking → BullMQ job → notification worker → Twilio WhatsApp → message received ✅
-
-### Infrastructure
-- [x] `NODE_ENV=production` confirmed set in Railway variables
-- [x] `REDIS_URL` (Upstash) confirmed set in Railway variables — workers start on deploy
-- [x] Vercel auto-deploy via GitHub: confirmed connected (source shows GitHub commit, not CLI)
+- OOM crash fixed (time format "HH:MM:SS" → infinite loop in slot generator)
+- `slotLeases` crash fixed (table not created yet)
+- BullMQ worker crash fixed (missing error handlers)
+- Worker startup fixed (was gated behind NODE_ENV !== "production")
+- WhatsApp notifications end-to-end confirmed working
 
 ---
 
 ## What's Completed (Session 3 — 11 April 2026)
-
-### Industry-Agnostic Rebranding
-- [x] All website copy rewritten across 12 files — serves restaurants, salons, clinics, spas, barbershops
-- [x] Business categories expanded from 5 beauty-only to 9 multi-industry (restaurant, beauty_clinic, medical_clinic, other added)
-- [x] Backend category validation updated to accept all 9 categories (auth.ts, merchant.ts, merchants schema)
-- [x] Service categories expanded with Dining/F&B and Medical/Clinical
-
-### Interactive UI — SevenRooms-inspired (Chris)
-- [x] 4 new components: FloatingCTA, TestimonialCarousel (auto-advancing), ParallaxSection, ButtonRipple
-- [x] Parallax hero orbs, animated ambient depth layers
-- [x] Micro-interactions: card-hover-lift, glow-dot icons, shimmer overlay, button ripples
-- [x] How It Works: scale-up staggered animations with glow ring hover
-- [x] Testimonials upgraded from static quote to full carousel (3 testimonials, directional slides)
-- [x] NavBar sticky CTA glow after scroll, all touch targets ≥ 44px (WCAG 2.1 AA)
-- [x] prefers-reduced-motion support across all animations
-
-### Critical Bug Fixes (E2E Audit)
-- [x] Route ordering bug fixed — `/merchant` routes now precede `/:slug` wildcard
-- [x] Cancellation refund logic fixed — correct field names, dynamic refund % displayed
-- [x] Server-component API URL fixed — `getApiUrl()` with runtime env fallback chain for Vercel
-- [x] JWT token refresh flow implemented — ApiError class, auto-refresh on 401, refresh lock
-- [x] 23 brittle `msg.includes('401')` checks replaced with `err instanceof ApiError && err.status === 401` across 7 dashboard pages
-- [x] "Business not found" replaces "Salon not found" in public booking page
-
-### Client Portal Fixes
-- [x] Client spending aggregation fixed — totalSpendSgd/totalVisits/lastVisitAt computed from completed bookings
-- [x] Slug guard added — reserved words (merchant, cancel, health) return 404 instead of "Salon not found"
-
-### Test Data
-- [x] Seed script created (`packages/db/src/seed.ts`)
-- [x] 3 branches seeded: ABC Salon - Orchard, Tampines, Jurong
-- [x] 10 today's bookings + 22 past completed + 7 future bookings for ABC Salon
-- [x] 8 test clients with profiles and spending history
-- [x] 3 bookings per branch for today
-
-### Infrastructure
-- [x] Twilio WhatsApp sandbox joined (keyword: east-written, number: +14155238886)
-- [x] Twilio credentials added to Railway env vars
-- [x] Vercel env vars set: API_URL + NEXT_PUBLIC_API_URL pointing to Railway
-- [x] All changes deployed — GitHub `a910d23`, Vercel production live
-
----
+- Industry-agnostic rebranding (9 business categories)
+- Interactive UI (parallax, testimonials, micro-interactions)
+- Critical bug fixes (route ordering, cancellation, JWT refresh, API URL)
+- Client spending aggregation fixed
+- Seed script (3 branches, 39 bookings, 8 clients)
 
 ## What's Completed (Session 2 — 11 April 2026)
-
-### Landing Page Redesign — SevenRooms-Inspired (2 passes)
-
-**Pass 1 — Initial redesign:**
-- [x] Complete visual overhaul — dark premium aesthetic with warm champagne gold (#c4a778) accent palette
-- [x] Scroll-triggered animations — new `AnimateOnScroll` component using IntersectionObserver (fade-up, slide-in-left/right, scale-in)
-- [x] NavBar redesign — cleaner minimal style, gold accents
-- [x] Fixed hero layout overlap — switched from absolute positioning to proper CSS grid
-- [x] Deployed to Vercel production
-
-**Pass 2 — Frontend-design skill refinement:**
-- [x] Typography upgrade — Cormorant Garamond (serif display) + Outfit (geometric sans body), replacing generic Inter/Playfair
-- [x] Film grain overlay — subtle SVG noise texture across entire page for editorial depth
-- [x] Hero editorial treatment — italic "booking software", `clamp()` fluid typography, orchestrated `hero-load` animation sequence
-- [x] Animated gold divider lines between all sections
-- [x] Centered section labels with flanking gold lines
-- [x] NavBar animated underline on hover + animated hamburger icon (lines rotate to X)
-- [x] CSS variables system (`--gold`, `--surface`, `--surface-raised`) for consistency
-- [x] Dashboard mockup gentle float animation (`animate-subtle-float`)
-- [x] CTA buttons: dark text on gold (better contrast), lift + shadow bloom on hover
-- [x] Deeper hover states with longer transitions (500–700ms)
-- [x] Custom scrollbar, focus-visible styles, selection color
-- [x] Deployed to Vercel production
-
-### New Files
-- `apps/web/app/components/AnimateOnScroll.tsx` — reusable scroll-triggered animation wrapper (IntersectionObserver)
-
-### Modified Files
-- `apps/web/app/page.tsx` — full landing page redesign (2 passes)
-- `apps/web/app/components/NavBar.tsx` — refined styling, animated hamburger, gold palette
-- `apps/web/app/layout.tsx` — Cormorant Garamond + Outfit fonts, CSS variable setup
-- `apps/web/app/globals.css` — animation keyframes, grain overlay, CSS variables, divider lines, custom scrollbar
-
----
+- Landing page redesign (SevenRooms-inspired, 2 passes)
+- Typography (Cormorant Garamond + Outfit)
+- Film grain, animated dividers, scroll animations
 
 ## What's Completed (Session 1 — 10 April 2026)
-
-### Backend (services/api/) — 100% for MVP
-- [x] Database schema — 15 PostgreSQL tables via Drizzle ORM
-- [x] Authentication — JWT signup/login/refresh, RBAC (owner/manager/staff), tenant isolation
-- [x] Booking Engine — Redis-cached availability, 5-min slot leasing, full booking lifecycle
-- [x] Payments API — Stripe Connect onboarding, payment intents, webhook handler, refunds
-- [x] Notifications API — BullMQ queues, Twilio WhatsApp integration, 7 notification types
-- [x] Workers — CRM profile updates, VIP scoring (RFM), churn detection
-- [x] Analytics API — revenue, staff performance, top services, booking sources
-- [x] Campaigns API — CRUD, audience filtering, message personalization, send/results
-- [x] Cancellation policy endpoint
-
-### Frontend (apps/web/) — 95% for MVP
-- [x] Landing page — premium dark design inspired by SevenRooms (redesigned in Session 2)
-- [x] Navbar — sticky with smooth scroll, mobile hamburger, logo links to home
-- [x] Signup page — creates salon + owner, stores tokens
-- [x] Login page — JWT auth with token storage
-- [x] Onboarding wizard — 5-step (Profile, Services, Staff, Payments, Policy)
-- [x] Dashboard layout — sidebar navigation (Dashboard, Analytics, Services, Staff, Clients, Campaigns, Settings)
-- [x] Dashboard — today's bookings with check-in/complete/no-show/walk-in
-- [x] Services CRUD — add/edit/deactivate with validation
-- [x] Staff CRUD — service assignment + 7-day working hours grid
-- [x] Client CRM — VIP summary, search, filters, detail drawer with notes
-- [x] Analytics — revenue chart, staff performance, top services, booking sources
-- [x] Campaigns — create, audience filter, message templates, send, results
-- [x] Settings — 5 tabs (profile, cancellation policy, payments, booking page, account)
-- [x] Booking page — full 5-step wizard (service → staff → date/time → details → confirm)
-- [x] Confirmation page — booking summary with WhatsApp notice
-- [x] Cancellation page — refund eligibility + execution
-- [x] All logos link back to landing page (/)
-
-### Infrastructure
-- [x] Turborepo + pnpm monorepo
-- [x] Deployed on Vercel (frontend) + Railway (API)
-- [x] Neon PostgreSQL + Upstash Redis connected
-- [x] Dockerfile for Railway deployment
-- [x] Docker Compose for local dev (Postgres 16 + Redis 7)
-- [x] GitHub repo with CI pushes
-
-### Test Data (ABC Salon — ipwffrank@gmail.com)
-- [x] Merchant profile updated (address, description, cancellation policy)
-- [x] 8 services (Classic Manicure, Gel Manicure, Gel Pedicure, Nail Art, Acrylic Extensions, Nail Removal, Express Facial, Back Massage)
-- [x] 5 staff (Sarah Lim, Wei Lin, Priya Nair, Michelle Tan, Any Available)
-- [x] 20 bookings across Apr 3–10 (13 completed, 5 confirmed, 2 no-show)
-- [x] 10 clients with varied booking histories
-- [x] Walk-in bookings included
-
-### Bug Fixes Applied
-- [x] Signup now stores auth tokens in localStorage
-- [x] apiFetch header merging fixed (Content-Type was being overwritten)
-- [x] Onboarding staff step logic fixed
-- [x] CORS configured for all origins
-- [x] Lazy DB connection for Neon (dotenv load order)
-- [x] ESM module resolution for Node 24 (`"type": "module"` on db package)
-- [x] force-dynamic on SSR pages to prevent build-time API calls
-- [x] Suspense boundary for useSearchParams in settings page
-- [x] Removed onClick from server component (landing page)
-- [x] scroll-smooth on html element for anchor navigation
-
----
-
-## What's NOT Done Yet
-
-### Priority 1 — Do FIRST When Resuming (Next Session)
-
-1. **Stripe Connect — Sign Up** *(all payment code written, just needs keys)*
-   - Sign up at https://stripe.com (needs SG business entity or sole proprietorship)
-   - Enable Connect (Platform/Marketplace mode)
-   - Get: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY
-   - Set up webhook: https://bookingcrm-production.up.railway.app/webhooks/stripe → get STRIPE_WEBHOOK_SECRET
-   - Update Railway env vars
-
-2. **Add Real Images to Landing Page**
-   - Feature section visuals show icons — replace with hospitality photography
-   - Use Unsplash (restaurants, salons, clinics, spas)
-   - Add images to `glowos/apps/web/public/images/`
-
-3. **Full Production E2E Test**
-   - signup → onboarding → add services/staff → share booking link → client books → dashboard shows booking → check-in → complete
-   - Test on mobile (responsive)
-
-### Priority 2 — Before Pilot Launch
-
-4. **Custom Domain**
-   - Register glowos.sg
-   - Point to Vercel (frontend): Vercel dashboard → Domains → Add
-   - Set up api.glowos.sg → Railway: Railway dashboard → Settings → Custom Domain
-
-### Priority 3 — Phase 2
-
-7. **Google Actions Center** — "Book" button on Google Maps (needs working Stripe + partner application)
-8. **AI Agents (Claude API)** — campaign composer, business insights (needs ANTHROPIC_API_KEY)
-9. **HitPay** — PayNow/GrabPay for Singapore local payments
+- Full backend (15 tables, auth, booking engine, payments, notifications, analytics, campaigns)
+- Full frontend (landing, signup, login, onboarding, dashboard, booking widget, cancellation)
+- Infrastructure (Turborepo, Vercel, Railway, Neon, Upstash, Docker)
 
 ---
 
@@ -372,12 +270,13 @@ Bookingcrm/
 │   │   ├── app/login/         → Login
 │   │   ├── app/onboarding/    → 5-step onboarding wizard
 │   │   ├── app/dashboard/     → Dashboard with sidebar (bookings, services, staff, clients, analytics, campaigns, settings)
+│   │   ├── app/staff/         → Staff portal (All Bookings + My Bookings)
 │   │   ├── app/[slug]/        → Public booking page (SSR + client widget)
 │   │   └── app/cancel/        → Cancellation page
 │   ├── packages/db/           → Drizzle ORM (15 tables)
 │   ├── packages/types/        → Shared TypeScript types
 │   ├── services/api/          → Hono API server + BullMQ workers
-│   │   ├── src/routes/        → auth, merchant, services, staff, bookings, clients, payments, webhooks, analytics, campaigns
+│   │   ├── src/routes/        → auth, merchant, services, staff, bookings, clients, payments, webhooks, analytics, campaigns, duties
 │   │   ├── src/workers/       → notification, CRM, VIP scoring
 │   │   └── src/lib/           → config, redis, stripe, twilio, queue, scheduler, availability, refunds, jwt, slug
 │   └── docker-compose.yml     → Postgres 16 + Redis 7 (local dev)
@@ -390,28 +289,22 @@ Bookingcrm/
 - **DB schema (all tables):** `glowos/packages/db/src/schema/`
 - **Landing page:** `glowos/apps/web/app/page.tsx`
 - **Dashboard layout + sidebar:** `glowos/apps/web/app/dashboard/layout.tsx`
+- **Staff layout + sidebar:** `glowos/apps/web/app/staff/layout.tsx`
 - **Booking widget:** `glowos/apps/web/app/[slug]/BookingWidget.tsx`
+- **Admin calendar:** `glowos/apps/web/app/dashboard/calendar/page.tsx`
+- **Staff calendar:** `glowos/apps/web/app/staff/bookings/page.tsx`
+- **Analytics:** `glowos/apps/web/app/dashboard/analytics/page.tsx` + `glowos/services/api/src/routes/analytics.ts`
 - **Environment (local):** `glowos/.env`
 - **Environment (production):** Railway dashboard → bookingcrm service → Variables tab
 
 ### How to Deploy
-- **Frontend (Vercel):** `cd glowos && vercel --prod` (must run from glowos/ dir, not root)
+- **Frontend (Vercel):** auto-deploys on git push to main
 - **API (Railway):** auto-deploys on git push to main
 - **Local dev:** `cd glowos/services/api && npx tsx src/index.ts`
 
 ---
 
-## Resume Checklist (Next Session)
-
-```
-1. cd ~/Desktop/Projects/Bookingcrm
-2. Read this progress.md
-3. Ask user about Stripe signup status → set up STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET in Railway
-4. Add real images to landing page (Unsplash hospitality photography)
-5. Run full E2E test: signup → onboarding → booking → check-in → complete
-6. Custom domain setup (glowos.sg) if registered
-```
-
 ## Known Technical Debt
-- `slot_leases` table not yet created — availability falls back to booking-only conflict detection (no hold during checkout). Will need: schema file, migration, update availability.ts to re-enable leases.
-- Vercel deploy source shows both GitHub and CLI entries — going forward all deploys should be via git push only.
+- `slot_leases` table not yet created — availability falls back to booking-only conflict detection (no hold during checkout)
+- Stripe Connect onboarded in settings but checkout flow doesn't collect payment yet
+- Client reviews: placeholder exists, no infrastructure
