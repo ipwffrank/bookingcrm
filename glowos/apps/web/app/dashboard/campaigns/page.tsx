@@ -893,7 +893,7 @@ export default function CampaignsPage() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {[
           { label: 'Campaigns Sent', value: totalSent,       color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
           { label: 'Total Reached',  value: totalRecipients, color: 'text-green-600 bg-green-50 border-green-200' },

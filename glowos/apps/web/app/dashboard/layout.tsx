@@ -133,6 +133,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sidebar_collapsed') === 'true';
+  });
+
+  function toggleCollapse() {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     // Group admin routes have their own layout and auth — don't interfere
@@ -183,15 +195,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return pathname.startsWith(href);
   };
 
-  const Sidebar = () => (
+  const Sidebar = ({ collapsed = false }: { collapsed?: boolean }) => (
     <nav className="flex flex-col h-full font-manrope">
-      <div className="px-6 py-5 border-b border-gray-100">
-        <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
-        {merchant && (
-          <p className="font-inter text-[11px] text-gray-400 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
+      <div className={`${collapsed ? 'px-3 py-5 flex justify-center' : 'px-6 py-5'} border-b border-gray-100`}>
+        {collapsed ? (
+          <Link href="/" className="font-newsreader text-lg font-semibold text-[#1a2313] hover:text-[#456466] transition-colors" title="GlowOS">G</Link>
+        ) : (
+          <>
+            <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
+            {merchant && (
+              <p className="font-inter text-[11px] text-gray-400 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
+            )}
+          </>
         )}
       </div>
-      <div className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <div className={`flex-1 ${collapsed ? 'px-2' : 'px-3'} py-4 space-y-0.5 overflow-y-auto`}>
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
@@ -200,19 +218,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               key={item.href}
               href={item.href}
               onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              title={collapsed ? item.label : undefined}
+              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 active
                   ? 'bg-[#1a2313]/8 text-[#1a2313]'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
               <Icon className={`w-4.5 h-4.5 flex-shrink-0 ${active ? 'text-[#1a2313]' : 'text-gray-400'}`} />
-              {item.label}
+              {!collapsed && item.label}
             </Link>
           );
         })}
       </div>
-      <div className="px-3 py-4 border-t border-gray-100 space-y-0.5">
+      <div className={`${collapsed ? 'px-2' : 'px-3'} py-4 border-t border-gray-100 space-y-0.5`}>
         {(() => {
           const settingsHref = '/dashboard/settings';
           const settingsActive = isActive(settingsHref);
@@ -220,25 +239,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Link
               href={settingsHref}
               onClick={() => setSidebarOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              title={collapsed ? 'Settings' : undefined}
+              className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 settingsActive
                   ? 'bg-[#1a2313]/8 text-[#1a2313]'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
               <SettingsIcon className={`w-4.5 h-4.5 flex-shrink-0 ${settingsActive ? 'text-[#1a2313]' : 'text-gray-400'}`} />
-              Settings
+              {!collapsed && 'Settings'}
             </Link>
           );
         })()}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+          title={collapsed ? 'Logout' : undefined}
+          className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors`}
         >
-          <svg className="w-4.5 h-4.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="w-4.5 h-4.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
           </svg>
-          Logout
+          {!collapsed && 'Logout'}
+        </button>
+        {/* Desktop collapse toggle */}
+        <button
+          onClick={toggleCollapse}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className={`hidden lg:flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors`}
+        >
+          <svg className="w-4.5 h-4.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            {collapsed
+              ? <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 4.5l7.5 7.5-7.5 7.5m-6-15l7.5 7.5-7.5 7.5" />
+              : <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+            }
+          </svg>
+          {!collapsed && <span className="text-xs">Collapse</span>}
         </button>
       </div>
     </nav>
@@ -252,8 +287,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-gray-50 flex font-manrope">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30">
-        <Sidebar />
+      <aside
+        className={`hidden lg:flex flex-col bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30 transition-all duration-200 ${
+          sidebarCollapsed ? 'w-14' : 'w-60'
+        }`}
+      >
+        <Sidebar collapsed={sidebarCollapsed} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -278,7 +317,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* Main content */}
-      <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
+      <div
+        className={`flex-1 flex flex-col min-h-screen transition-all duration-200 ${
+          sidebarCollapsed ? 'lg:ml-14' : 'lg:ml-60'
+        }`}
+      >
         {/* Top bar (mobile only) */}
         <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <button
@@ -296,7 +339,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </header>
 
-        <main className="flex-1 px-4 lg:px-8 py-6">
+        <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">
           {children}
         </main>
       </div>

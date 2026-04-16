@@ -441,6 +441,10 @@ export default function CalendarPage() {
   // ─── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4 font-manrope" style={{ userSelect: 'none' }}>
+      {/* Mobile hint — calendar requires a wider screen to use comfortably */}
+      <div className="md:hidden rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        Calendar works best on a tablet or desktop. Scroll horizontally to navigate the grid.
+      </div>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
