@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 16 April 2026 (Session 7)**
+**Last updated: 16 April 2026 (Session 8)**
 
 ---
 
@@ -21,6 +21,21 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** NOT yet signed up
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 8 — 16 April 2026)
+
+### Bug Fixes & Polish
+
+#### ProductShowcase tab pills invisible on light background ✅
+- **Root cause:** Inactive tab pills used `text-white/30 border-white/10` — white-transparent colors that disappear against the cream/beige landing page background.
+- **Fix:** Changed inactive pill styles to `text-gray-400 border-gray-300 hover:text-gray-600 hover:border-gray-400` in `apps/web/app/components/ProductShowcase.tsx`.
+
+### Commits (Session 8)
+| Hash | Description |
+|---|---|
+| `dc236f9` | fix: make ProductShowcase tab pills visible on light background |
 
 ---
 
@@ -140,7 +155,7 @@
 ```
 1. cd ~/Desktop/Projects/Bookingcrm/glowos
 2. Read progress.md
-3. git log --oneline -5  →  should see 7d235b7 as latest
+3. git log --oneline -5  →  should see dc236f9 as latest
 4. Pick next feature from "Remaining Gaps" table above
 5. Recommended order:
    a. Stripe payment in booking checkout (highest user friction)
