@@ -229,6 +229,7 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
     userId: user.id,
     merchantId: merchant.id,
     role: user.role,
+    ...(user.staffId ? { staffId: user.staffId } : {}),
   });
   const refreshToken = generateRefreshToken({ userId: user.id });
 

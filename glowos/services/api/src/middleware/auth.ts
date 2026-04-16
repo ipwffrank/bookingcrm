@@ -74,12 +74,14 @@ export function requireRole(...roles: string[]) {
 }
 
 // New: blocks staff role, allows owner + manager only
-export function requireAdmin(c: AppContext, next: Next) {
-  const userRole = c.get("userRole");
-  if (!userRole || !["owner", "manager"].includes(userRole)) {
-    return c.json({ error: "Forbidden", message: "Admin access required" }, 403);
-  }
-  return next();
+export function requireAdmin() {
+  return async function (c: AppContext, next: Next) {
+    const userRole = c.get("userRole");
+    if (!userRole || !["owner", "manager"].includes(userRole)) {
+      return c.json({ error: "Forbidden", message: "Admin access required. Requires owner or manager role." }, 403);
+    }
+    await next();
+  };
 }
 
 // ─── RBAC permissions map ──────────────────────────────────────────────────────
