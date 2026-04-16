@@ -67,20 +67,18 @@ export default function LandingPage() {
           </div>
 
           {/* Right: Video */}
-          <div className="w-full md:w-1/2 relative bg-surface-container overflow-hidden min-h-[50vh] md:min-h-screen">
+          <div className="w-full md:w-1/2 relative bg-black overflow-hidden min-h-[50vh] md:min-h-screen">
             <video
               autoPlay
               muted
               loop
               playsInline
-              className="absolute inset-0 w-full h-full object-cover grayscale-[15%] brightness-[0.95] hover:grayscale-0 transition-all duration-1000"
-              poster="https://images.pexels.com/photos/3757942/pexels-photo-3757942.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2"
+              className="absolute inset-0 w-full h-full object-cover"
             >
-              <source
-                src="https://player.vimeo.com/external/494163966.sd.mp4?s=99a7702f30b91011867e35b0b23b8f1c8435d88a&profile_id=165"
-                type="video/mp4"
-              />
+              <source src="/videos/hero-bg.mp4" type="video/mp4" />
             </video>
+            {/* Subtle gradient overlay blending into left panel */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[var(--surface)]/40 via-transparent to-transparent" />
           </div>
         </section>
 
