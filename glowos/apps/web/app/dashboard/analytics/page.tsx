@@ -68,6 +68,32 @@ interface BookingSourcesData {
   booking_sources: BookingSourceRow[];
 }
 
+interface CancellationRateData {
+  period: string;
+  total: number;
+  cancelled: number;
+  no_show: number;
+  completed: number;
+  confirmed: number;
+  in_progress: number;
+  cancellation_rate: number;
+  no_show_rate: number;
+  completion_rate: number;
+}
+
+interface PeakHourCell { dow: number; hour: number; count: number; }
+interface PeakHoursData { period: string; peak_hours: PeakHourCell[]; }
+
+interface ClientRetentionData {
+  period: string;
+  new_clients: number;
+  returning_clients: number;
+  total_active: number;
+}
+
+interface RevByDowRow { dow: number; label: string; revenue: number; count: number; }
+interface RevByDowData { period: string; revenue_by_dow: RevByDowRow[]; }
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(amount: number): string {
@@ -512,6 +538,187 @@ function BookingSources({
   );
 }
 
+// ─── Cancellation / No-show Rates ─────────────────────────────────────────────
+
+function CancellationRates({ data, loading }: { data: CancellationRateData | null; loading: boolean }) {
+  const bars = data ? [
+    { label: 'Completed',    value: data.completion_rate,   color: 'bg-emerald-400', count: data.completed },
+    { label: 'Cancellations', value: data.cancellation_rate, color: 'bg-red-400',     count: data.cancelled },
+    { label: 'No-shows',     value: data.no_show_rate,      color: 'bg-orange-400',  count: data.no_show },
+  ] : [];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Booking Outcomes</h2>
+      {loading ? <SkeletonTable rows={3} /> : !data ? null : (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-400 mb-3">{data.total} total bookings this period</p>
+          {bars.map(({ label, value, color, count }) => (
+            <div key={label} className="flex items-center gap-3">
+              <div className="w-28 flex-shrink-0 text-xs font-medium text-gray-600">{label}</div>
+              <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${value}%` }} />
+              </div>
+              <div className="w-20 text-right flex-shrink-0">
+                <span className="text-xs font-semibold text-gray-800">{value}%</span>
+                <span className="text-xs text-gray-400 ml-1">({count})</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Client Retention ──────────────────────────────────────────────────────────
+
+function ClientRetention({ data, loading }: { data: ClientRetentionData | null; loading: boolean }) {
+  const total      = data?.total_active ?? 0;
+  const newPct     = total > 0 ? Math.round((data!.new_clients / total) * 100) : 0;
+  const returnPct  = total > 0 ? Math.round((data!.returning_clients / total) * 100) : 0;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Client Retention</h2>
+      {loading ? <SkeletonTable rows={2} /> : !data || total === 0 ? (
+        <p className="text-sm text-gray-400 py-6 text-center">No client data for this period</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex rounded-xl overflow-hidden h-8">
+            <div className="flex items-center justify-center text-xs font-semibold text-white bg-indigo-500 transition-all" style={{ width: `${newPct}%` }}>
+              {newPct > 15 ? `New ${newPct}%` : ''}
+            </div>
+            <div className="flex items-center justify-center text-xs font-semibold text-white bg-violet-400 transition-all" style={{ width: `${returnPct}%` }}>
+              {returnPct > 15 ? `Return ${returnPct}%` : ''}
+            </div>
+          </div>
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-indigo-500 flex-shrink-0" />
+              <div>
+                <p className="text-base font-bold text-gray-900">{data.new_clients}</p>
+                <p className="text-xs text-gray-400">New clients ({newPct}%)</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-violet-400 flex-shrink-0" />
+              <div>
+                <p className="text-base font-bold text-gray-900">{data.returning_clients}</p>
+                <p className="text-xs text-gray-400">Returning ({returnPct}%)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Revenue by Day of Week ────────────────────────────────────────────────────
+
+function RevByDow({ data, loading }: { data: RevByDowData | null; loading: boolean }) {
+  const maxRev = data ? Math.max(...data.revenue_by_dow.map(r => r.revenue), 1) : 1;
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Day of Week</h2>
+      {loading ? <SkeletonChart /> : !data ? null : (
+        <div className="flex items-end gap-2 h-40">
+          {data.revenue_by_dow.map(row => {
+            const pct = maxRev > 0 ? (row.revenue / maxRev) * 100 : 0;
+            return (
+              <div key={row.dow} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
+                <div
+                  className="w-full rounded-t bg-purple-400 hover:bg-purple-500 transition-colors cursor-default relative"
+                  style={{ height: `${Math.max(pct, row.revenue > 0 ? 4 : 0)}%` }}
+                >
+                  {/* Tooltip */}
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-gray-900 text-white text-xs rounded-lg px-2 py-1.5 whitespace-nowrap pointer-events-none shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="font-medium">{row.label}</p>
+                    <p>S${row.revenue.toFixed(0)}</p>
+                    <p className="text-gray-300">{row.count} bookings</p>
+                  </div>
+                </div>
+                <span className="text-[10px] text-gray-400">{row.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Peak Hours Heatmap ────────────────────────────────────────────────────────
+
+function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loading: boolean }) {
+  const DOW   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+  const maxCount = data ? Math.max(...data.peak_hours.map(c => c.count), 1) : 1;
+  const countAt  = (dow: number, hour: number) =>
+    data?.peak_hours.find(c => c.dow === dow && c.hour === hour)?.count ?? 0;
+
+  const opacity = (count: number) => {
+    if (count === 0) return 0;
+    return 0.1 + (count / maxCount) * 0.85;
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Peak Hours</h2>
+      {loading ? (
+        <div className="animate-pulse h-40 bg-gray-100 rounded-lg" />
+      ) : !data || data.peak_hours.length === 0 ? (
+        <p className="text-sm text-gray-400 py-6 text-center">No data for this period</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[460px]">
+            {/* Day headers */}
+            <div className="flex mb-1 pl-10">
+              {DOW.map(d => (
+                <div key={d} className="flex-1 text-center text-[10px] font-semibold text-gray-400">{d}</div>
+              ))}
+            </div>
+            {/* Hour rows */}
+            {HOURS.map(hour => (
+              <div key={hour} className="flex items-center mb-0.5">
+                <div className="w-10 text-[10px] text-gray-400 text-right pr-2 flex-shrink-0">
+                  {hour < 12 ? `${hour}am` : hour === 12 ? '12pm' : `${hour - 12}pm`}
+                </div>
+                {DOW.map((_, dow) => {
+                  const count = countAt(dow, hour);
+                  return (
+                    <div key={dow} className="flex-1 mx-0.5 relative group">
+                      <div
+                        className="h-6 rounded-sm transition-all"
+                        style={{ backgroundColor: `rgba(99, 102, 241, ${opacity(count)})`, minHeight: 8 }}
+                      />
+                      {count > 0 && (
+                        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-10 bg-gray-900 text-white text-[10px] rounded px-1.5 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                          {count} booking{count !== 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {/* Legend */}
+            <div className="flex items-center gap-2 mt-3 pl-10">
+              <span className="text-[10px] text-gray-400">Less</span>
+              {[0.1, 0.3, 0.5, 0.7, 0.95].map(o => (
+                <div key={o} className="w-4 h-4 rounded-sm" style={{ backgroundColor: `rgba(99,102,241,${o})` }} />
+              ))}
+              <span className="text-[10px] text-gray-400">More</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Period Selector ───────────────────────────────────────────────────────────
 
 function PeriodSelector({
@@ -552,17 +759,25 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const [period, setPeriod] = useState<Period>('30d');
 
-  const [summaryData, setSummaryData] = useState<AnalyticsSummary | null>(null);
-  const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
-  const [staffData, setStaffData] = useState<StaffPerformanceData | null>(null);
-  const [servicesData, setServicesData] = useState<TopServicesData | null>(null);
-  const [sourcesData, setSourcesData] = useState<BookingSourcesData | null>(null);
+  const [summaryData, setSummaryData]           = useState<AnalyticsSummary | null>(null);
+  const [revenueData, setRevenueData]           = useState<RevenueData | null>(null);
+  const [staffData, setStaffData]               = useState<StaffPerformanceData | null>(null);
+  const [servicesData, setServicesData]         = useState<TopServicesData | null>(null);
+  const [sourcesData, setSourcesData]           = useState<BookingSourcesData | null>(null);
+  const [cancelData, setCancelData]             = useState<CancellationRateData | null>(null);
+  const [peakData, setPeakData]                 = useState<PeakHoursData | null>(null);
+  const [retentionData, setRetentionData]       = useState<ClientRetentionData | null>(null);
+  const [revDowData, setRevDowData]             = useState<RevByDowData | null>(null);
 
-  const [loadingSummary, setLoadingSummary] = useState(true);
-  const [loadingRevenue, setLoadingRevenue] = useState(true);
-  const [loadingStaff, setLoadingStaff] = useState(true);
-  const [loadingServices, setLoadingServices] = useState(true);
-  const [loadingSources, setLoadingSources] = useState(true);
+  const [loadingSummary, setLoadingSummary]     = useState(true);
+  const [loadingRevenue, setLoadingRevenue]     = useState(true);
+  const [loadingStaff, setLoadingStaff]         = useState(true);
+  const [loadingServices, setLoadingServices]   = useState(true);
+  const [loadingSources, setLoadingSources]     = useState(true);
+  const [loadingCancel, setLoadingCancel]       = useState(true);
+  const [loadingPeak, setLoadingPeak]           = useState(true);
+  const [loadingRetention, setLoadingRetention] = useState(true);
+  const [loadingRevDow, setLoadingRevDow]       = useState(true);
 
   const [error, setError] = useState('');
 
@@ -581,6 +796,10 @@ export default function AnalyticsPage() {
       setLoadingStaff(true);
       setLoadingServices(true);
       setLoadingSources(true);
+      setLoadingCancel(true);
+      setLoadingPeak(true);
+      setLoadingRetention(true);
+      setLoadingRevDow(true);
       setError('');
 
       const handleError = (err: unknown) => {
@@ -626,6 +845,34 @@ export default function AnalyticsPage() {
           const data = await apiFetch(`/merchant/analytics/booking-sources?period=${p}`, { headers }) as BookingSourcesData;
           setSourcesData(data);
         } catch (e) { handleError(e); } finally { setLoadingSources(false); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/cancellation-rate?period=${p}`, { headers }) as CancellationRateData;
+          setCancelData(data);
+        } catch (e) { handleError(e); } finally { setLoadingCancel(false); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/peak-hours?period=${p}`, { headers }) as PeakHoursData;
+          setPeakData(data);
+        } catch (e) { handleError(e); } finally { setLoadingPeak(false); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/client-retention?period=${p}`, { headers }) as ClientRetentionData;
+          setRetentionData(data);
+        } catch (e) { handleError(e); } finally { setLoadingRetention(false); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/revenue-by-dow?period=${p}`, { headers }) as RevByDowData;
+          setRevDowData(data);
+        } catch (e) { handleError(e); } finally { setLoadingRevDow(false); }
       })();
     },
     [router]
@@ -688,6 +935,22 @@ export default function AnalyticsPage() {
       {/* Booking Sources */}
       <div className="mb-6">
         <BookingSources data={sourcesData} loading={loadingSources} />
+      </div>
+
+      {/* Outcomes + Retention */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <CancellationRates data={cancelData} loading={loadingCancel} />
+        <ClientRetention   data={retentionData} loading={loadingRetention} />
+      </div>
+
+      {/* Revenue by Day of Week */}
+      <div className="mb-6">
+        <RevByDow data={revDowData} loading={loadingRevDow} />
+      </div>
+
+      {/* Peak Hours Heatmap */}
+      <div className="mb-6">
+        <PeakHoursHeatmap data={peakData} loading={loadingPeak} />
       </div>
     </>
   );

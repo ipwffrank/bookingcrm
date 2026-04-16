@@ -553,7 +553,7 @@ export default function CalendarPage() {
               {/* 30-min marks in gutter */}
               {timeLabels.slice(0, -1).map(({ min }) => (
                 <div key={`${min}half`} className="absolute right-2 left-0 flex items-center justify-end pr-2" style={{ top: topPx(min + 30) - 7 }}>
-                  <span className="text-[9px] text-gray-300 whitespace-nowrap">:30</span>
+                  <span className="text-[9px] text-gray-400 whitespace-nowrap">:30</span>
                 </div>
               ))}
             </div>
@@ -577,13 +577,13 @@ export default function CalendarPage() {
                     openNewDuty(s.id, e.clientY - rect.top);
                   }}
                 >
-                  {/* Hour lines */}
+                  {/* Hour lines — solid, clearly visible */}
                   {timeLabels.map(({ min }) => (
-                    <div key={min} className="absolute inset-x-0 border-t border-gray-200" style={{ top: topPx(min) }} />
+                    <div key={min} className="absolute inset-x-0 border-t border-gray-300" style={{ top: topPx(min) }} />
                   ))}
-                  {/* 30-min sub-lines */}
+                  {/* 30-min sub-lines — dashed, lighter than hour lines */}
                   {timeLabels.slice(0, -1).map(({ min }) => (
-                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-100" style={{ top: topPx(min + 30) }} />
+                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-200" style={{ top: topPx(min + 30) }} />
                   ))}
 
                   {/* Off-duty hatching */}

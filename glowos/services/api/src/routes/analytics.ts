@@ -307,4 +307,174 @@ analyticsRouter.get("/booking-sources", requireMerchant, async (c) => {
   });
 });
 
+// ─── GET /merchant/analytics/cancellation-rate ────────────────────────────────
+
+analyticsRouter.get("/cancellation-rate", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const [totals] = await db
+    .select({
+      total:     sql<number>`cast(count(*) as int)`,
+      cancelled: sql<number>`cast(sum(case when ${bookings.status} = 'cancelled' then 1 else 0 end) as int)`,
+      no_show:   sql<number>`cast(sum(case when ${bookings.status} = 'no_show' then 1 else 0 end) as int)`,
+      completed: sql<number>`cast(sum(case when ${bookings.status} = 'completed' then 1 else 0 end) as int)`,
+      confirmed: sql<number>`cast(sum(case when ${bookings.status} = 'confirmed' then 1 else 0 end) as int)`,
+      in_progress: sql<number>`cast(sum(case when ${bookings.status} = 'in_progress' then 1 else 0 end) as int)`,
+    })
+    .from(bookings)
+    .where(and(eq(bookings.merchantId, merchantId), gte(bookings.startTime, start), lte(bookings.startTime, end)));
+
+  const total     = Number(totals?.total ?? 0);
+  const cancelled = Number(totals?.cancelled ?? 0);
+  const noShow    = Number(totals?.no_show ?? 0);
+  const completed = Number(totals?.completed ?? 0);
+
+  return c.json({
+    period: periodParam,
+    total,
+    cancelled,
+    no_show:          noShow,
+    completed,
+    confirmed:        Number(totals?.confirmed ?? 0),
+    in_progress:      Number(totals?.in_progress ?? 0),
+    cancellation_rate: total > 0 ? parseFloat(((cancelled / total) * 100).toFixed(1)) : 0,
+    no_show_rate:      total > 0 ? parseFloat(((noShow / total) * 100).toFixed(1)) : 0,
+    completion_rate:   total > 0 ? parseFloat(((completed / total) * 100).toFixed(1)) : 0,
+  });
+});
+
+// ─── GET /merchant/analytics/peak-hours ──────────────────────────────────────
+
+analyticsRouter.get("/peak-hours", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const rows = await db
+    .select({
+      dow:  sql<number>`cast(extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore') as int)`,
+      hour: sql<number>`cast(extract(hour from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore') as int)`,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    )
+    .groupBy(
+      sql`extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore')`,
+      sql`extract(hour from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore')`
+    );
+
+  return c.json({
+    period: periodParam,
+    // dow: 0=Sun … 6=Sat, hour: 0–23
+    peak_hours: rows.map(r => ({
+      dow:   Number(r.dow),
+      hour:  Number(r.hour),
+      count: Number(r.count),
+    })),
+  });
+});
+
+// ─── GET /merchant/analytics/client-retention ────────────────────────────────
+
+analyticsRouter.get("/client-retention", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  // Clients with bookings in this period
+  const activeInPeriod = await db
+    .select({ clientId: bookings.clientId })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    )
+    .groupBy(bookings.clientId);
+
+  const activeIds = activeInPeriod.map(r => r.clientId).filter(Boolean) as string[];
+
+  if (activeIds.length === 0) {
+    return c.json({ period: periodParam, new_clients: 0, returning_clients: 0, total_active: 0 });
+  }
+
+  // Of those, which had a booking BEFORE this period?
+  const returningRows = await db
+    .select({ clientId: bookings.clientId })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        sql`${bookings.startTime} < ${start.toISOString()}`,
+        sql`${bookings.clientId} IN (${sql.join(activeIds.map(id => sql`${id}::uuid`), sql`, `)})`,
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    )
+    .groupBy(bookings.clientId);
+
+  const returningCount = returningRows.length;
+  const newCount       = activeIds.length - returningCount;
+
+  return c.json({
+    period:             periodParam,
+    new_clients:        newCount,
+    returning_clients:  returningCount,
+    total_active:       activeIds.length,
+  });
+});
+
+// ─── GET /merchant/analytics/revenue-by-dow ──────────────────────────────────
+
+analyticsRouter.get("/revenue-by-dow", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const rows = await db
+    .select({
+      dow:     sql<number>`cast(extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore') as int)`,
+      revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      count:   sql<number>`cast(count(*) as int)`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    )
+    .groupBy(sql`extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore')`);
+
+  const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const map = new Map(rows.map(r => [Number(r.dow), { revenue: Number(r.revenue), count: Number(r.count) }]));
+
+  return c.json({
+    period: periodParam,
+    revenue_by_dow: DOW_LABELS.map((label, dow) => ({
+      dow,
+      label,
+      revenue: parseFloat((map.get(dow)?.revenue ?? 0).toFixed(2)),
+      count:   map.get(dow)?.count ?? 0,
+    })),
+  });
+});
+
 export { analyticsRouter };
