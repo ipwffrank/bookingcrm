@@ -701,7 +701,10 @@ export function createNotificationWorker(): Worker {
       }
     },
     {
-      connection: { url: config.redisUrl },
+      connection: {
+        url: config.redisUrl,
+        retryStrategy: (times: number) => Math.min(times * 2000, 30000),
+      },
       concurrency: 5,
     }
   );
