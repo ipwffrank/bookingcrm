@@ -23,15 +23,6 @@ interface DutyBlock {
   notes: string | null;
 }
 
-interface Booking {
-  id: string;
-  staffId: string;
-  startTime: string;
-  endTime: string;
-  clientName: string | null;
-  serviceName: string | null;
-}
-
 const DUTY_COLORS: Record<string, string> = {
   floor: '#4f46e5',
   treatment: '#7c3aed',
@@ -77,14 +68,14 @@ export default function RosterPage() {
         editable: true,
       }));
 
-      const bookingEvents: EventInput[] = (bookingsData.bookings ?? []).map((b: Booking) => {
-        const staffIdx = staffList.findIndex(s => s.id === b.staffId);
+      const bookingEvents: EventInput[] = (bookingsData.bookings ?? []).map((row: { booking: { id: string; staffId: string; startTime: string; endTime: string }; service: { name: string } | null; staffMember: { id: string } | null; client: { name: string } | null }) => {
+        const staffIdx = staffList.findIndex(s => s.id === (row.staffMember?.id ?? ''));
         const color = STAFF_COLORS[staffIdx % STAFF_COLORS.length] ?? '#64748b';
         return {
-          id: `booking-${b.id}`,
-          title: `📅 ${b.clientName ?? 'Client'} — ${b.serviceName ?? 'Service'}`,
-          start: b.startTime,
-          end: b.endTime,
+          id: `booking-${row.booking.id}`,
+          title: `📅 ${row.client?.name ?? 'Client'} — ${row.service?.name ?? 'Service'}`,
+          start: row.booking.startTime,
+          end: row.booking.endTime,
           backgroundColor: color,
           borderColor: color,
           extendedProps: { type: 'booking' },

@@ -317,7 +317,16 @@ merchantBookingsRouter.get("/", requireMerchant, async (c) => {
 
   const conditions = [eq(bookings.merchantId, merchantId)];
 
-  if (dateParam) {
+  const fromParam = c.req.query("from");
+  const toParam = c.req.query("to");
+
+  // from/to range takes priority over single date
+  if (fromParam && toParam) {
+    const from = new Date(fromParam + "T00:00:00");
+    const to = new Date(toParam + "T23:59:59");
+    conditions.push(gte(bookings.startTime, from));
+    conditions.push(lte(bookings.startTime, to));
+  } else if (dateParam) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
       return c.json({ error: "Bad Request", message: "date must be in YYYY-MM-DD format" }, 400);
     }
