@@ -20,10 +20,10 @@ const createDutySchema = z.object({
 });
 
 const updateDutySchema = z.object({
-  staff_id: z.string().uuid().optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  end_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  staff_id: z.string().uuid("staff_id must be a valid UUID").optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD").optional(),
+  start_time: z.string().regex(/^\d{2}:\d{2}$/, "start_time must be HH:MM").optional(),
+  end_time: z.string().regex(/^\d{2}:\d{2}$/, "end_time must be HH:MM").optional(),
   duty_type: z.enum(["floor", "treatment", "break", "other"]).optional(),
   notes: z.string().optional(),
 });
