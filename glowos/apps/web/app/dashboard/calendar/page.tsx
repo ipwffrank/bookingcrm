@@ -105,6 +105,16 @@ export default function CalendarPage() {
   const [dutyError,     setDutyError]     = useState<string | null>(null);
   const [dutySaving,    setDutySaving]    = useState(false);
 
+  // Client search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: string; clientId: string; name: string | null; phone: string; email: string | null }[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [clientBookings, setClientBookings] = useState<{ id: string; startTime: string; endTime: string; status: string; serviceName: string; staffName: string }[] | null>(null);
+  const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
   // Drag — refs for zero-overhead mousemove, bump state for visual re-renders
   type DragData =
     | { entityType: 'duty'; type: 'move' | 'resize'; duty: Duty; startY: number; origStart: number; origEnd: number; }
@@ -353,6 +363,72 @@ export default function CalendarPage() {
     } catch { /* stale status — ignore */ }
   }
 
+  // ── Client search ────────────────────────────────────────────────────────────
+  function handleSearchInput(q: string) {
+    setSearchQuery(q);
+    setClientBookings(null);
+    setSelectedClient(null);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.trim().length < 2) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const data = await apiFetch(`/merchant/clients?search=${encodeURIComponent(q.trim())}&limit=6`);
+        setSearchResults(
+          (data.clients ?? []).map((r: { profile: { id: string; clientId: string }; client: { name: string | null; phone: string; email: string | null } }) => ({
+            id: r.profile.id,
+            clientId: r.profile.clientId,
+            name: r.client.name,
+            phone: r.client.phone,
+            email: r.client.email,
+          }))
+        );
+      } catch { setSearchResults([]); }
+      finally { setSearchLoading(false); }
+    }, 300);
+  }
+
+  async function selectSearchClient(clientId: string, name: string | null, phone: string) {
+    setSelectedClient({ name: name ?? 'Unknown', phone });
+    setSearchResults([]);
+    setSearchQuery('');
+    try {
+      const data = await apiFetch(`/merchant/bookings?client_id=${clientId}`);
+      const rows = (data.bookings ?? []).map((r: { booking: { id: string; startTime: string; endTime: string; status: string }; service: { name: string }; staffMember: { name: string } }) => ({
+        id: r.booking.id,
+        startTime: r.booking.startTime,
+        endTime: r.booking.endTime,
+        status: r.booking.status,
+        serviceName: r.service?.name ?? '',
+        staffName: r.staffMember?.name ?? '',
+      }));
+      // Sort: upcoming first (asc), then past (desc)
+      const now = new Date();
+      const upcoming = rows.filter((b: { startTime: string }) => new Date(b.startTime) >= now).sort((a: { startTime: string }, b: { startTime: string }) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      const past = rows.filter((b: { startTime: string }) => new Date(b.startTime) < now).sort((a: { startTime: string }, b: { startTime: string }) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+      setClientBookings([...upcoming, ...past].slice(0, 20));
+    } catch { setClientBookings([]); }
+  }
+
+  function jumpToBooking(startTime: string) {
+    setDate(new Date(startTime));
+    setShowSearch(false);
+    setClientBookings(null);
+    setSelectedClient(null);
+    setSearchQuery('');
+  }
+
+  // Close search on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearch(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // ── Duty CRUD ─────────────────────────────────────────────────────────────────
   function openNewDuty(staffId: string, relYPx: number) {
     if (dragData.current) return;
@@ -465,10 +541,10 @@ export default function CalendarPage() {
       </div>
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-shrink-0">
           <h1 className="text-xl font-semibold text-gray-900">Calendar</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-400 mt-0.5 hidden lg:block">
             Click empty slot to add block · Drag to move or reassign
             <span className="ml-2 text-gray-300">·</span>
             <span className="ml-2 text-gray-300 font-mono text-[10px]">B</span>
@@ -479,7 +555,109 @@ export default function CalendarPage() {
             <span className="ml-0.5 text-gray-400 text-[10px]"> density</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* ── Client search ── */}
+        <div ref={searchRef} className="relative flex-1 max-w-xs">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => { handleSearchInput(e.target.value); setShowSearch(true); }}
+              onFocus={() => setShowSearch(true)}
+              placeholder="Search client…"
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 transition bg-white"
+            />
+            {searchQuery && (
+              <button onClick={() => { setSearchQuery(''); setSearchResults([]); setClientBookings(null); setSelectedClient(null); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            )}
+          </div>
+
+          {/* Search dropdown */}
+          {showSearch && (searchResults.length > 0 || clientBookings || searchLoading) && (
+            <div className="absolute top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-96 overflow-y-auto">
+              {/* Client autocomplete results */}
+              {searchResults.length > 0 && !clientBookings && (
+                <div>
+                  <p className="px-3 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">Clients</p>
+                  {searchResults.map(r => (
+                    <button
+                      key={r.id}
+                      onClick={() => selectSearchClient(r.clientId, r.name, r.phone)}
+                      className="w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{r.name ?? 'Unknown'}</p>
+                        <p className="text-xs text-gray-400">{r.phone}</p>
+                      </div>
+                      {r.email && <span className="text-[10px] text-gray-400 flex-shrink-0 truncate max-w-[120px]">{r.email}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Loading */}
+              {searchLoading && searchResults.length === 0 && (
+                <div className="px-4 py-6 text-center">
+                  <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin mx-auto" />
+                </div>
+              )}
+
+              {/* Client booking results */}
+              {clientBookings && selectedClient && (
+                <div>
+                  <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{selectedClient.name}</p>
+                      <p className="text-[11px] text-gray-400">{selectedClient.phone}</p>
+                    </div>
+                    <button onClick={() => { setClientBookings(null); setSelectedClient(null); }} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+                  </div>
+                  {clientBookings.length === 0 ? (
+                    <p className="px-4 py-4 text-sm text-gray-400 text-center">No bookings found</p>
+                  ) : (
+                    clientBookings.map(b => {
+                      const d = new Date(b.startTime);
+                      const isPast = d < new Date();
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={() => jumpToBooking(b.startTime)}
+                          className="w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 flex items-center gap-3"
+                        >
+                          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isPast ? 'bg-gray-300' : 'bg-green-400'}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-800 truncate">{b.serviceName}</p>
+                            <p className="text-[11px] text-gray-400">
+                              {d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                              {' · '}
+                              {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {' · '}
+                              {b.staffName}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize flex-shrink-0 ${
+                            b.status === 'confirmed' ? 'bg-green-50 text-green-700'
+                            : b.status === 'completed' ? 'bg-gray-100 text-gray-500'
+                            : b.status === 'in_progress' ? 'bg-blue-50 text-blue-700'
+                            : b.status === 'no_show' ? 'bg-orange-50 text-orange-600'
+                            : 'bg-red-50 text-red-600'
+                          }`}>{b.status.replace('_', ' ')}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
           {/* Density toggle */}
           <button
             onClick={() => setDensity(d => d === 'compact' ? 'comfortable' : 'compact')}

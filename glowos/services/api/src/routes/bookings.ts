@@ -348,6 +348,11 @@ merchantBookingsRouter.get("/", requireMerchant, async (c) => {
     conditions.push(eq(bookings.staffId, staffIdParam));
   }
 
+  const clientIdParam = c.req.query("client_id");
+  if (clientIdParam) {
+    conditions.push(eq(bookings.clientId, clientIdParam));
+  }
+
   const rows = await db
     .select({
       booking: bookings,
