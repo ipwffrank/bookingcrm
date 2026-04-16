@@ -22,10 +22,11 @@ interface Booking {
   id: string; staffId: string | null;
   startTime: string; endTime: string; status: string;
   clientName: string | null; serviceName: string | null; staffName: string | null;
+  priceSgd: string | null;
 }
 
 interface RawBookingRow {
-  booking:     { id: string; staffId: string | null; startTime: string; endTime: string; status: string };
+  booking:     { id: string; staffId: string | null; startTime: string; endTime: string; status: string; priceSgd: string };
   service:     { name: string } | null;
   staffMember: { name: string } | null;
   client:      { name: string | null } | null;
@@ -108,6 +109,7 @@ export default function CalendarPage() {
           clientName:  r.client?.name ?? null,
           serviceName: r.service?.name ?? null,
           staffName:   r.staffMember?.name ?? null,
+          priceSgd:    r.booking.priceSgd ?? null,
         }))
       );
     } finally { setLoading(false); }
@@ -237,6 +239,14 @@ export default function CalendarPage() {
     finally { setDutySaving(false); }
   }
 
+  // ── Booking status actions ────────────────────────────────────────────────────
+  async function bookingAction(id: string, action: 'check-in' | 'complete' | 'no-show') {
+    try {
+      await apiFetch(`/merchant/bookings/${id}/${action}`, { method: 'PUT' });
+      await load();
+    } catch { /* ignore — stale status */ }
+  }
+
   // ── Navigation ────────────────────────────────────────────────────────────────
   function nav(delta: number) {
     setDate(d => { const n = new Date(d); n.setDate(n.getDate() + delta); return n; });
@@ -256,6 +266,22 @@ export default function CalendarPage() {
 
   const dateLabel = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const viz = dragVizR.current;
+
+  // ── Day stats (for status bar) ────────────────────────────────────────────────
+  const dayStats = (() => {
+    const active = bookings.filter(b => b.status !== 'cancelled');
+    const byStatus = (s: string) => bookings.filter(b => b.status === s).length;
+    const revenue  = active.reduce((sum, b) => sum + parseFloat(b.priceSgd ?? '0'), 0);
+    return {
+      total:      bookings.length,
+      confirmed:  byStatus('confirmed'),
+      inProgress: byStatus('in_progress'),
+      completed:  byStatus('completed'),
+      noShow:     byStatus('no_show'),
+      cancelled:  byStatus('cancelled'),
+      revenue,
+    };
+  })();
 
   // ─── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -443,13 +469,16 @@ export default function CalendarPage() {
                     const visS = Math.max(sm, DAY_START_H * 60);
                     const visE = Math.min(em, DAY_END_H * 60);
                     if (visE <= visS) return null;
-                    const h = heightPx(visS, visE);
+                    const h    = heightPx(visS, visE);
                     const meta = STATUS_META[b.status];
+                    const canCheckIn  = b.status === 'confirmed';
+                    const canComplete = b.status === 'in_progress';
+                    const canNoShow   = b.status === 'confirmed' || b.status === 'in_progress';
 
                     return (
                       <div
                         key={b.id}
-                        className="absolute z-10 rounded-md overflow-hidden cursor-pointer hover:z-20 hover:shadow-md transition-shadow"
+                        className="absolute z-10 rounded-md overflow-hidden cursor-pointer hover:z-20 hover:shadow-md transition-shadow group/card"
                         style={{
                           top:    topPx(visS),
                           height: h,
@@ -460,12 +489,52 @@ export default function CalendarPage() {
                         }}
                         onClick={e => { e.stopPropagation(); setSelBooking(b); }}
                       >
-                        <div className="px-2 py-1.5">
+                        {/* Quick action buttons — visible on hover */}
+                        <div className="absolute top-1 right-1 hidden group-hover/card:flex items-center gap-0.5 z-20">
+                          {canCheckIn && (
+                            <button
+                              title="Check In"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                              onClick={e => { e.stopPropagation(); bookingAction(b.id, 'check-in'); }}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" /></svg>
+                            </button>
+                          )}
+                          {canComplete && (
+                            <button
+                              title="Mark Complete"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+                              onClick={e => { e.stopPropagation(); bookingAction(b.id, 'complete'); }}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            </button>
+                          )}
+                          {canNoShow && (
+                            <button
+                              title="No Show"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-orange-400 hover:bg-orange-500 text-white transition-colors"
+                              onClick={e => { e.stopPropagation(); bookingAction(b.id, 'no-show'); }}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="px-2 py-1.5 pr-1">
                           <div className="text-[11px] font-semibold text-gray-900 truncate leading-tight">{b.clientName ?? 'Client'}</div>
                           {h > 36 && <div className="text-[10px] text-gray-500 truncate mt-0.5">{b.serviceName}</div>}
-                          {h > 56 && meta && (
-                            <div className={`mt-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-sm inline-block ${meta.cls}`}>
-                              {meta.label}
+                          {h > 54 && (
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {meta && (
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-sm ${meta.cls}`}>
+                                  {meta.label}
+                                </span>
+                              )}
+                              {b.priceSgd && (
+                                <span className="text-[9px] font-medium text-gray-400">
+                                  ${parseFloat(b.priceSgd).toFixed(0)}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -478,19 +547,64 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-4 px-4 py-2.5 border-t border-gray-100 bg-gray-50/50 shrink-0">
-          <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
-            <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: DUTY_BG }} />
-            Duty block
-          </span>
-          {staffList.slice(0, 7).map((s, i) => (
-            <span key={s.id} className="flex items-center gap-1.5 text-[11px] text-gray-500">
-              <span className="w-3 h-3 rounded-sm shrink-0 opacity-50" style={{ backgroundColor: STAFF_COLORS[i % STAFF_COLORS.length] }} />
-              {s.name}
-            </span>
-          ))}
-          <span className="ml-auto text-[11px] text-gray-400">Drag duty blocks to move · Drag bottom edge to resize</span>
+        {/* Status bar */}
+        <div className="border-t border-gray-100 bg-gray-50/40 shrink-0">
+          {/* Stat counters */}
+          <div className="flex items-center gap-0 divide-x divide-gray-100 px-1 py-2">
+            <div className="flex flex-col items-center px-4">
+              <span className="text-base font-bold text-gray-900 tabular-nums leading-none">{dayStats.total}</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Bookings</span>
+            </div>
+            {dayStats.confirmed > 0 && (
+              <div className="flex flex-col items-center px-4">
+                <span className="text-base font-bold text-emerald-600 tabular-nums leading-none">{dayStats.confirmed}</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Confirmed</span>
+              </div>
+            )}
+            {dayStats.inProgress > 0 && (
+              <div className="flex flex-col items-center px-4">
+                <span className="text-base font-bold text-blue-600 tabular-nums leading-none">{dayStats.inProgress}</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">In Progress</span>
+              </div>
+            )}
+            {dayStats.completed > 0 && (
+              <div className="flex flex-col items-center px-4">
+                <span className="text-base font-bold text-gray-700 tabular-nums leading-none">{dayStats.completed}</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Completed</span>
+              </div>
+            )}
+            {dayStats.noShow > 0 && (
+              <div className="flex flex-col items-center px-4">
+                <span className="text-base font-bold text-orange-500 tabular-nums leading-none">{dayStats.noShow}</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">No Show</span>
+              </div>
+            )}
+            {dayStats.cancelled > 0 && (
+              <div className="flex flex-col items-center px-4">
+                <span className="text-base font-bold text-red-500 tabular-nums leading-none">{dayStats.cancelled}</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Cancelled</span>
+              </div>
+            )}
+            <div className="flex flex-col items-center px-4">
+              <span className="text-base font-bold text-[#1a2313] tabular-nums leading-none">
+                ${dayStats.revenue.toFixed(0)}
+              </span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Est. Revenue</span>
+            </div>
+            {/* Legend — pushed right */}
+            <div className="ml-auto flex items-center gap-3 pl-4 border-l-0 pr-4">
+              <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: DUTY_BG }} />
+                Duty
+              </span>
+              {staffList.slice(0, 5).map((s, i) => (
+                <span key={s.id} className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 opacity-60" style={{ backgroundColor: STAFF_COLORS[i % STAFF_COLORS.length] }} />
+                  {s.name.split(' ')[0]}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
