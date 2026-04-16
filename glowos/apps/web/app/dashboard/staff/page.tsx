@@ -411,12 +411,18 @@ function StaffCard({
   onEdit,
   onDelete,
   deleting,
+  loginEmail,
+  onCreateLogin,
+  onResetPassword,
 }: {
   member: StaffMember;
   services: ServiceOption[];
   onEdit: () => void;
   onDelete: () => void;
   deleting: boolean;
+  loginEmail?: string;
+  onCreateLogin: () => void;
+  onResetPassword: () => void;
 }) {
   const assignedServices = services.filter((s) => member.service_ids.includes(s.id));
 
@@ -442,6 +448,27 @@ function StaffCard({
           )}
           {member.isAnyAvailable && (
             <p className="text-xs text-indigo-600 mt-1">Available as &ldquo;Any staff&rdquo;</p>
+          )}
+          {/* Login badge / Create Login button */}
+          {loginEmail ? (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                Login: {loginEmail}
+              </span>
+              <button
+                onClick={onResetPassword}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Reset Password
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onCreateLogin}
+              className="mt-1 text-xs text-indigo-600 hover:text-indigo-700 underline"
+            >
+              + Create Login
+            </button>
           )}
         </div>
       </div>
@@ -486,6 +513,10 @@ export default function StaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [staffLogins, setStaffLogins] = useState<Record<string, string>>({});
+  const [loginModal, setLoginModal] = useState<{ staffId: string; name: string } | null>(null);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginError, setLoginError] = useState('');
 
   const fetchStaff = useCallback(async () => {
     const token = localStorage.getItem('access_token');
@@ -516,6 +547,12 @@ export default function StaffPage() {
       .then(([staffData, servicesData]) => {
         setStaffList(staffData.staff ?? []);
         setServices(servicesData.services ?? []);
+        // Fetch which staff have logins
+        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string }> }) => {
+          const map: Record<string, string> = {};
+          (d.logins ?? []).forEach(l => { if (l.staffId) map[l.staffId] = l.email; });
+          setStaffLogins(map);
+        }).catch(() => {});
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
@@ -603,6 +640,9 @@ export default function StaffPage() {
               onEdit={() => { setEditing(member); setModalOpen(true); }}
               onDelete={() => handleDelete(member.id)}
               deleting={deleting === member.id}
+              loginEmail={staffLogins[member.id]}
+              onCreateLogin={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: '', password: '' }); setLoginError(''); }}
+              onResetPassword={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: staffLogins[member.id]!, password: '' }); setLoginError(''); }}
             />
           ))}
         </div>
@@ -618,6 +658,69 @@ export default function StaffPage() {
             void fetchStaff();
           }}
         />
+      )}
+
+      {loginModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold">
+              {staffLogins[loginModal.staffId] ? 'Reset Password' : 'Create Login'} — {loginModal.name}
+            </h2>
+            {!staffLogins[loginModal.staffId] && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={loginForm.email}
+                  onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="staff@example.com"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                {staffLogins[loginModal.staffId] ? 'New Password' : 'Temporary Password'}
+              </label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Minimum 8 characters"
+              />
+            </div>
+            {loginError && <p className="text-xs text-red-600">{loginError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setLoginError('');
+                  try {
+                    if (staffLogins[loginModal.staffId]) {
+                      await apiFetch(`/merchant/staff/${loginModal.staffId}/reset-password`, {
+                        method: 'POST',
+                        body: JSON.stringify({ password: loginForm.password }),
+                      });
+                    } else {
+                      await apiFetch(`/merchant/staff/${loginModal.staffId}/create-login`, {
+                        method: 'POST',
+                        body: JSON.stringify({ email: loginForm.email, password: loginForm.password }),
+                      });
+                      setStaffLogins(prev => ({ ...prev, [loginModal.staffId]: loginForm.email }));
+                    }
+                    setLoginModal(null);
+                  } catch (err) {
+                    setLoginError(err instanceof Error ? err.message : 'Failed');
+                  }
+                }}
+                className="flex-1 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700"
+              >
+                Save
+              </button>
+              <button onClick={() => setLoginModal(null)} className="py-2 px-4 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
