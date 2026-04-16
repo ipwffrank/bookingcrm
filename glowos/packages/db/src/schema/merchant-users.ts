@@ -7,12 +7,14 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 import { merchants } from "./merchants";
+import { staff } from "./staff";
 
 export const merchantUsers = pgTable("merchant_users", {
   id: uuid("id").primaryKey().defaultRandom(),
   merchantId: uuid("merchant_id")
     .notNull()
     .references(() => merchants.id, { onDelete: "cascade" }),
+  staffId: uuid("staff_id").references(() => staff.id, { onDelete: "set null" }),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   phone: varchar("phone", { length: 20 }),

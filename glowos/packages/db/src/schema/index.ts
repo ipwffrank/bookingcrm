@@ -11,3 +11,4 @@ export * from "./notifications.js";
 export * from "./groups.js";
 export * from "./consult.js";
 export * from "./post-service.js";
+export * from "./staff-duties.js";
