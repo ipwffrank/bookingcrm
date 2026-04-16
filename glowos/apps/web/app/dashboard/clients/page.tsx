@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -492,9 +493,18 @@ export default function ClientsPage() {
                       <ChurnBadge risk={row.profile.churnRisk} />
                     </td>
                     <td className="px-4 py-3">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                      </svg>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/dashboard/clients/${row.profile.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="text-xs text-[#1a2313] font-medium hover:underline whitespace-nowrap"
+                        >
+                          View Profile
+                        </Link>
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </div>
                     </td>
                   </tr>
                 ))}

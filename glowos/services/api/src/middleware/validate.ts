@@ -27,7 +27,7 @@ export function zValidator<T>(schema: ZodSchema<T>) {
         path: e.path.join("."),
         message: e.message,
       }));
-      return c.json({ error: "Validation Error", errors }, 400);
+      return c.json({ error: "Validation Error", message: zodErr.errors.map(e => e.message).join(', '), errors }, 400);
     }
 
     c.set("body", result.data);

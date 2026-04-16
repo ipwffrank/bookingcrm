@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 
 // ─── Grid constants (static) ───────────────────────────────────────────────────
@@ -17,20 +18,29 @@ interface Duty {
 }
 
 interface Booking {
-  id: string; staffId: string | null;
+  id: string; staffId: string | null; clientId: string | null;
   startTime: string; endTime: string; status: string;
   clientName: string | null; serviceName: string | null; staffName: string | null;
   priceSgd: string | null;
 }
 
-interface RawBookingRow {
-  booking:     { id: string; staffId: string | null; startTime: string; endTime: string; status: string; priceSgd: string };
-  service:     { name: string } | null;
-  staffMember: { name: string } | null;
-  client:      { name: string | null } | null;
+interface ClientSnippet {
+  profileId: string;
+  totalVisits: number;
+  totalSpendSgd: string;
+  lastVisitAt: string | null;
+  vipTier: string | null;
+  notes: string | null;
 }
 
-interface DragViz { dutyId: string; staffId: string; startMin: number; endMin: number; }
+interface RawBookingRow {
+  booking:     { id: string; staffId: string | null; clientId: string; startTime: string; endTime: string; status: string; priceSgd: string };
+  service:     { name: string } | null;
+  staffMember: { name: string } | null;
+  client:      { id: string; name: string | null } | null;
+}
+
+interface DragViz { entityId: string; entityType: 'duty' | 'booking'; staffId: string; startMin: number; endMin: number; }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const STAFF_COLORS = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'];
@@ -70,6 +80,8 @@ export default function CalendarPage() {
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
+  const [clientSnippet, setClientSnippet] = useState<ClientSnippet | null>(null);
+  const [snippetLoading, setSnippetLoading] = useState(false);
   const [showDutyModal, setShowDutyModal] = useState(false);
   const [editDuty,      setEditDuty]      = useState<Duty | null>(null);
   const [dutyForm,      setDutyForm]      = useState({ staffId: '', date: '', startTime: '09:00', endTime: '17:00', notes: '' });
@@ -77,12 +89,16 @@ export default function CalendarPage() {
   const [dutySaving,    setDutySaving]    = useState(false);
 
   // Drag — refs for zero-overhead mousemove, bump state for visual re-renders
-  const dragData = useRef<{ type: 'move' | 'resize'; duty: Duty; startY: number; origStart: number; origEnd: number; } | null>(null);
+  type DragData =
+    | { entityType: 'duty'; type: 'move' | 'resize'; duty: Duty; startY: number; origStart: number; origEnd: number; }
+    | { entityType: 'booking'; type: 'move' | 'resize'; booking: Booking; startY: number; origStart: number; origEnd: number; };
+  const dragData = useRef<DragData | null>(null);
   const dragVizR = useRef<DragViz | null>(null);
   const [, bump] = useState(0);
   const colRefs  = useRef<Record<string, HTMLDivElement | null>>({});
   const loadRef  = useRef<() => Promise<void>>(async () => {});
   const ppmRef   = useRef(2); // kept in sync with ppm for stable drag effect
+  const dateRef  = useRef(''); // kept in sync with dateStr for stable drag effect
 
   // ── Dynamic grid helpers (depend on density) ─────────────────────────────────
   const ppm      = density === 'compact' ? 1.5 : 2;   // px per minute
@@ -93,6 +109,7 @@ export default function CalendarPage() {
   useEffect(() => { ppmRef.current = ppm; }, [ppm]);
 
   const dateStr = date.toISOString().slice(0, 10);
+  useEffect(() => { dateRef.current = dateStr; }, [dateStr]);
 
   // ── Data ──────────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -109,6 +126,7 @@ export default function CalendarPage() {
         ((bd.bookings ?? []) as RawBookingRow[]).map(r => ({
           id:          r.booking.id,
           staffId:     r.booking.staffId ?? null,
+          clientId:    r.booking.clientId ?? null,
           startTime:   r.booking.startTime,
           endTime:     r.booking.endTime,
           status:      r.booking.status,
@@ -163,8 +181,19 @@ export default function CalendarPage() {
   function startDrag(e: React.MouseEvent, duty: Duty, type: 'move' | 'resize') {
     e.preventDefault();
     e.stopPropagation();
-    dragData.current = { type, duty, startY: e.clientY, origStart: timeStrToMin(duty.startTime), origEnd: timeStrToMin(duty.endTime) };
-    dragVizR.current = { dutyId: duty.id, staffId: duty.staffId, startMin: timeStrToMin(duty.startTime), endMin: timeStrToMin(duty.endTime) };
+    dragData.current = { entityType: 'duty', type, duty, startY: e.clientY, origStart: timeStrToMin(duty.startTime), origEnd: timeStrToMin(duty.endTime) };
+    dragVizR.current = { entityId: duty.id, entityType: 'duty', staffId: duty.staffId, startMin: timeStrToMin(duty.startTime), endMin: timeStrToMin(duty.endTime) };
+    bump(n => n + 1);
+  }
+
+  function startBookingDrag(e: React.MouseEvent, booking: Booking, type: 'move' | 'resize') {
+    if (booking.status === 'cancelled' || booking.status === 'completed' || booking.status === 'no_show') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startMin = isoToLocalMin(booking.startTime);
+    const endMin   = isoToLocalMin(booking.endTime);
+    dragData.current = { entityType: 'booking', type, booking, startY: e.clientY, origStart: startMin, origEnd: endMin };
+    dragVizR.current = { entityId: booking.id, entityType: 'booking', staffId: booking.staffId ?? '', startMin, endMin };
     bump(n => n + 1);
   }
 
@@ -176,7 +205,7 @@ export default function CalendarPage() {
         const r = el.getBoundingClientRect();
         if (clientX >= r.left && clientX <= r.right) return staffId;
       }
-      return dragData.current?.duty.staffId ?? '';
+      return dragVizR.current?.staffId ?? '';
     }
 
     function onMove(e: MouseEvent) {
@@ -187,7 +216,10 @@ export default function CalendarPage() {
       if (d.type === 'move') {
         const dur = d.origEnd - d.origStart;
         const newStart = clamp(snap(d.origStart + deltaMin), DAY_START_H * 60, DAY_END_H * 60 - dur);
-        dragVizR.current = { dutyId: d.duty.id, staffId: staffAtX(e.clientX), startMin: newStart, endMin: newStart + dur };
+        // Bookings stay in same column; duties can cross columns
+        const newStaffId = d.entityType === 'booking' ? (d.booking.staffId ?? '') : staffAtX(e.clientX);
+        const entityId   = d.entityType === 'duty' ? d.duty.id : d.booking.id;
+        dragVizR.current = { entityId, entityType: d.entityType, staffId: newStaffId, startMin: newStart, endMin: newStart + dur };
       } else {
         const newEnd = clamp(snap(d.origEnd + deltaMin), d.origStart + SNAP_MIN, DAY_END_H * 60);
         dragVizR.current = { ...dragVizR.current!, endMin: newEnd };
@@ -203,17 +235,33 @@ export default function CalendarPage() {
       bump(n => n + 1);
       if (!d || !viz) return;
 
-      const noChange = viz.startMin === d.origStart && viz.endMin === d.origEnd && viz.staffId === d.duty.staffId;
+      let noChange: boolean;
+      if (d.entityType === 'booking') {
+        noChange = viz.startMin === d.origStart && viz.endMin === d.origEnd;
+      } else {
+        noChange = viz.startMin === d.origStart && viz.endMin === d.origEnd && viz.staffId === d.duty.staffId;
+      }
       if (noChange) return;
 
       try {
-        const body: Record<string, string> = {
-          date:       dateStr,
-          start_time: minToStr(viz.startMin),
-          end_time:   minToStr(viz.endMin),
-        };
-        if (viz.staffId !== d.duty.staffId) body.staff_id = viz.staffId;
-        await apiFetch(`/merchant/duties/${d.duty.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        if (d.entityType === 'booking') {
+          const cur = dateRef.current;
+          const [y, mo, dd] = cur.split('-').map(Number);
+          const newStart = new Date(y, mo - 1, dd, Math.floor(viz.startMin / 60), viz.startMin % 60, 0, 0);
+          const newEnd   = new Date(y, mo - 1, dd, Math.floor(viz.endMin / 60),   viz.endMin % 60,   0, 0);
+          await apiFetch(`/merchant/bookings/${d.booking.id}/reschedule`, {
+            method: 'PATCH',
+            body: JSON.stringify({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() }),
+          });
+        } else {
+          const body: Record<string, string> = {
+            date:       d.duty.date,        // use duty's own date (fixes stale dateStr)
+            start_time: minToStr(viz.startMin),
+            end_time:   minToStr(viz.endMin),
+          };
+          if (viz.staffId !== d.duty.staffId) body.staff_id = viz.staffId;
+          await apiFetch(`/merchant/duties/${d.duty.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        }
       } finally {
         await loadRef.current();
       }
@@ -226,6 +274,26 @@ export default function CalendarPage() {
       window.removeEventListener('mouseup',   onUp);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Client snippet fetch ──────────────────────────────────────────────────────
+  async function openBooking(b: Booking) {
+    setSelBooking(b);
+    setClientSnippet(null);
+    if (!b.clientId) return;
+    setSnippetLoading(true);
+    try {
+      const data = await apiFetch(`/merchant/clients/for-client/${b.clientId}`);
+      setClientSnippet({
+        profileId:    data.profile.id,
+        totalVisits:  data.profile.totalVisits,
+        totalSpendSgd: data.profile.totalSpendSgd,
+        lastVisitAt:  data.profile.lastVisitAt,
+        vipTier:      data.profile.vipTier,
+        notes:        data.profile.notes,
+      });
+    } catch { /* profile may not exist */ }
+    finally { setSnippetLoading(false); }
+  }
 
   // ── Booking actions ───────────────────────────────────────────────────────────
   async function bookingAction(id: string, action: 'check-in' | 'complete' | 'no-show') {
@@ -405,7 +473,7 @@ export default function CalendarPage() {
 
         {/* Staff column headers */}
         <div className="flex border-b border-gray-100 bg-white z-20 shrink-0">
-          <div className="w-14 shrink-0 border-r border-gray-100" />
+          <div className="w-16 shrink-0 border-r border-gray-200" />
           {staffList.map((s, i) => {
             const occ   = occupancy(s.id);
             const color = STAFF_COLORS[i % STAFF_COLORS.length]!;
@@ -444,10 +512,16 @@ export default function CalendarPage() {
           <div className="flex" style={{ minHeight: totalPx }}>
 
             {/* Time gutter */}
-            <div className="w-14 shrink-0 border-r border-gray-100 relative bg-white sticky left-0 z-10" style={{ height: totalPx }}>
+            <div className="w-16 shrink-0 border-r border-gray-200 relative bg-white sticky left-0 z-10" style={{ height: totalPx }}>
               {timeLabels.map(({ min, label }) => (
-                <div key={min} className="absolute right-2" style={{ top: topPx(min) - 9, left: 0 }}>
-                  <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{label}</span>
+                <div key={min} className="absolute right-2 left-0 flex items-center justify-end pr-2" style={{ top: topPx(min) - 9 }}>
+                  <span className="text-[11px] text-gray-500 font-semibold whitespace-nowrap">{label}</span>
+                </div>
+              ))}
+              {/* 30-min marks in gutter */}
+              {timeLabels.slice(0, -1).map(({ min }) => (
+                <div key={`${min}half`} className="absolute right-2 left-0 flex items-center justify-end pr-2" style={{ top: topPx(min + 30) - 7 }}>
+                  <span className="text-[9px] text-gray-300 whitespace-nowrap">:30</span>
                 </div>
               ))}
             </div>
@@ -458,7 +532,7 @@ export default function CalendarPage() {
               const staffDuties = duties.filter(d => d.staffId === s.id);
               const staffBooks  = bookings.filter(b => b.staffId === s.id);
               const offRanges   = offDutyRanges(s.id);
-              const ghostHere   = viz && viz.staffId === s.id && !staffDuties.find(d => d.id === viz.dutyId);
+              const ghostHere   = viz && viz.entityType === 'duty' && viz.staffId === s.id && !staffDuties.find(d => d.id === viz.entityId);
 
               return (
                 <div
@@ -473,11 +547,11 @@ export default function CalendarPage() {
                 >
                   {/* Hour lines */}
                   {timeLabels.map(({ min }) => (
-                    <div key={min} className="absolute inset-x-0 border-t border-gray-100" style={{ top: topPx(min) }} />
+                    <div key={min} className="absolute inset-x-0 border-t border-gray-200" style={{ top: topPx(min) }} />
                   ))}
                   {/* 30-min sub-lines */}
                   {timeLabels.slice(0, -1).map(({ min }) => (
-                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-50" style={{ top: topPx(min + 30) }} />
+                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-100" style={{ top: topPx(min + 30) }} />
                   ))}
 
                   {/* Off-duty hatching */}
@@ -507,7 +581,7 @@ export default function CalendarPage() {
 
                   {/* Duty blocks */}
                   {staffDuties.map(duty => {
-                    const isDragging = viz?.dutyId === duty.id;
+                    const isDragging = viz?.entityId === duty.id && viz?.entityType === 'duty';
                     if (isDragging && viz && viz.staffId !== s.id) return null;
                     const sm = isDragging && viz ? viz.startMin : timeStrToMin(duty.startTime);
                     const em = isDragging && viz ? viz.endMin   : timeStrToMin(duty.endTime);
@@ -553,8 +627,9 @@ export default function CalendarPage() {
 
                   {/* Booking events */}
                   {staffBooks.map(b => {
-                    const sm   = isoToLocalMin(b.startTime);
-                    const em   = isoToLocalMin(b.endTime);
+                    const isDraggingBooking = viz?.entityId === b.id && viz?.entityType === 'booking';
+                    const sm   = isDraggingBooking && viz ? viz.startMin : isoToLocalMin(b.startTime);
+                    const em   = isDraggingBooking && viz ? viz.endMin   : isoToLocalMin(b.endTime);
                     const visS = Math.max(sm, DAY_START_H * 60);
                     const visE = Math.min(em, DAY_END_H * 60);
                     if (visE <= visS) return null;
@@ -563,11 +638,12 @@ export default function CalendarPage() {
                     const canCheckIn  = b.status === 'confirmed';
                     const canComplete = b.status === 'in_progress';
                     const canNoShow   = b.status === 'confirmed' || b.status === 'in_progress';
+                    const isDraggable = b.status === 'confirmed' || b.status === 'in_progress';
 
                     return (
                       <div
                         key={b.id}
-                        className="absolute z-10 rounded-md overflow-hidden cursor-pointer hover:z-20 hover:shadow-md transition-shadow group/card"
+                        className={`absolute z-10 rounded-md overflow-hidden hover:z-20 hover:shadow-md transition-shadow group/card ${isDraggingBooking ? 'opacity-70 shadow-xl cursor-grabbing z-20' : isDraggable ? 'cursor-grab' : 'cursor-pointer'}`}
                         style={{
                           top:    topPx(visS),
                           height: h,
@@ -576,10 +652,14 @@ export default function CalendarPage() {
                           backgroundColor: `${color}18`,
                           borderLeft: `3px solid ${color}`,
                         }}
-                        onClick={e => { e.stopPropagation(); setSelBooking(b); }}
+                        onMouseDown={isDraggable ? e => startBookingDrag(e, b, 'move') : undefined}
+                        onClick={e => { e.stopPropagation(); openBooking(b); }}
                       >
-                        {/* Quick action buttons */}
-                        <div className="absolute top-1 right-1 hidden group-hover/card:flex items-center gap-0.5 z-20">
+                        {/* Quick action buttons — stop propagation so mousedown drag doesn't trigger */}
+                        <div
+                          className="absolute top-1 right-1 hidden group-hover/card:flex items-center gap-0.5 z-20"
+                          onMouseDown={e => e.stopPropagation()}
+                        >
                           {canCheckIn && (
                             <button
                               title="Check In"
@@ -627,6 +707,16 @@ export default function CalendarPage() {
                             </div>
                           )}
                         </div>
+
+                        {/* Resize handle (confirmed/in_progress only) */}
+                        {isDraggable && (
+                          <div
+                            className="absolute bottom-0 inset-x-0 h-3 cursor-s-resize flex items-center justify-center pointer-events-auto"
+                            onMouseDown={e => { e.stopPropagation(); startBookingDrag(e, b, 'resize'); }}
+                          >
+                            <div className="w-6 h-px opacity-30 hover:opacity-60 transition-opacity" style={{ backgroundColor: color }} />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -792,72 +882,143 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* ── Booking detail ── */}
+      {/* ── Booking detail — right-side drawer ── */}
       {selBooking && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm font-manrope overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); }} />
+          {/* Panel */}
+          <div className="w-full max-w-sm bg-white shadow-2xl flex flex-col font-manrope overflow-hidden">
+
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between shrink-0">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">{selBooking.clientName ?? 'Client'}</h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm font-semibold text-gray-900">{selBooking.clientName ?? 'Client'}</h2>
+                  {STATUS_META[selBooking.status] && (
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${STATUS_META[selBooking.status]!.cls}`}>
+                      {STATUS_META[selBooking.status]!.label}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 mt-0.5">{selBooking.serviceName}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {selBooking.priceSgd && (
                   <span className="text-sm font-semibold text-[#1a2313]">${parseFloat(selBooking.priceSgd).toFixed(2)}</span>
                 )}
-                {STATUS_META[selBooking.status] && (
-                  <span className={`text-[10px] font-semibold px-2 py-1 rounded-md ${STATUS_META[selBooking.status]!.cls}`}>
-                    {STATUS_META[selBooking.status]!.label}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="px-5 py-4 space-y-3">
-              {[
-                ['Staff',  selBooking.staffName ?? '—'],
-                ['Start',  new Date(selBooking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })],
-                ['End',    new Date(selBooking.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })],
-                ['Date',   new Date(selBooking.startTime).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })],
-              ].map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</span>
-                  <span className="text-sm font-medium text-gray-800">{value}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick actions inside drawer too */}
-            {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
-              <div className="px-5 pb-4 flex gap-2">
-                {selBooking.status === 'confirmed' && (
-                  <button
-                    onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); }}
-                    className="flex-1 py-2 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
-                  >
-                    Check In
-                  </button>
-                )}
-                {selBooking.status === 'in_progress' && (
-                  <button
-                    onClick={() => { bookingAction(selBooking.id, 'complete'); setSelBooking(null); }}
-                    className="flex-1 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-colors"
-                  >
-                    Mark Complete
-                  </button>
-                )}
-                <button
-                  onClick={() => { bookingAction(selBooking.id, 'no-show'); setSelBooking(null); }}
-                  className="py-2 px-4 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors"
-                >
-                  No Show
+                <button onClick={() => { setSelBooking(null); setClientSnippet(null); }} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
-            )}
+            </div>
 
-            <div className="px-5 pb-5">
+            <div className="flex-1 overflow-y-auto">
+              {/* Booking info */}
+              <div className="px-5 py-4 space-y-2.5">
+                {[
+                  ['Staff',  selBooking.staffName ?? '—'],
+                  ['Date',   new Date(selBooking.startTime).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })],
+                  ['Start',  new Date(selBooking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })],
+                  ['End',    new Date(selBooking.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</span>
+                    <span className="text-sm font-medium text-gray-800">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Client profile snippet */}
+              <div className="px-5 pb-4">
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client Profile</h3>
+                    {clientSnippet && (
+                      <Link
+                        href={`/dashboard/clients/${clientSnippet.profileId}`}
+                        className="text-[11px] text-[#1a2313] font-medium hover:underline"
+                      >
+                        View Full Profile →
+                      </Link>
+                    )}
+                  </div>
+
+                  {snippetLoading && (
+                    <div className="flex justify-center py-4">
+                      <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+                    </div>
+                  )}
+
+                  {!snippetLoading && clientSnippet && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
+                          <p className="text-base font-bold text-gray-900">{clientSnippet.totalVisits}</p>
+                          <p className="text-[10px] text-gray-400">Visits</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
+                          <p className="text-base font-bold text-gray-900">${parseFloat(clientSnippet.totalSpendSgd).toFixed(0)}</p>
+                          <p className="text-[10px] text-gray-400">Revenue</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
+                          <p className="text-[11px] font-semibold text-gray-900 leading-tight">
+                            {clientSnippet.lastVisitAt ? new Date(clientSnippet.lastVisitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+                          </p>
+                          <p className="text-[10px] text-gray-400">Last Visit</p>
+                        </div>
+                      </div>
+                      {clientSnippet.vipTier && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-purple-400" />
+                          <span className="text-xs text-gray-600 capitalize">{clientSnippet.vipTier} member</span>
+                        </div>
+                      )}
+                      {clientSnippet.notes && (
+                        <div className="bg-amber-50 rounded-lg px-3 py-2">
+                          <p className="text-[11px] text-amber-800 leading-relaxed">{clientSnippet.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!snippetLoading && !clientSnippet && selBooking.clientId && (
+                    <p className="text-xs text-gray-400 italic">No profile on file</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick actions */}
+            <div className="px-5 py-4 border-t border-gray-100 space-y-2 shrink-0">
+              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
+                <div className="flex gap-2">
+                  {selBooking.status === 'confirmed' && (
+                    <button
+                      onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); setClientSnippet(null); }}
+                      className="flex-1 py-2 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
+                    >
+                      Check In
+                    </button>
+                  )}
+                  {selBooking.status === 'in_progress' && (
+                    <button
+                      onClick={() => { bookingAction(selBooking.id, 'complete'); setSelBooking(null); setClientSnippet(null); }}
+                      className="flex-1 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-colors"
+                    >
+                      Mark Complete
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { bookingAction(selBooking.id, 'no-show'); setSelBooking(null); setClientSnippet(null); }}
+                    className="py-2 px-3 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors"
+                  >
+                    No Show
+                  </button>
+                </div>
+              )}
               <button
-                onClick={() => setSelBooking(null)}
+                onClick={() => { setSelBooking(null); setClientSnippet(null); }}
                 className="w-full py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
               >
                 Close

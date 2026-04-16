@@ -59,6 +59,11 @@ const merchantBookingCreateSchema = z.object({
   notes: z.string().optional(),
 });
 
+const rescheduleSchema = z.object({
+  start_time: z.string().datetime({ message: "start_time must be an ISO datetime string" }),
+  end_time: z.string().datetime({ message: "end_time must be an ISO datetime string" }).optional(),
+});
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -573,6 +578,59 @@ merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
 
   return c.json({ booking: updated });
 });
+
+// ─── Protected: PATCH /merchant/bookings/:id/reschedule ──────────────────────
+
+merchantBookingsRouter.patch(
+  "/:id/reschedule",
+  requireMerchant,
+  zValidator(rescheduleSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const userRole = c.get("userRole");
+    const contextStaffId = c.get("staffId");
+    const bookingId = c.req.param("id")!;
+    const body = c.get("body") as z.infer<typeof rescheduleSchema>;
+
+    const [existing] = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!existing) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    // Staff can only reschedule their own bookings
+    if (userRole === "staff" && existing.staffId !== contextStaffId) {
+      return c.json({ error: "Forbidden", message: "You can only reschedule your own bookings" }, 403);
+    }
+
+    if (!["confirmed", "in_progress"].includes(existing.status)) {
+      return c.json(
+        { error: "Conflict", message: `Cannot reschedule a booking with status: ${existing.status}` },
+        409
+      );
+    }
+
+    const newStart = parseISO(body.start_time);
+    // If end_time provided use it; otherwise preserve existing duration
+    const newEnd = body.end_time
+      ? parseISO(body.end_time)
+      : new Date(newStart.getTime() + (existing.endTime.getTime() - existing.startTime.getTime()));
+
+    const [updated] = await db
+      .update(bookings)
+      .set({ startTime: newStart, endTime: newEnd, updatedAt: new Date() })
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .returning();
+
+    await invalidateAvailabilityCacheByMerchantId(merchantId);
+
+    return c.json({ booking: updated });
+  }
+);
 
 // ─── GET /booking/:slug/staff ──────────────────────────────────────────────────
 // Public — returns visible staff with profile fields for the booking widget

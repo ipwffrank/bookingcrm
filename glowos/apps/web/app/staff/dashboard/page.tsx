@@ -29,6 +29,13 @@ interface MyBooking {
 
 const DUTY_BG = '#1a2313'; // single brand colour for all duty blocks
 
+function localDateStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function localTimeStr(d: Date) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export default function StaffSchedulePage() {
   const [events, setEvents] = useState<EventInput[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -61,13 +68,13 @@ export default function StaffSchedulePage() {
 
       const bookingEvents: EventInput[] = (bookingsData.bookings ?? []).map((b: MyBooking) => ({
         id: `booking-${b.id}`,
-        title: `📅 ${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
+        title: `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
         start: b.startTime,
         end: b.endTime,
         backgroundColor: '#0ea5e9',
         borderColor: 'transparent',
-        extendedProps: { type: 'booking' },
-        editable: false,
+        extendedProps: { type: 'booking', booking: b },
+        editable: b.status === 'confirmed' || b.status === 'in_progress',
       }));
 
       setEvents([...dutyEvents, ...bookingEvents]);
@@ -77,34 +84,56 @@ export default function StaffSchedulePage() {
   }, []);
 
   async function handleEventDrop(info: EventDropArg) {
-    if (info.event.extendedProps.type !== 'duty') { info.revert(); return; }
-    const dutyId = info.event.id.replace('duty-', '');
     const start = info.event.start!;
-    const end = info.event.end!;
+    const end = info.event.end ?? new Date(start.getTime() + 60 * 60 * 1000);
+
+    if (info.event.extendedProps.type === 'booking') {
+      const bookingId = info.event.id.replace('booking-', '');
+      try {
+        await apiFetch(`/merchant/bookings/${bookingId}/reschedule`, {
+          method: 'PATCH',
+          body: JSON.stringify({ start_time: start.toISOString(), end_time: end.toISOString() }),
+        });
+      } catch { info.revert(); }
+      return;
+    }
+
+    const dutyId = info.event.id.replace('duty-', '');
     try {
       await apiFetch(`/merchant/duties/${dutyId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          date: start.toISOString().slice(0, 10),
-          start_time: start.toTimeString().slice(0, 5),
-          end_time: end.toTimeString().slice(0, 5),
+          date: localDateStr(start),
+          start_time: localTimeStr(start),
+          end_time: localTimeStr(end),
         }),
       });
     } catch { info.revert(); }
   }
 
   async function handleEventResize(info: EventResizeDoneArg) {
-    if (info.event.extendedProps.type !== 'duty') { info.revert(); return; }
-    const dutyId = info.event.id.replace('duty-', '');
     const start = info.event.start!;
     const end = info.event.end!;
+
+    if (info.event.extendedProps.type === 'booking') {
+      const bookingId = info.event.id.replace('booking-', '');
+      try {
+        await apiFetch(`/merchant/bookings/${bookingId}/reschedule`, {
+          method: 'PATCH',
+          body: JSON.stringify({ start_time: start.toISOString(), end_time: end.toISOString() }),
+        });
+      } catch { info.revert(); }
+      return;
+    }
+
+    const dutyId = info.event.id.replace('duty-', '');
     try {
       await apiFetch(`/merchant/duties/${dutyId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          date: start.toISOString().slice(0, 10),
-          start_time: start.toTimeString().slice(0, 5),
-          end_time: end.toTimeString().slice(0, 5),
+          date: localDateStr(start),
+          start_time: localTimeStr(start),
+          end_time: localTimeStr(end),
         }),
       });
     } catch { info.revert(); }

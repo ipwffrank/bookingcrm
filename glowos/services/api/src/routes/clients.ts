@@ -120,6 +120,51 @@ clientsRouter.get("/", requireMerchant, async (c) => {
   });
 });
 
+// ─── GET /merchant/clients/for-client/:clientId ──────────────────────────────
+// Look up a client profile by the global clientId (used by calendar/booking drawer).
+// Must be defined before /:id to avoid Hono treating "for-client" as an id param.
+
+clientsRouter.get("/for-client/:clientId", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const clientId   = c.req.param("clientId")!;
+
+  const [row] = await db
+    .select({ profile: clientProfiles, client: clients })
+    .from(clientProfiles)
+    .innerJoin(clients, eq(clientProfiles.clientId, clients.id))
+    .where(and(eq(clientProfiles.clientId, clientId), eq(clientProfiles.merchantId, merchantId)))
+    .limit(1);
+
+  if (!row) {
+    return c.json({ error: "Not Found", message: "Client profile not found" }, 404);
+  }
+
+  const [spendingStats] = await db
+    .select({
+      totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      totalVisits:   sql<number>`cast(count(*) as int)`,
+      lastVisitAt:   sql<string>`max(${bookings.startTime})`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.clientId, clientId),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+      )
+    );
+
+  return c.json({
+    profile: {
+      ...row.profile,
+      totalSpendSgd: String(spendingStats?.totalSpendSgd ?? "0"),
+      totalVisits:   Number(spendingStats?.totalVisits ?? 0),
+      lastVisitAt:   spendingStats?.lastVisitAt ? String(spendingStats.lastVisitAt) : null,
+    },
+    client: row.client,
+  });
+});
+
 // ─── GET /merchant/clients/:id ────────────────────────────────────────────────
 
 clientsRouter.get("/:id", requireMerchant, async (c) => {
