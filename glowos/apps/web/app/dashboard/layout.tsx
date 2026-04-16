@@ -118,6 +118,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
+    // Group admin routes have their own layout and auth — don't interfere
+    if (pathname.startsWith('/dashboard/group')) return;
+
     const token = localStorage.getItem('access_token');
     if (!token) {
       router.push('/login');
