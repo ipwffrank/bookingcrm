@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* ─── Landing page theme (Stitch design palette) ────────────────────────── */
+@theme {
+  /* Colors */
+  --color-primary: #1a2313;
+  --color-on-primary: #ffffff;
+  --color-secondary: #456466;
+  --color-primary-container: #2f3827;
+  --color-on-primary-container: #97a18b;
+  --color-primary-fixed: #dce6ce;
+  --color-surface: #fcfaef;
+  --color-on-surface: #1b1c16;
+  --color-on-surface-variant: #454840;
+  --color-surface-container: #f0eee3;
+  --color-surface-container-low: #f6f4e9;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-high: #eae8de;
+  --color-surface-container-highest: #e4e3d8;
+  --color-outline-variant: #c6c7be;
+  --color-outline: #767870;
+  /* Font families (reference CSS vars injected by next/font on body) */
+  --font-newsreader: var(--nf-newsreader), serif;
+  --font-manrope: var(--nf-manrope), sans-serif;
+  --font-inter: var(--nf-inter), sans-serif;
+}
+
 /* ─── CSS Variables ──────────────────────────────────────────────────────── */
 
 :root {
