@@ -31,6 +31,12 @@ export default function LoginPage() {
         localStorage.setItem('user', JSON.stringify(data.user));
         localStorage.setItem('group', JSON.stringify(data.group));
         router.push('/dashboard/group/overview');
+      } else if (data.userType === 'staff') {
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('merchant', JSON.stringify(data.merchant));
+        router.push('/staff/dashboard');
       } else {
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
