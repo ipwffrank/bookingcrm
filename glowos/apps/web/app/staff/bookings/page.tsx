@@ -18,25 +18,6 @@ interface Booking {
   staffName: string | null;
 }
 
-// API returns nested objects — normalise to flat Booking
-function normaliseBookings(rows: Array<{
-  booking: { id: string; staffId: string | null; startTime: string; endTime: string; status: string };
-  service: { name: string } | null;
-  staffMember: { id: string; name: string } | null;
-  client: { name: string } | null;
-}>): Booking[] {
-  return rows.map(r => ({
-    id: r.booking.id,
-    staffId: r.booking.staffId,
-    startTime: r.booking.startTime,
-    endTime: r.booking.endTime,
-    status: r.booking.status,
-    clientName: r.client?.name ?? null,
-    serviceName: r.service?.name ?? null,
-    staffName: r.staffMember?.name ?? null,
-  }));
-}
-
 const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function StaffAllBookingsPage() {
@@ -50,7 +31,7 @@ export default function StaffAllBookingsPage() {
     const to = end.slice(0, 10);
     try {
       const data = await apiFetch(`/staff/bookings?from=${from}&to=${to}`);
-      const bookings = normaliseBookings(data.bookings ?? []);
+      const bookings: Booking[] = (data.bookings ?? []) as Booking[];
 
       setEvents(bookings.map(b => {
         if (b.staffId && !staffColorMap[b.staffId]) {
