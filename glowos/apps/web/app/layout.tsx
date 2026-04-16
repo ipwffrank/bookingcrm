@@ -1,40 +1,24 @@
 import type { Metadata } from 'next';
-import { Cormorant_Garamond, Outfit, Newsreader, Manrope, Inter } from 'next/font/google';
+import { Cormorant_Garamond, Manrope } from 'next/font/google';
 import './globals.css';
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  variable: '--font-body',
-  weight: ['300', '400', '500', '600'],
-});
+/* ── Two-font system ──────────────────────────────────────────────────────
+ *  Display / serif:  Cormorant Garamond  — headlines, prices, logo text
+ *  Body / sans:      Manrope             — body, UI labels, buttons, nav
+ * ────────────────────────────────────────────────────────────────────────── */
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
   variable: '--font-display',
   weight: ['300', '400', '500', '600', '700'],
   style: ['normal', 'italic'],
-});
-
-// Landing page fonts (variable names use --nf- prefix to avoid @theme collision)
-const newsreader = Newsreader({
-  subsets: ['latin'],
-  weight: ['300', '400', '600'],
-  style: ['normal', 'italic'],
-  variable: '--nf-newsreader',
   display: 'swap',
 });
 
 const manrope = Manrope({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--nf-manrope',
-  display: 'swap',
-});
-
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--nf-inter',
+  variable: '--font-body',
+  weight: ['300', '400', '500', '600', '700'],
   display: 'swap',
 });
 
@@ -57,7 +41,7 @@ export default function RootLayout({
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
       />
-      <body className={`${outfit.variable} ${cormorant.variable} ${newsreader.variable} ${manrope.variable} ${inter.variable} font-[family-name:var(--font-body)] antialiased`}>
+      <body className={`${cormorant.variable} ${manrope.variable} font-[family-name:var(--font-body)] antialiased`}>
         {children}
       </body>
     </html>

@@ -19,10 +19,16 @@
   --color-surface-container-highest: #e4e3d8;
   --color-outline-variant: #c6c7be;
   --color-outline: #767870;
-  /* Font families (reference CSS vars injected by next/font on body) */
-  --font-newsreader: var(--nf-newsreader), serif;
-  --font-manrope: var(--nf-manrope), sans-serif;
-  --font-inter: var(--nf-inter), sans-serif;
+  /* Font families — consolidated two-font system
+     Display (serif):  Cormorant Garamond  →  font-serif  (class: font-serif)
+     Body (sans):      Manrope             →  font-sans   (class: font-sans)
+     Legacy aliases kept so dashboard/staff classes still resolve correctly */
+  --font-serif: var(--font-display), serif;
+  --font-sans: var(--font-body), sans-serif;
+  /* Legacy aliases — dashboard/staff layouts reference these class names */
+  --font-newsreader: var(--font-display), serif;
+  --font-manrope: var(--font-body), sans-serif;
+  --font-inter: var(--font-body), sans-serif;
 }
 
 /* ─── CSS Variables ──────────────────────────────────────────────────────── */
@@ -39,6 +45,50 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ─── Fluid typography scale ─────────────────────────────────────────────
+ *  Uses clamp() for smooth scaling between mobile (375px) and desktop (1440px).
+ *  Hierarchy:  h1 > h2 > h3 > body-lg > body > small > label
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.text-fluid-h1 {
+  font-size: clamp(2.75rem, 2rem + 3.5vw, 5.5rem);    /* 44px → 88px */
+  line-height: 1.05;
+}
+
+.text-fluid-h2 {
+  font-size: clamp(2rem, 1.4rem + 2.8vw, 3.75rem);     /* 32px → 60px */
+  line-height: 1.12;
+}
+
+.text-fluid-h3 {
+  font-size: clamp(1.5rem, 1.1rem + 1.8vw, 2.5rem);    /* 24px → 40px */
+  line-height: 1.2;
+}
+
+.text-fluid-body-lg {
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.25rem);     /* 16px → 20px */
+  line-height: 1.65;
+}
+
+.text-fluid-body {
+  font-size: clamp(0.875rem, 0.84rem + 0.2vw, 1rem);   /* 14px → 16px */
+  line-height: 1.6;
+}
+
+.text-fluid-small {
+  font-size: clamp(0.75rem, 0.72rem + 0.15vw, 0.875rem); /* 12px → 14px */
+  line-height: 1.5;
+}
+
+/* Luxury uppercase label style — generous tracking, medium weight */
+.label-luxury {
+  font-family: var(--font-body), sans-serif;
+  font-size: clamp(0.625rem, 0.6rem + 0.12vw, 0.6875rem); /* 10px → 11px */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
 }
 
 /* ─── Scroll-triggered animations ────────────────────────────────────────── */

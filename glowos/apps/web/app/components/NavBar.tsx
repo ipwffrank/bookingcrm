@@ -85,7 +85,7 @@ export default function NavBar() {
                   : 'px-6 py-2.5'
               }`}
             >
-              Get Started
+              Apply Now
             </Link>
           </div>
 
@@ -138,7 +138,7 @@ export default function NavBar() {
                 onClick={() => setMobileOpen(false)}
                 className="text-center text-sm font-medium text-[#0a0a0a] bg-[var(--gold)] hover:bg-[var(--gold-light)] px-4 py-3.5 rounded-lg transition-all duration-300 min-h-[44px]"
               >
-                Get Started
+                Apply Now
               </Link>
             </div>
           </div>
