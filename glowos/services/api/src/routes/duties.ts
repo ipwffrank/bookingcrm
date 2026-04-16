@@ -20,6 +20,7 @@ const createDutySchema = z.object({
 });
 
 const updateDutySchema = z.object({
+  staff_id: z.string().uuid().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   start_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   end_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -143,6 +144,23 @@ dutiesRouter.patch("/:id", zValidator(updateDutySchema), async (c) => {
   }
 
   const updates: Record<string, unknown> = {};
+
+  // Staff reassignment — admin only
+  if (body.staff_id !== undefined) {
+    if (userRole === "staff") {
+      return c.json({ error: "Forbidden", message: "Staff cannot reassign duty blocks" }, 403);
+    }
+    const [newStaff] = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .where(and(eq(staff.id, body.staff_id), eq(staff.merchantId, merchantId)))
+      .limit(1);
+    if (!newStaff) {
+      return c.json({ error: "Not Found", message: "Target staff member not found" }, 404);
+    }
+    updates.staffId = body.staff_id;
+  }
+
   if (body.date !== undefined) updates.date = body.date;
   if (body.start_time !== undefined) updates.startTime = body.start_time;
   if (body.end_time !== undefined) updates.endTime = body.end_time;
