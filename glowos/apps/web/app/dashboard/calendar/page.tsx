@@ -113,7 +113,7 @@ export default function CalendarPage() {
   const [clientBookings, setClientBookings] = useState<{ id: string; startTime: string; endTime: string; status: string; serviceName: string; staffName: string }[] | null>(null);
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Drag — refs for zero-overhead mousemove, bump state for visual re-renders
   type DragData =
