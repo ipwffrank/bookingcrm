@@ -309,7 +309,7 @@ export default function ProductShowcase() {
             className={`text-[11px] px-3 py-1.5 rounded-full transition-all duration-300 ${
               activeIdx === i
                 ? 'bg-[#c4a778]/20 text-[#c4a778] border border-[#c4a778]/30'
-                : 'text-white/30 border border-white/10 hover:text-white/50'
+                : 'text-gray-400 border border-gray-300 hover:text-gray-600 hover:border-gray-400'
             }`}
           >
             {s.label}
