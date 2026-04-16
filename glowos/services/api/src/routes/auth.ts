@@ -139,9 +139,24 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
 
     await db.update(merchantUsers).set({ lastLoginAt: new Date() }).where(eq(merchantUsers.id, user.id));
 
-    const accessToken = generateAccessToken({ userId: user.id, merchantId: merchant.id, role: user.role });
+    const accessToken = generateAccessToken({
+      userId: user.id,
+      merchantId: merchant.id,
+      role: user.role,
+      ...(user.staffId ? { staffId: user.staffId } : {}),
+    });
     const refreshToken = generateRefreshToken({ userId: user.id });
     const { passwordHash: _pw, ...safeUser } = user;
+
+    if (user.role === 'staff') {
+      return c.json({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        userType: 'staff',
+        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        merchant: { id: merchant.id, name: merchant.name, slug: merchant.slug },
+      });
+    }
 
     return c.json({ userType: "merchant", user: safeUser, merchant, access_token: accessToken, refresh_token: refreshToken });
   }

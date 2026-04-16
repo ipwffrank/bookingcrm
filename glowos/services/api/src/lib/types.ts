@@ -7,5 +7,6 @@ export type AppVariables = {
   merchantId?: string;
   userRole: string;
   groupId?: string;
+  staffId?: string;  // set for staff role tokens
   body: unknown;
 };

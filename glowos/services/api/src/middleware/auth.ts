@@ -33,6 +33,7 @@ export async function requireMerchant(c: AppContext, next: Next) {
       isActive: merchantUsers.isActive,
       merchantId: merchantUsers.merchantId,
       role: merchantUsers.role,
+      staffId: merchantUsers.staffId,
     })
     .from(merchantUsers)
     .where(eq(merchantUsers.id, payload.userId))
@@ -45,6 +46,7 @@ export async function requireMerchant(c: AppContext, next: Next) {
   c.set("userId", user.id);
   c.set("merchantId", user.merchantId);
   c.set("userRole", user.role);
+  if (user.staffId) c.set("staffId", user.staffId);
 
   await next();
 }
@@ -69,6 +71,15 @@ export function requireRole(...roles: string[]) {
 
     await next();
   };
+}
+
+// New: blocks staff role, allows owner + manager only
+export function requireAdmin(c: AppContext, next: Next) {
+  const userRole = c.get("userRole");
+  if (!userRole || !["owner", "manager"].includes(userRole)) {
+    return c.json({ error: "Forbidden", message: "Admin access required" }, 403);
+  }
+  return next();
 }
 
 // ─── RBAC permissions map ──────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ export interface AccessTokenPayload {
   userId: string;
   merchantId: string;
   role: string;
+  staffId?: string;  // set when role === 'staff'
 }
 
 export interface RefreshTokenPayload {
