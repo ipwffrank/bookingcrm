@@ -631,7 +631,7 @@ export default function CalendarPage() {
                         onClick={e => {
                           e.stopPropagation();
                           setEditDuty(duty);
-                          setDutyForm({ staffId: duty.staffId, date: duty.date, startTime: duty.startTime, endTime: duty.endTime, notes: duty.notes ?? '' });
+                          setDutyForm({ staffId: duty.staffId, date: duty.date, startTime: duty.startTime.slice(0, 5), endTime: duty.endTime.slice(0, 5), notes: duty.notes ?? '' });
                           setDutyError(null);
                           setShowDutyModal(true);
                         }}

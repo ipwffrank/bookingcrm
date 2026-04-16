@@ -129,7 +129,7 @@ export default function StaffAllBookingsPage() {
     if (info.event.extendedProps.type === 'duty') {
       const duty = info.event.extendedProps.duty as DutyBlock;
       setEditDuty(duty);
-      setDutyForm({ date: duty.date, startTime: duty.startTime, endTime: duty.endTime, notes: duty.notes ?? '' });
+      setDutyForm({ date: duty.date, startTime: duty.startTime.slice(0, 5), endTime: duty.endTime.slice(0, 5), notes: duty.notes ?? '' });
       setDutyError(null);
       setShowDutyModal(true);
     } else {
@@ -257,8 +257,11 @@ export default function StaffAllBookingsPage() {
               <input type="text" value={dutyForm.notes} onChange={e => setDutyForm(f => ({ ...f, notes: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30" placeholder="e.g. Lunch break" />
             </div>
             {dutyError && <p className="text-xs text-red-600">{dutyError}</p>}
+            {editDuty && !isFutureDuty(editDuty.date, editDuty.startTime) && (
+              <p className="text-xs text-gray-400">Past blocks cannot be edited or deleted.</p>
+            )}
             <div className="flex gap-2">
-              <button onClick={handleSaveDuty} disabled={dutySaving} className="flex-1 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors">
+              <button onClick={handleSaveDuty} disabled={dutySaving || (!!editDuty && !isFutureDuty(editDuty.date, editDuty.startTime))} className="flex-1 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors">
                 {dutySaving ? 'Saving…' : 'Save'}
               </button>
               {editDuty && isFutureDuty(editDuty.date, editDuty.startTime) && (

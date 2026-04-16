@@ -10,11 +10,15 @@ const dutiesRouter = new Hono<{ Variables: AppVariables }>();
 
 dutiesRouter.use("*", requireMerchant);
 
+const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;   // accept HH:MM or HH:MM:SS
+/** Strip seconds from time strings so DB stores consistently as HH:MM */
+const toHHMM = (t: string) => t.slice(0, 5);
+
 const createDutySchema = z.object({
   staff_id: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:MM"),
-  end_time: z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:MM"),
+  start_time: z.string().regex(TIME_RE, "Time must be HH:MM"),
+  end_time: z.string().regex(TIME_RE, "Time must be HH:MM"),
   duty_type: z.enum(["floor", "treatment", "break", "other"]),
   notes: z.string().optional(),
 });
@@ -22,8 +26,8 @@ const createDutySchema = z.object({
 const updateDutySchema = z.object({
   staff_id: z.string().uuid("staff_id must be a valid UUID").optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD").optional(),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/, "start_time must be HH:MM").optional(),
-  end_time: z.string().regex(/^\d{2}:\d{2}$/, "end_time must be HH:MM").optional(),
+  start_time: z.string().regex(TIME_RE, "start_time must be HH:MM").optional(),
+  end_time: z.string().regex(TIME_RE, "end_time must be HH:MM").optional(),
   duty_type: z.enum(["floor", "treatment", "break", "other"]).optional(),
   notes: z.string().optional(),
 });
@@ -86,8 +90,8 @@ dutiesRouter.post("/", requireAdmin(), zValidator(createDutySchema), async (c) =
       staffId: body.staff_id,
       merchantId,
       date: body.date,
-      startTime: body.start_time,
-      endTime: body.end_time,
+      startTime: toHHMM(body.start_time),
+      endTime: toHHMM(body.end_time),
       dutyType: body.duty_type,
       notes: body.notes ?? null,
     })
@@ -110,8 +114,8 @@ dutiesRouter.post("/my", zValidator(myDutySchema), async (c) => {
       staffId,
       merchantId,
       date: body.date,
-      startTime: body.start_time,
-      endTime: body.end_time,
+      startTime: toHHMM(body.start_time),
+      endTime: toHHMM(body.end_time),
       dutyType: body.duty_type,
       notes: body.notes ?? null,
     })
@@ -162,8 +166,8 @@ dutiesRouter.patch("/:id", zValidator(updateDutySchema), async (c) => {
   }
 
   if (body.date !== undefined) updates.date = body.date;
-  if (body.start_time !== undefined) updates.startTime = body.start_time;
-  if (body.end_time !== undefined) updates.endTime = body.end_time;
+  if (body.start_time !== undefined) updates.startTime = toHHMM(body.start_time);
+  if (body.end_time !== undefined) updates.endTime = toHHMM(body.end_time);
   if (body.duty_type !== undefined) updates.dutyType = body.duty_type;
   if (body.notes !== undefined) updates.notes = body.notes;
   updates.updatedAt = new Date();
