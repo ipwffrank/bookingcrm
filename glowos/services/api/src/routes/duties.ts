@@ -27,6 +27,8 @@ const updateDutySchema = z.object({
   notes: z.string().optional(),
 });
 
+const myDutySchema = createDutySchema.omit({ staff_id: true });
+
 // GET /merchant/duties?from=YYYY-MM-DD&to=YYYY-MM-DD&staff_id=uuid
 dutiesRouter.get("/", async (c) => {
   const merchantId = c.get("merchantId")!;
@@ -94,25 +96,23 @@ dutiesRouter.post("/", requireAdmin(), zValidator(createDutySchema), async (c) =
 });
 
 // POST /merchant/duties/my — staff creates their own duty block
-dutiesRouter.post("/my", async (c) => {
+dutiesRouter.post("/my", zValidator(myDutySchema), async (c) => {
   const merchantId = c.get("merchantId")!;
   const staffId = c.get("staffId");
   if (!staffId) return c.json({ error: "Forbidden", message: "Staff access required" }, 403);
 
-  const body = await c.req.json();
-  const parsed = createDutySchema.omit({ staff_id: true }).safeParse(body);
-  if (!parsed.success) return c.json({ error: "Bad Request", message: parsed.error.issues[0]?.message ?? "Invalid input" }, 400);
+  const body = c.get("body") as z.infer<typeof myDutySchema>;
 
   const [duty] = await db
     .insert(staffDuties)
     .values({
       staffId,
       merchantId,
-      date: parsed.data.date,
-      startTime: parsed.data.start_time,
-      endTime: parsed.data.end_time,
-      dutyType: parsed.data.duty_type,
-      notes: parsed.data.notes ?? null,
+      date: body.date,
+      startTime: body.start_time,
+      endTime: body.end_time,
+      dutyType: body.duty_type,
+      notes: body.notes ?? null,
     })
     .returning();
 
@@ -138,7 +138,7 @@ dutiesRouter.patch("/:id", zValidator(updateDutySchema), async (c) => {
   }
 
   // Staff can only edit their own duty blocks
-  if (userRole === "staff" && contextStaffId && existing.staffId !== contextStaffId) {
+  if (userRole === "staff" && existing.staffId !== contextStaffId) {
     return c.json({ error: "Forbidden", message: "You can only edit your own duty blocks" }, 403);
   }
 
@@ -153,7 +153,7 @@ dutiesRouter.patch("/:id", zValidator(updateDutySchema), async (c) => {
   const [updated] = await db
     .update(staffDuties)
     .set(updates)
-    .where(eq(staffDuties.id, dutyId))
+    .where(and(eq(staffDuties.id, dutyId!), eq(staffDuties.merchantId, merchantId)))
     .returning();
 
   return c.json({ duty: updated });
