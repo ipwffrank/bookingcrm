@@ -24,6 +24,14 @@ interface Booking {
   priceSgd: string | null;
 }
 
+interface ServiceHistoryItem {
+  serviceName: string | null;
+  staffName: string | null;
+  date: string;
+  price: string;
+  status: string;
+}
+
 interface ClientSnippet {
   profileId: string;
   totalVisits: number;
@@ -31,6 +39,11 @@ interface ClientSnippet {
   lastVisitAt: string | null;
   vipTier: string | null;
   notes: string | null;
+  marketingOptIn: boolean;
+  clientName: string | null;
+  clientEmail: string | null;
+  clientPhone: string;
+  serviceHistory: ServiceHistoryItem[];
 }
 
 interface RawBookingRow {
@@ -316,12 +329,17 @@ export default function CalendarPage() {
     try {
       const data = await apiFetch(`/merchant/clients/for-client/${b.clientId}`);
       setClientSnippet({
-        profileId:    data.profile.id,
-        totalVisits:  data.profile.totalVisits,
+        profileId:     data.profile.id,
+        totalVisits:   data.profile.totalVisits,
         totalSpendSgd: data.profile.totalSpendSgd,
-        lastVisitAt:  data.profile.lastVisitAt,
-        vipTier:      data.profile.vipTier,
-        notes:        data.profile.notes,
+        lastVisitAt:   data.profile.lastVisitAt,
+        vipTier:       data.profile.vipTier,
+        notes:         data.profile.notes,
+        marketingOptIn: data.profile.marketingOptIn,
+        clientName:    data.client?.name ?? null,
+        clientEmail:   data.client?.email ?? null,
+        clientPhone:   data.client?.phone ?? '',
+        serviceHistory: (data.serviceHistory ?? []) as ServiceHistoryItem[],
       });
     } catch { /* profile may not exist */ }
     finally { setSnippetLoading(false); }
@@ -988,6 +1006,22 @@ export default function CalendarPage() {
 
                   {!snippetLoading && clientSnippet && (
                     <div className="space-y-3">
+                      {/* Contact info */}
+                      <div className="space-y-1.5">
+                        {clientSnippet.clientName && (
+                          <p className="text-sm font-semibold text-gray-900">{clientSnippet.clientName}</p>
+                        )}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {clientSnippet.clientPhone && (
+                            <span className="text-xs text-gray-500">{clientSnippet.clientPhone}</span>
+                          )}
+                          {clientSnippet.clientEmail && (
+                            <span className="text-xs text-gray-500">{clientSnippet.clientEmail}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Stats row */}
                       <div className="grid grid-cols-3 gap-2">
                         <div className="bg-gray-50 rounded-lg p-2.5 text-center">
                           <p className="text-base font-bold text-gray-900">{clientSnippet.totalVisits}</p>
@@ -1004,17 +1038,54 @@ export default function CalendarPage() {
                           <p className="text-[10px] text-gray-400">Last Visit</p>
                         </div>
                       </div>
-                      {clientSnippet.vipTier && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-purple-400" />
-                          <span className="text-xs text-gray-600 capitalize">{clientSnippet.vipTier} member</span>
-                        </div>
-                      )}
+
+                      {/* VIP + Marketing badges */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {clientSnippet.vipTier && (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-0.5 capitalize">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                            {clientSnippet.vipTier}
+                          </span>
+                        )}
+                        <span className={`inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-0.5 ${
+                          clientSnippet.marketingOptIn
+                            ? 'bg-green-50 text-green-700 border border-green-200'
+                            : 'bg-gray-100 text-gray-500 border border-gray-200'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${clientSnippet.marketingOptIn ? 'bg-green-400' : 'bg-gray-300'}`} />
+                          {clientSnippet.marketingOptIn ? 'Marketing OK' : 'No marketing'}
+                        </span>
+                      </div>
+
+                      {/* Notes */}
                       {clientSnippet.notes && (
                         <div className="bg-amber-50 rounded-lg px-3 py-2">
                           <p className="text-[11px] text-amber-800 leading-relaxed">{clientSnippet.notes}</p>
                         </div>
                       )}
+
+                      {/* Service history */}
+                      {clientSnippet.serviceHistory.length > 0 && (
+                        <div>
+                          <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Past Services</h4>
+                          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                            {clientSnippet.serviceHistory.map((sh, i) => (
+                              <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-medium text-gray-800 truncate block">{sh.serviceName ?? 'Service'}</span>
+                                  <span className="text-gray-400">{sh.staffName ?? '—'} · {new Date(sh.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                </div>
+                                <span className="text-gray-600 font-medium flex-shrink-0">${parseFloat(sh.price).toFixed(0)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Reviews placeholder */}
+                      <div className="bg-gray-50 rounded-lg px-3 py-2">
+                        <p className="text-[10px] text-gray-400 italic">Reviews — coming soon</p>
+                      </div>
                     </div>
                   )}
 

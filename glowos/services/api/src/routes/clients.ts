@@ -139,20 +139,47 @@ clientsRouter.get("/for-client/:clientId", requireMerchant, async (c) => {
     return c.json({ error: "Not Found", message: "Client profile not found" }, 404);
   }
 
-  const [spendingStats] = await db
-    .select({
-      totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
-      totalVisits:   sql<number>`cast(count(*) as int)`,
-      lastVisitAt:   sql<string>`max(${bookings.startTime})`,
-    })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.merchantId, merchantId),
-        eq(bookings.clientId, clientId),
-        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+  // Run spending stats + service history in parallel
+  const [spendingStatsResult, serviceHistoryResult] = await Promise.all([
+    db
+      .select({
+        totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+        totalVisits:   sql<number>`cast(count(*) as int)`,
+        lastVisitAt:   sql<string>`max(${bookings.startTime})`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          eq(bookings.clientId, clientId),
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+        )
+      ),
+
+    // Last 10 completed bookings with service name, staff name, date, price
+    db
+      .select({
+        serviceName: services.name,
+        staffName:   staff.name,
+        date:        bookings.startTime,
+        price:       bookings.priceSgd,
+        status:      bookings.status,
+      })
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(staff, eq(bookings.staffId, staff.id))
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          eq(bookings.clientId, clientId),
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`
+        )
       )
-    );
+      .orderBy(desc(bookings.startTime))
+      .limit(10),
+  ]);
+
+  const spendingStats = spendingStatsResult[0];
 
   return c.json({
     profile: {
@@ -162,6 +189,7 @@ clientsRouter.get("/for-client/:clientId", requireMerchant, async (c) => {
       lastVisitAt:   spendingStats?.lastVisitAt ? String(spendingStats.lastVisitAt) : null,
     },
     client: row.client,
+    serviceHistory: serviceHistoryResult,
   });
 });
 
