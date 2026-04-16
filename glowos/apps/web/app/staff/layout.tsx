@@ -43,24 +43,24 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 flex font-manrope">
       <aside className="hidden lg:flex flex-col w-56 bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30">
         <div className="px-5 py-5 border-b border-gray-100">
-          <Link href="/" className="text-xl font-bold text-indigo-600">GlowOS</Link>
+          <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
           {info && (
             <>
-              <p className="text-xs text-gray-500 mt-0.5 truncate">{info.merchantName}</p>
+              <p className="font-inter text-[11px] text-gray-400 mt-1 truncate uppercase tracking-wider">{info.merchantName}</p>
               <p className="text-xs font-medium text-gray-700 mt-0.5 truncate">{info.name}</p>
             </>
           )}
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV.map(item => (
             <Link
               key={item.href}
               href={item.href}
               className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname === item.href ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
+                pathname === item.href ? 'bg-[#1a2313]/8 text-[#1a2313]' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
               {item.label}
@@ -68,7 +68,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           ))}
         </nav>
         <div className="px-3 py-4 border-t border-gray-100">
-          <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50">
+          <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
             </svg>

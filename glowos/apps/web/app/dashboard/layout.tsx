@@ -16,7 +16,6 @@ const NAV_ITEMS = [
   { href: '/dashboard/analytics', label: 'Analytics', icon: ChartBarIcon },
   { href: '/dashboard/services', label: 'Services', icon: ScissorsIcon },
   { href: '/dashboard/staff', label: 'Staff', icon: UsersIcon },
-  { href: '/dashboard/roster', label: 'Roster', icon: RosterIcon },
   { href: '/dashboard/calendar', label: 'Calendar', icon: CalendarGridIcon },
   { href: '/dashboard/clients', label: 'Clients', icon: HeartIcon },
   { href: '/dashboard/import', label: 'Import Clients', icon: ImportIcon },
@@ -144,6 +143,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/login');
       return;
     }
+
+    // Staff accounts are not allowed in the admin dashboard
+    try {
+      const user = JSON.parse(localStorage.getItem('user') ?? '{}') as { role?: string };
+      if (user.role === 'staff') {
+        router.push('/staff/dashboard');
+        return;
+      }
+    } catch { /* ignore parse errors */ }
     const cached = localStorage.getItem('merchant');
     if (cached) {
       try {
@@ -176,14 +184,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const Sidebar = () => (
-    <nav className="flex flex-col h-full">
+    <nav className="flex flex-col h-full font-manrope">
       <div className="px-6 py-5 border-b border-gray-100">
-        <Link href="/" className="text-xl font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
+        <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
         {merchant && (
-          <p className="text-xs text-gray-500 mt-0.5 truncate">{merchant.name}</p>
+          <p className="font-inter text-[11px] text-gray-400 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
         )}
       </div>
-      <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <div className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
@@ -194,17 +202,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-[#1a2313]/8 text-[#1a2313]'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
-              <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+              <Icon className={`w-4.5 h-4.5 flex-shrink-0 ${active ? 'text-[#1a2313]' : 'text-gray-400'}`} />
               {item.label}
             </Link>
           );
         })}
       </div>
-      <div className="px-3 py-4 border-t border-gray-100 space-y-1">
+      <div className="px-3 py-4 border-t border-gray-100 space-y-0.5">
         {(() => {
           const settingsHref = '/dashboard/settings';
           const settingsActive = isActive(settingsHref);
@@ -214,11 +222,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 settingsActive
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-[#1a2313]/8 text-[#1a2313]'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
               }`}
             >
-              <SettingsIcon className={`w-5 h-5 flex-shrink-0 ${settingsActive ? 'text-indigo-600' : 'text-gray-400'}`} />
+              <SettingsIcon className={`w-4.5 h-4.5 flex-shrink-0 ${settingsActive ? 'text-[#1a2313]' : 'text-gray-400'}`} />
               Settings
             </Link>
           );
@@ -227,7 +235,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
         >
-          <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="w-4.5 h-4.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
           </svg>
           Logout
@@ -242,7 +250,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 flex font-manrope">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30">
         <Sidebar />
@@ -279,7 +287,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           >
             <MenuIcon className="w-5 h-5" />
           </button>
-          <Link href="/" className="text-lg font-bold text-indigo-600 hover:text-indigo-700 transition-colors">GlowOS</Link>
+          <Link href="/" className="font-newsreader text-lg font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
           <button
             onClick={handleLogout}
             className="text-sm text-gray-500 hover:text-gray-700"
