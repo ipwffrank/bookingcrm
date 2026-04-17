@@ -1,3 +1,7 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 function formatTime(iso: string): string {
@@ -15,36 +19,47 @@ function formatTime(iso: string): string {
   }
 }
 
-export default async function ConfirmPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ slug: string }>;
-  searchParams: Promise<{
-    booking_id?: string;
-    ref?: string;
-    // Legacy support
-    booking?: string;
-    service?: string;
-    staff?: string;
-    time?: string;
-    amount?: string;
-    paid?: string;
-    // Stripe appends these on redirect return (GrabPay, etc.)
-    payment_intent?: string;
-    redirect_status?: string;
-  }>;
-}) {
-  const { slug } = await params;
-  const sp = await searchParams;
+export default function ConfirmPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const slug = params.slug as string;
 
-  // Support both booking_id (new) and booking (legacy)
-  const bookingId = sp.booking_id ?? sp.booking;
-  // Payment ref: explicit ref param, or Stripe's payment_intent from redirect
-  const paymentRef = sp.ref ?? sp.payment_intent;
-  // Paid if explicitly set OR if Stripe redirect landed with succeeded status
-  const isPaid = sp.paid === 'true' || sp.redirect_status === 'succeeded';
-  const { service, staff, time, amount } = sp;
+  // Read from URL params
+  const bookingId = searchParams.get('booking_id') ?? searchParams.get('booking');
+  const paymentRef = searchParams.get('ref') ?? searchParams.get('payment_intent');
+  const paidParam = searchParams.get('paid') === 'true' || searchParams.get('redirect_status') === 'succeeded';
+
+  const [service, setService] = useState(searchParams.get('service') ?? '');
+  const [staff, setStaff] = useState(searchParams.get('staff') ?? '');
+  const [time, setTime] = useState(searchParams.get('time') ?? '');
+  const [amount, setAmount] = useState(searchParams.get('amount') ?? '');
+  const [isPaid, setIsPaid] = useState(paidParam);
+
+  // Fallback: read from sessionStorage if URL params are missing
+  // (PayNow/GrabPay redirects can sometimes lose custom params)
+  useEffect(() => {
+    if (service && time && amount) return; // URL params are fine
+    try {
+      const stored = sessionStorage.getItem(`glowos_booking_${slug}`);
+      if (!stored) return;
+      const data = JSON.parse(stored) as {
+        service?: string;
+        staff?: string;
+        time?: string;
+        amount?: string;
+        paid?: boolean;
+      };
+      if (!service && data.service) setService(data.service);
+      if (!staff && data.staff) setStaff(data.staff);
+      if (!time && data.time) setTime(data.time);
+      if (!amount && data.amount) setAmount(data.amount);
+      if (!isPaid && data.paid) setIsPaid(true);
+      // Clean up after reading
+      sessionStorage.removeItem(`glowos_booking_${slug}`);
+    } catch { /* ignore */ }
+  }, [slug, service, time, amount, staff, isPaid]);
+
+  const displayRef = bookingId ?? paymentRef;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-indigo-50 flex items-center justify-center px-4 py-12">
@@ -63,11 +78,11 @@ export default async function ConfirmPage({
 
           {/* Details */}
           <div className="px-8 py-6 space-y-3">
-            {(bookingId || paymentRef) && (
+            {displayRef && (
               <div className="flex justify-between items-center text-sm pb-3 border-b border-gray-100">
                 <span className="text-gray-500">{isPaid ? 'Payment ref' : 'Booking ref'}</span>
                 <span className="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                  {(bookingId ?? paymentRef ?? '').slice(-8).toUpperCase()}
+                  {displayRef.slice(-8).toUpperCase()}
                 </span>
               </div>
             )}
@@ -103,7 +118,7 @@ export default async function ConfirmPage({
           {isPaid && amount ? (
             <div className="mx-8 mb-4 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">
               <div className="font-semibold mb-0.5">✅ Payment received</div>
-              SGD {parseFloat(amount).toFixed(2)} has been charged to your card. No further payment is needed.
+              SGD {parseFloat(amount).toFixed(2)} has been charged. No further payment is needed.
             </div>
           ) : amount ? (
             <div className="mx-8 mb-4 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700">

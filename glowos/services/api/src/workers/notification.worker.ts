@@ -229,6 +229,55 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
   console.log("[NotificationWorker] booking_confirmation handled", { bookingId });
 }
 
+async function handleRescheduleConfirmation(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] reschedule_confirmation: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, staffMember, client } = row;
+
+  if (!client.phone) {
+    console.warn("[NotificationWorker] reschedule_confirmation: client has no phone", { bookingId });
+    return;
+  }
+
+  const bookingToken = generateBookingToken(booking.id);
+  const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
+  const dateStr = formatDate(booking.startTime);
+  const timeStr = formatTime(booking.startTime);
+
+  const message = [
+    `📅 Your appointment at ${merchant.name} has been rescheduled.`,
+    `New date: ${dateStr} at ${timeStr}`,
+    `✂️ ${service.name} with ${staffMember.name}`,
+    `Need to change again? → ${cancelUrl}`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(client.phone, message);
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "reschedule_confirmation",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  // Also notify merchant
+  if (merchant.phone) {
+    const merchantMsg = `Booking rescheduled: ${client.name ?? client.phone} — ${service.name} now ${dateStr} at ${timeStr}`;
+    await sendWhatsApp(merchant.phone, merchantMsg);
+  }
+
+  console.log("[NotificationWorker] reschedule_confirmation handled", { bookingId });
+}
+
 async function handleAppointmentReminder(bookingId: string): Promise<void> {
   const row = await loadBookingWithDetails(bookingId);
   if (!row) {
@@ -655,6 +704,11 @@ export function createNotificationWorker(): Worker {
         case "booking_confirmation": {
           const data = job.data as BookingConfirmationData;
           await handleBookingConfirmation(data.booking_id);
+          break;
+        }
+        case "reschedule_confirmation": {
+          const data = job.data as BookingConfirmationData;
+          await handleRescheduleConfirmation(data.booking_id);
           break;
         }
         case "appointment_reminder": {

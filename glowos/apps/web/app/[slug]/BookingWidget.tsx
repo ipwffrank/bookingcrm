@@ -1063,6 +1063,17 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                             }),
                           });
                           setClientSecret(res.client_secret as string);
+                          // Store booking details for the confirm page — ensures
+                          // details survive redirects (PayNow, GrabPay).
+                          try {
+                            sessionStorage.setItem(`glowos_booking_${slug}`, JSON.stringify({
+                              service: selectedService.name,
+                              staff: resolvedStaffName,
+                              time: selectedSlot?.start_time,
+                              amount: selectedService.priceSgd,
+                              paid: true,
+                            }));
+                          } catch { /* ignore */ }
                           setStep(5);
                         } catch (err) {
                           setConfirmError(err instanceof Error ? err.message : 'Failed to set up payment');

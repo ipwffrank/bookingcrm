@@ -454,9 +454,10 @@ bookingsRouter.post(
     await db.delete(slotLeases).where(eq(slotLeases.id, lease.id));
     await invalidateAvailabilityCacheByMerchantId(booking.merchantId);
 
-    // Re-schedule the reminder for the new time
+    // Re-schedule the reminder for the new time + send confirmation
     if (updated) {
       await scheduleReminder(updated.id, updated.startTime);
+      await addJob("notifications", "reschedule_confirmation", { booking_id: updated.id });
     }
 
     return c.json({
