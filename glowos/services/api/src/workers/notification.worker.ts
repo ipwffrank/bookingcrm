@@ -156,7 +156,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     `📅 ${dateStr} at ${timeStr}`,
     `✂️ ${service.name} with ${staffMember.name}`,
     `💳 SGD ${price} paid`,
-    `Need to cancel? → ${cancelUrl}`,
+    `Reschedule or cancel? → ${cancelUrl}`,
   ].join("\n");
 
   const clientSid = await sendWhatsApp(client.phone, clientMessage);

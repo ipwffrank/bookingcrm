@@ -74,7 +74,7 @@ export function bookingConfirmationEmail(params: {
         <div style="${rowStyle}"><span style="${labelStyle}">Date</span><span style="${valueStyle}">${dateStr}</span></div>
         <div style="${rowStyle}"><span style="${labelStyle}">Time</span><span style="${valueStyle}">${timeStr}</span></div>
         <div style="${rowStyle}"><span style="${labelStyle}">Amount</span><span style="${valueStyle}">S$${priceSgd}</span></div>
-        <p style="margin-top:20px;font-size:13px;color:#888">Need to cancel or change? <a href="${cancelUrl}" style="color:#c4a778">Manage booking →</a></p>
+        <p style="margin-top:20px;font-size:13px;color:#888">Need to reschedule or cancel? <a href="${cancelUrl}" style="color:#c4a778">Manage booking →</a></p>
       </div>
     </div>
   </body></html>`;
