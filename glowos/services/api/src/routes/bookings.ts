@@ -17,6 +17,7 @@ import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
+import { processRefund } from "../lib/refunds.js";
 import { addJob } from "../lib/queue.js";
 import {
   scheduleReminder,
@@ -179,6 +180,7 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
   if (booking.status === "cancelled") {
     return c.json({
       booking,
+      merchant_slug: merchant.slug,
       eligible: false,
       reason: "Booking is already cancelled",
       refund_type: "none" as const,
@@ -189,6 +191,7 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
   if (booking.status === "completed" || booking.status === "no_show") {
     return c.json({
       booking,
+      merchant_slug: merchant.slug,
       eligible: false,
       reason: "Booking cannot be cancelled after completion",
       refund_type: "none" as const,
@@ -237,6 +240,7 @@ bookingsRouter.get("/cancel/:bookingToken", async (c) => {
   return c.json({
     booking,
     service,
+    merchant_slug: merchant.slug,
     eligible: true,
     refund_type: refundType,
     refund_amount: refundAmount,
@@ -263,9 +267,11 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
     return c.json({ error: "Unauthorized", message: "Invalid cancellation token" }, 401);
   }
 
+  // Load booking + merchant (need cancellation policy)
   const [row] = await db
-    .select({ booking: bookings })
+    .select({ booking: bookings, merchant: merchants })
     .from(bookings)
+    .innerJoin(merchants, eq(bookings.merchantId, merchants.id))
     .where(eq(bookings.id, bookingId))
     .limit(1);
 
@@ -273,7 +279,7 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
     return c.json({ error: "Not Found", message: "Booking not found" }, 404);
   }
 
-  const { booking } = row;
+  const { booking, merchant } = row;
 
   if (booking.status === "cancelled") {
     return c.json(
@@ -289,16 +295,58 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
     );
   }
 
-  const [updated] = await db
-    .update(bookings)
-    .set({
-      status: "cancelled",
-      cancelledAt: new Date(),
-      cancelledBy: "client",
-      updatedAt: new Date(),
-    })
-    .where(eq(bookings.id, bookingId))
-    .returning();
+  // Determine refund type based on merchant cancellation policy
+  const policy = merchant.cancellationPolicy as {
+    free_cancellation_hours?: number;
+    late_cancellation_refund_pct?: number;
+  } | null;
+
+  const now = new Date();
+  const hoursUntilBooking = (booking.startTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+  let refundType: "full" | "partial" | "none" = "none";
+  let refundPercentage = 0;
+
+  if (!policy) {
+    // No policy configured — default to full refund
+    refundType = "full";
+    refundPercentage = 100;
+  } else if (
+    policy.free_cancellation_hours !== undefined &&
+    hoursUntilBooking >= policy.free_cancellation_hours
+  ) {
+    refundType = "full";
+    refundPercentage = 100;
+  } else if (
+    policy.late_cancellation_refund_pct !== undefined &&
+    policy.late_cancellation_refund_pct > 0
+  ) {
+    refundType = "partial";
+    refundPercentage = policy.late_cancellation_refund_pct;
+  }
+
+  // Process refund (handles Stripe + DB update + status change)
+  // For card payments this issues the Stripe refund; for cash it marks as waived.
+  if (booking.paymentMethod === "card" && booking.paymentStatus === "paid") {
+    await processRefund(bookingId, refundType, refundPercentage);
+    // processRefund already sets status=cancelled, so just set cancelledBy
+    await db
+      .update(bookings)
+      .set({ cancelledBy: "client" })
+      .where(eq(bookings.id, bookingId));
+  } else {
+    // Cash or unpaid — just cancel
+    await db
+      .update(bookings)
+      .set({
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelledBy: "client",
+        updatedAt: new Date(),
+      })
+      .where(eq(bookings.id, bookingId))
+      .returning();
+  }
 
   await invalidateAvailabilityCacheByMerchantId(booking.merchantId);
 
@@ -306,12 +354,118 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
   await addJob("notifications", "cancellation_notification", { booking_id: bookingId });
   await scheduleRebookingPrompt(bookingId);
 
+  // Reload the updated booking to return
+  const [updated] = await db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.id, bookingId))
+    .limit(1);
+
   return c.json({
     success: true,
     message: "Booking cancelled successfully",
     booking: updated,
+    refund_type: refundType,
+    refund_percentage: refundPercentage,
   });
 });
+
+// ─── Public: POST /booking/reschedule/:bookingToken ─────────────────────────
+// Client self-service reschedule — moves the booking to a new slot, keeps the
+// existing Stripe payment intact. Requires a valid slot lease for the new time.
+
+const clientRescheduleSchema = z.object({
+  lease_id: z.string().uuid(),
+});
+
+bookingsRouter.post(
+  "/reschedule/:bookingToken",
+  zValidator(clientRescheduleSchema),
+  async (c) => {
+    const token = c.req.param("bookingToken")!;
+    const body = c.get("body") as z.infer<typeof clientRescheduleSchema>;
+
+    let bookingId: string;
+    try {
+      const decoded = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
+        bookingId: string;
+      };
+      bookingId = decoded.bookingId;
+    } catch {
+      return c.json({ error: "Bad Request", message: "Invalid token" }, 400);
+    }
+
+    if (!verifyBookingToken(token, bookingId)) {
+      return c.json({ error: "Unauthorized", message: "Invalid token" }, 401);
+    }
+
+    // Load booking
+    const [booking] = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, bookingId))
+      .limit(1);
+
+    if (!booking) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    if (booking.status !== "confirmed") {
+      return c.json(
+        { error: "Conflict", message: `Cannot reschedule a booking with status: ${booking.status}` },
+        409
+      );
+    }
+
+    // Load and validate the new lease
+    const now = new Date();
+    const [lease] = await db
+      .select()
+      .from(slotLeases)
+      .where(
+        and(
+          eq(slotLeases.id, body.lease_id),
+          eq(slotLeases.merchantId, booking.merchantId),
+          gte(slotLeases.expiresAt, now)
+        )
+      )
+      .limit(1);
+
+    if (!lease) {
+      return c.json(
+        { error: "Gone", message: "Lease not found or has expired. Please select a new slot." },
+        410
+      );
+    }
+
+    // Move booking to new time/staff
+    const [updated] = await db
+      .update(bookings)
+      .set({
+        staffId: lease.staffId,
+        startTime: lease.startTime,
+        endTime: lease.endTime,
+        updatedAt: new Date(),
+      })
+      .where(eq(bookings.id, bookingId))
+      .returning();
+
+    // Delete the used lease
+    await db.delete(slotLeases).where(eq(slotLeases.id, lease.id));
+    await invalidateAvailabilityCacheByMerchantId(booking.merchantId);
+
+    // Re-schedule the reminder for the new time
+    if (updated) {
+      await scheduleReminder(updated.id, updated.startTime);
+    }
+
+    return c.json({
+      success: true,
+      message: "Booking rescheduled successfully",
+      booking: updated,
+    });
+  }
+);
 
 // ─── Protected: GET /merchant/bookings ────────────────────────────────────────
 

@@ -11,10 +11,14 @@ import { invalidateAvailabilityCacheByMerchantId } from "./availability.js";
  * - Card bookings: issues Stripe refund, then marks cancelled.
  * The actual booking payment_status/refund fields are updated here;
  * the Stripe charge.refunded webhook will confirm asynchronously.
+ *
+ * @param refundPercentage  For partial refunds, the percentage to refund (0–100).
+ *                          Defaults to 50 if omitted. Ignored for "full" and "none".
  */
 export async function processRefund(
   bookingId: string,
-  refundType: "full" | "partial" | "none"
+  refundType: "full" | "partial" | "none",
+  refundPercentage: number = 50
 ): Promise<void> {
   // 1. Load the booking
   const [booking] = await db
@@ -45,14 +49,13 @@ export async function processRefund(
 
   // 3. Stripe-backed booking — calculate refund amount in cents
   const priceSgd = parseFloat(String(booking.priceSgd));
+  const clampedPct = Math.max(0, Math.min(100, refundPercentage));
 
   let refundAmountCents = 0;
   if (refundType === "full") {
     refundAmountCents = Math.round(priceSgd * 100);
   } else if (refundType === "partial") {
-    // Default partial = 50%; merchants can configure this in cancellationPolicy,
-    // but here we apply a straightforward 50% server-side rule.
-    refundAmountCents = Math.round(priceSgd * 0.5 * 100);
+    refundAmountCents = Math.round(priceSgd * (clampedPct / 100) * 100);
   }
   // refundType === 'none' → refundAmountCents stays 0
 

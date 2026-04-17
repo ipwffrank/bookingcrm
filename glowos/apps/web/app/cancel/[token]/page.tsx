@@ -6,6 +6,8 @@ export const dynamic = 'force-dynamic';
 interface CancelData {
   booking: {
     id: string;
+    staffId: string;
+    serviceId: string;
     startTime: string;
     priceSgd: string;
     status: string;
@@ -14,6 +16,7 @@ interface CancelData {
     name: string;
     durationMinutes: number;
   };
+  merchant_slug: string;
   eligible: boolean;
   reason?: string;
   refund_type: 'full' | 'partial' | 'none';
