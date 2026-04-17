@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
@@ -577,29 +577,33 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
       const msg = err instanceof Error ? err.message : 'Failed to load payment status';
       if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
-      } else {
-        onError(msg);
       }
     } finally {
       setLoading(false);
     }
-  }, [router, onError]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   useEffect(() => {
     void fetchStatus();
   }, [fetchStatus]);
 
-  // Handle return from Stripe onboarding
+  // Handle return from Stripe onboarding (run once)
+  const handledSetup = useRef(false);
   useEffect(() => {
+    if (handledSetup.current) return;
     const setupComplete = searchParams.get('setup');
     const refresh = searchParams.get('refresh');
     if (setupComplete === 'complete') {
+      handledSetup.current = true;
       onSaved('Stripe account connected successfully!');
       void fetchStatus();
     } else if (refresh === 'true') {
+      handledSetup.current = true;
       void fetchStatus();
     }
-  }, [searchParams, onSaved, fetchStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleConnect() {
     setConnecting(true);
