@@ -106,8 +106,8 @@ paymentsRouter.post(
     // 2. Create an Account Link for the onboarding flow
     const accountLink = await stripe.accountLinks.create({
       account: stripeAccountId,
-      refresh_url: `${config.dashboardUrl}/settings/payments?refresh=true`,
-      return_url: `${config.dashboardUrl}/settings/payments?setup=complete`,
+      refresh_url: `${config.frontendUrl}/dashboard/settings?tab=payments&refresh=true`,
+      return_url: `${config.frontendUrl}/dashboard/settings?tab=payments&setup=complete`,
       type: "account_onboarding",
     });
 
