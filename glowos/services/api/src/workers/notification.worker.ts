@@ -13,6 +13,7 @@ import {
 } from "@glowos/db";
 import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
+import { generateBookingToken } from "../lib/jwt.js";
 import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     return;
   }
 
-  const bookingToken = Buffer.from(JSON.stringify({ bookingId: booking.id })).toString("base64url");
+  const bookingToken = generateBookingToken(booking.id);
   const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
