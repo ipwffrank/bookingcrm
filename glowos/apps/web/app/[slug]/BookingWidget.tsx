@@ -144,12 +144,14 @@ function StepBadge({ num, label, active, done }: { num: number; label: string; a
 
 function StripePaymentForm({
   amount,
+  returnUrl,
   onSuccess,
   onError,
   countdown,
 }: {
   amount: string;
-  onSuccess: () => void;
+  returnUrl: string;
+  onSuccess: (paymentIntentId: string) => void;
   onError: (msg: string) => void;
   countdown: number;
 }) {
@@ -165,7 +167,9 @@ function StripePaymentForm({
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: window.location.href,
+        // Used by redirect-based methods (GrabPay). Stripe appends
+        // payment_intent, payment_intent_client_secret, and redirect_status.
+        return_url: returnUrl,
       },
       redirect: 'if_required',
     });
@@ -174,7 +178,11 @@ function StripePaymentForm({
       onError(result.error.message ?? 'Payment failed');
       setProcessing(false);
     } else if (result.paymentIntent?.status === 'succeeded') {
-      onSuccess();
+      onSuccess(result.paymentIntent.id);
+    } else if (result.paymentIntent?.status === 'processing') {
+      // PayNow payments may remain in "processing" briefly after QR scan.
+      // Redirect to the confirm page — the webhook finalises the booking.
+      onSuccess(result.paymentIntent.id);
     } else {
       setProcessing(false);
     }
@@ -1048,6 +1056,10 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                             body: JSON.stringify({
                               lease_id: leaseId,
                               service_id: selectedService.id,
+                              client_id: authClient?.id || undefined,
+                              client_name: clientName.trim(),
+                              client_email: clientEmail.trim() || undefined,
+                              client_phone: clientPhone.trim(),
                             }),
                           });
                           setClientSecret(res.client_secret as string);
@@ -1170,21 +1182,36 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
             {/* Payment form (card) or confirm button (cash) */}
             {paymentMethod === 'card' && clientSecret && stripePromise ? (
               <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe', variables: { colorPrimary: '#4f46e5', borderRadius: '12px' } } }}>
-                <StripePaymentForm
-                  amount={selectedService?.priceSgd || '0'}
-                  countdown={countdown}
-                  onSuccess={() => {
-                    router.push(
-                      `/${slug}/confirm?booking_id=payment` +
-                      `&service=${encodeURIComponent(selectedService?.name ?? '')}` +
-                      `&staff=${encodeURIComponent(resolvedStaffName)}` +
-                      `&time=${encodeURIComponent(selectedSlot.start_time)}` +
-                      `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
-                      `&paid=true`
-                    );
-                  }}
-                  onError={(msg) => setConfirmError(msg)}
-                />
+                {(() => {
+                  // Build the confirm URL once — used both as the redirect return_url
+                  // (GrabPay) and for the client-side push (card, PayNow).
+                  const confirmBase =
+                    `${window.location.origin}/${slug}/confirm?` +
+                    `service=${encodeURIComponent(selectedService?.name ?? '')}` +
+                    `&staff=${encodeURIComponent(resolvedStaffName)}` +
+                    `&time=${encodeURIComponent(selectedSlot.start_time)}` +
+                    `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
+                    `&paid=true`;
+
+                  return (
+                    <StripePaymentForm
+                      amount={selectedService?.priceSgd || '0'}
+                      returnUrl={confirmBase}
+                      countdown={countdown}
+                      onSuccess={(paymentIntentId) => {
+                        router.push(
+                          `/${slug}/confirm?ref=${encodeURIComponent(paymentIntentId)}` +
+                          `&service=${encodeURIComponent(selectedService?.name ?? '')}` +
+                          `&staff=${encodeURIComponent(resolvedStaffName)}` +
+                          `&time=${encodeURIComponent(selectedSlot.start_time)}` +
+                          `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
+                          `&paid=true`
+                        );
+                      }}
+                      onError={(msg) => setConfirmError(msg)}
+                    />
+                  );
+                })()}
                 <p className="text-xs text-gray-400 text-center">
                   Payments are processed securely by Stripe.
                 </p>

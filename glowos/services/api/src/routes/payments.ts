@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, desc, count, gte } from "drizzle-orm";
 import { z } from "zod";
-import { db, merchants, services, slotLeases, payouts, bookings } from "@glowos/db";
+import { db, merchants, services, slotLeases, payouts, bookings, clients } from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { stripe } from "../lib/stripe.js";
@@ -20,6 +20,10 @@ const connectAccountSchema = z.object({
 const createPaymentIntentSchema = z.object({
   lease_id: z.string().uuid(),
   service_id: z.string().uuid(),
+  client_name: z.string().optional(),
+  client_email: z.string().email().optional(),
+  client_phone: z.string().optional(),
+  client_id: z.string().uuid().optional(),
   booking_source: z
     .enum([
       "google_reserve",
@@ -333,10 +337,46 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
   const commissionRate = getCommissionRate(body.booking_source);
   const commissionCents = Math.round(amountCents * commissionRate);
 
-  // 5. Create Stripe PaymentIntent with Connect destination charges
+  // 5. Resolve or create a Stripe Customer so saved cards are scoped per-client
+  let stripeCustomerId: string | undefined;
+
+  if (body.client_id) {
+    const [client] = await db
+      .select({ id: clients.id, stripeCustomerId: clients.stripeCustomerId, email: clients.email, name: clients.name })
+      .from(clients)
+      .where(eq(clients.id, body.client_id))
+      .limit(1);
+
+    if (client?.stripeCustomerId) {
+      stripeCustomerId = client.stripeCustomerId;
+    } else if (client) {
+      const stripeCustomer = await stripe.customers.create({
+        email: body.client_email ?? client.email ?? undefined,
+        name: body.client_name ?? client.name ?? undefined,
+        phone: body.client_phone ?? undefined,
+        metadata: { glowos_client_id: client.id },
+      });
+      stripeCustomerId = stripeCustomer.id;
+      await db
+        .update(clients)
+        .set({ stripeCustomerId: stripeCustomer.id })
+        .where(eq(clients.id, client.id));
+    }
+  } else if (body.client_email || body.client_phone) {
+    // Guest checkout — create Stripe Customer for card isolation
+    const stripeCustomer = await stripe.customers.create({
+      email: body.client_email ?? undefined,
+      name: body.client_name ?? undefined,
+      phone: body.client_phone ?? undefined,
+    });
+    stripeCustomerId = stripeCustomer.id;
+  }
+
+  // 6. Create Stripe PaymentIntent with Connect destination charges
   const paymentIntent = await stripe.paymentIntents.create({
     amount: amountCents,
     currency: "sgd",
+    customer: stripeCustomerId,
     application_fee_amount: commissionCents > 0 ? commissionCents : undefined,
     transfer_data: {
       destination: merchant.stripeAccountId,

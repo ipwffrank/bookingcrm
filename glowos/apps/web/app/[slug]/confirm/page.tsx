@@ -22,12 +22,17 @@ export default async function ConfirmPage({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
     booking_id?: string;
+    ref?: string;
     // Legacy support
     booking?: string;
     service?: string;
     staff?: string;
     time?: string;
     amount?: string;
+    paid?: string;
+    // Stripe appends these on redirect return (GrabPay, etc.)
+    payment_intent?: string;
+    redirect_status?: string;
   }>;
 }) {
   const { slug } = await params;
@@ -35,6 +40,10 @@ export default async function ConfirmPage({
 
   // Support both booking_id (new) and booking (legacy)
   const bookingId = sp.booking_id ?? sp.booking;
+  // Payment ref: explicit ref param, or Stripe's payment_intent from redirect
+  const paymentRef = sp.ref ?? sp.payment_intent;
+  // Paid if explicitly set OR if Stripe redirect landed with succeeded status
+  const isPaid = sp.paid === 'true' || sp.redirect_status === 'succeeded';
   const { service, staff, time, amount } = sp;
 
   return (
@@ -54,11 +63,11 @@ export default async function ConfirmPage({
 
           {/* Details */}
           <div className="px-8 py-6 space-y-3">
-            {bookingId && (
+            {(bookingId || paymentRef) && (
               <div className="flex justify-between items-center text-sm pb-3 border-b border-gray-100">
-                <span className="text-gray-500">Booking ref</span>
+                <span className="text-gray-500">{isPaid ? 'Payment ref' : 'Booking ref'}</span>
                 <span className="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                  {bookingId.slice(0, 8).toUpperCase()}
+                  {(bookingId ?? paymentRef ?? '').slice(-8).toUpperCase()}
                 </span>
               </div>
             )}
@@ -82,7 +91,7 @@ export default async function ConfirmPage({
             )}
             {amount && (
               <div className="flex justify-between text-sm border-t border-gray-100 pt-3 mt-3">
-                <span className="text-gray-500">Amount due</span>
+                <span className="text-gray-500">{isPaid ? 'Amount paid' : 'Amount due'}</span>
                 <span className="font-bold text-gray-900 text-base">
                   SGD {parseFloat(amount).toFixed(2)}
                 </span>
@@ -91,12 +100,17 @@ export default async function ConfirmPage({
           </div>
 
           {/* Payment notice */}
-          {amount && (
+          {isPaid && amount ? (
+            <div className="mx-8 mb-4 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">
+              <div className="font-semibold mb-0.5">✅ Payment received</div>
+              SGD {parseFloat(amount).toFixed(2)} has been charged to your card. No further payment is needed.
+            </div>
+          ) : amount ? (
             <div className="mx-8 mb-4 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700">
               <div className="font-semibold mb-0.5">💳 Pay at your appointment</div>
               Please bring SGD {parseFloat(amount).toFixed(2)} on the day of your appointment.
             </div>
-          )}
+          ) : null}
 
           {/* WhatsApp notice */}
           <div className="mx-8 mb-5 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">

@@ -36,6 +36,13 @@
       "when": 1776328960209,
       "tag": "0004_goofy_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1776433691023,
+      "tag": "0005_white_johnny_storm",
+      "breakpoints": true
     }
   ]
 }
