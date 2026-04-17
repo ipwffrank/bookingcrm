@@ -387,6 +387,10 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
       merchant_id: merchant.id,
       service_id: body.service_id,
       lease_id: body.lease_id,
+      client_name: body.client_name ?? "",
+      client_email: body.client_email ?? "",
+      client_phone: body.client_phone ?? "",
+      client_id: body.client_id ?? "",
     },
   });
 

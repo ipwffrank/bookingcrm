@@ -128,6 +128,10 @@ webhooksRouter.post("/stripe", async (c) => {
           lease_id?: string;
           service_id?: string;
           booking_source?: string;
+          client_name?: string;
+          client_email?: string;
+          client_phone?: string;
+          client_id?: string;
         };
 
         const { merchant_id, lease_id, service_id, booking_source } = meta;
@@ -171,19 +175,19 @@ webhooksRouter.post("/stripe", async (c) => {
           break;
         }
 
-        // Resolve customer details from the PaymentIntent's customer object
-        // or the billing_details on the latest charge.
-        let clientPhone = "";
-        let clientName: string | undefined;
-        let clientEmail: string | undefined;
+        // Resolve customer details — prefer metadata (passed from booking form)
+        // over billing_details (often incomplete for card/PayNow/GrabPay).
+        let clientPhone = meta.client_phone || "";
+        let clientName = meta.client_name || undefined;
+        let clientEmail = meta.client_email || undefined;
 
-        // Attempt to pull details from the latest charge's billing_details
-        if (pi.latest_charge && typeof pi.latest_charge === "string") {
+        // Fall back to billing_details from the charge if metadata is empty
+        if (!clientPhone && pi.latest_charge && typeof pi.latest_charge === "string") {
           try {
             const charge = await stripe.charges.retrieve(pi.latest_charge);
             clientPhone = charge.billing_details?.phone ?? "";
-            clientName = charge.billing_details?.name ?? undefined;
-            clientEmail = charge.billing_details?.email ?? undefined;
+            if (!clientName) clientName = charge.billing_details?.name ?? undefined;
+            if (!clientEmail) clientEmail = charge.billing_details?.email ?? undefined;
           } catch (err) {
             console.warn("[Webhook] Failed to retrieve charge for billing details", err);
           }
@@ -194,14 +198,39 @@ webhooksRouter.post("/stripe", async (c) => {
           clientEmail = pi.receipt_email;
         }
 
-        // A phone number is required to find or create a client; use a
-        // placeholder derived from the PaymentIntent ID if unavailable so we
-        // don't hard-fail the webhook.
-        if (!clientPhone) {
-          clientPhone = `pi_${pi.id}`;
+        // If a pre-authenticated client_id was provided (Google Sign-In),
+        // use it directly instead of creating a new client from phone.
+        let client: { id: string };
+
+        if (meta.client_id) {
+          const [existing] = await db
+            .select({ id: clients.id })
+            .from(clients)
+            .where(eq(clients.id, meta.client_id))
+            .limit(1);
+
+          if (existing) {
+            client = existing;
+            // Update phone/name/email if the form provided newer values
+            await db
+              .update(clients)
+              .set({
+                ...(clientPhone && !clientPhone.startsWith("pi_") ? { phone: clientPhone } : {}),
+                ...(clientName ? { name: clientName } : {}),
+                ...(clientEmail ? { email: clientEmail } : {}),
+              })
+              .where(eq(clients.id, client.id));
+          } else {
+            // client_id not found — fall through to phone-based lookup
+            if (!clientPhone) clientPhone = `pi_${pi.id}`;
+            client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+          }
+        } else {
+          // No client_id — use phone-based lookup (guest checkout)
+          if (!clientPhone) clientPhone = `pi_${pi.id}`;
+          client = await findOrCreateClient(clientPhone, clientName, clientEmail);
         }
 
-        const client = await findOrCreateClient(clientPhone, clientName, clientEmail);
         await findOrCreateClientProfile(merchant_id, client.id);
 
         // Calculate commission amounts
