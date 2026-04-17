@@ -63,7 +63,7 @@ interface CancellationForm {
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type TabId = 'profile' | 'cancellation' | 'payments' | 'booking-page' | 'account';
+type TabId = 'profile' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account';
 
 interface Tab {
   id: TabId;
@@ -73,6 +73,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'profile', label: 'Business Profile' },
   { id: 'cancellation', label: 'Cancellation Policy' },
+  { id: 'closures', label: 'Holidays & Closures' },
   { id: 'payments', label: 'Payments' },
   { id: 'booking-page', label: 'Booking Page' },
   { id: 'account', label: 'Account' },
@@ -1129,6 +1130,360 @@ function AccountTab({ onSaved, onError }: { onSaved: (msg: string) => void; onEr
   );
 }
 
+// ─── Holidays & Closures Tab ──────────────────────────────────────────────────
+
+interface Closure {
+  id: string;
+  date: string;
+  title: string;
+  isFullDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  notes: string | null;
+}
+
+const SG_HOLIDAYS: { label: string; date: string }[] = [
+  { label: "New Year's Day", date: '' },
+  { label: 'Chinese New Year (Day 1)', date: '' },
+  { label: 'Chinese New Year (Day 2)', date: '' },
+  { label: 'Good Friday', date: '' },
+  { label: 'Labour Day', date: '' },
+  { label: 'Hari Raya Puasa', date: '' },
+  { label: 'Vesak Day', date: '' },
+  { label: 'Hari Raya Haji', date: '' },
+  { label: 'National Day', date: '' },
+  { label: 'Deepavali', date: '' },
+  { label: 'Christmas Day', date: '' },
+];
+
+function ClosuresTab({ onSaved }: { onSaved: (msg: string) => void }) {
+  const [closures, setClosures] = useState<Closure[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Form state
+  const [formTitle, setFormTitle] = useState('');
+  const [formDate, setFormDate] = useState('');
+  const [formEndDate, setFormEndDate] = useState('');
+  const [formIsFullDay, setFormIsFullDay] = useState(true);
+  const [formStartTime, setFormStartTime] = useState('09:00');
+  const [formEndTime, setFormEndTime] = useState('18:00');
+  const [formNotes, setFormNotes] = useState('');
+
+  const loadClosures = useCallback(async () => {
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const data = await apiFetch(`/merchant/closures?from=${today}`);
+      setClosures(data.closures ?? []);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadClosures(); }, [loadClosures]);
+
+  function resetForm() {
+    setFormTitle('');
+    setFormDate('');
+    setFormEndDate('');
+    setFormIsFullDay(true);
+    setFormStartTime('09:00');
+    setFormEndTime('18:00');
+    setFormNotes('');
+    setError('');
+  }
+
+  async function handleAdd() {
+    if (!formTitle.trim() || !formDate) {
+      setError('Please enter a title and date');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      // If end date is set, create multiple closures (date range)
+      if (formEndDate && formEndDate > formDate) {
+        const dates: { date: string; title: string; is_full_day: boolean; start_time?: string; end_time?: string; notes?: string }[] = [];
+        const start = new Date(formDate + 'T00:00:00');
+        const end = new Date(formEndDate + 'T00:00:00');
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const dateStr = d.toISOString().slice(0, 10);
+          dates.push({
+            date: dateStr,
+            title: formTitle.trim(),
+            is_full_day: formIsFullDay,
+            ...(formIsFullDay ? {} : { start_time: formStartTime, end_time: formEndTime }),
+            ...(formNotes.trim() ? { notes: formNotes.trim() } : {}),
+          });
+        }
+        await apiFetch('/merchant/closures/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ closures: dates }),
+        });
+      } else {
+        await apiFetch('/merchant/closures', {
+          method: 'POST',
+          body: JSON.stringify({
+            date: formDate,
+            title: formTitle.trim(),
+            is_full_day: formIsFullDay,
+            ...(formIsFullDay ? {} : { start_time: formStartTime, end_time: formEndTime }),
+            ...(formNotes.trim() ? { notes: formNotes.trim() } : {}),
+          }),
+        });
+      }
+      resetForm();
+      setShowForm(false);
+      onSaved('Closure added');
+      await loadClosures();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await apiFetch(`/merchant/closures/${id}`, { method: 'DELETE' });
+      onSaved('Closure removed');
+      await loadClosures();
+    } catch { /* ignore */ }
+  }
+
+  function prefillHoliday(label: string) {
+    setFormTitle(label);
+    setShowForm(true);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Group closures by month
+  const grouped = closures.reduce<Record<string, Closure[]>>((acc, cl) => {
+    const month = new Date(cl.date + 'T00:00:00').toLocaleDateString('en-SG', { month: 'long', year: 'numeric' });
+    if (!acc[month]) acc[month] = [];
+    acc[month].push(cl);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Holidays & Closures</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Block out dates when your business is closed. No booking slots will be shown on these days.
+          </p>
+        </div>
+        <button
+          onClick={() => { resetForm(); setShowForm(!showForm); }}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          {showForm ? 'Cancel' : '+ Add Closure'}
+        </button>
+      </div>
+
+      {/* Add form */}
+      {showForm && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-700">New Closure</h3>
+
+          {/* Quick-add holiday pills */}
+          <div>
+            <p className="text-xs text-gray-500 mb-2">Quick add a public holiday:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {SG_HOLIDAYS.map((h) => (
+                <button
+                  key={h.label}
+                  onClick={() => prefillHoliday(h.label)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    formTitle === h.label
+                      ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {h.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Title / Reason</label>
+            <input
+              type="text"
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
+              placeholder="e.g. Chinese New Year, Staff retreat"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+            />
+          </div>
+
+          {/* Date range */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={formDate}
+                min={today}
+                onChange={(e) => setFormDate(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                End Date <span className="text-gray-400 font-normal">(optional, for multi-day)</span>
+              </label>
+              <input
+                type="date"
+                value={formEndDate}
+                min={formDate || today}
+                onChange={(e) => setFormEndDate(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+              />
+            </div>
+          </div>
+
+          {/* Full day toggle */}
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formIsFullDay}
+                onChange={(e) => setFormIsFullDay(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600" />
+            </label>
+            <span className="text-sm text-gray-700">Full day closure</span>
+          </div>
+
+          {/* Partial times */}
+          {!formIsFullDay && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Closed From</label>
+                <input
+                  type="time"
+                  value={formStartTime}
+                  onChange={(e) => setFormStartTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Closed Until</label>
+                <input
+                  type="time"
+                  value={formEndTime}
+                  onChange={(e) => setFormEndTime(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={formNotes}
+              onChange={(e) => setFormNotes(e.target.value)}
+              placeholder="Internal note for your team"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <button
+            onClick={handleAdd}
+            disabled={saving || !formTitle.trim() || !formDate}
+            className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving ? 'Saving...' : formEndDate && formEndDate > formDate
+              ? `Add Closure (${Math.ceil((new Date(formEndDate + 'T00:00:00').getTime() - new Date(formDate + 'T00:00:00').getTime()) / 86400000) + 1} days)`
+              : 'Add Closure'}
+          </button>
+        </div>
+      )}
+
+      {/* Closures list */}
+      {loading ? (
+        <Spinner />
+      ) : closures.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 px-6 py-12 text-center">
+          <div className="text-4xl mb-3">📅</div>
+          <p className="text-sm font-medium text-gray-700">No upcoming closures</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Add holidays or closure dates to prevent bookings on those days.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(grouped).map(([month, items]) => (
+            <div key={month}>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{month}</h3>
+              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                {items.map((cl) => {
+                  const d = new Date(cl.date + 'T00:00:00');
+                  const isPast = cl.date < today;
+                  return (
+                    <div
+                      key={cl.id}
+                      className={`flex items-center justify-between px-4 py-3 ${isPast ? 'opacity-50' : ''}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-red-50 flex flex-col items-center justify-center flex-shrink-0">
+                          <span className="text-[10px] font-semibold text-red-500 uppercase leading-none">
+                            {d.toLocaleDateString('en-SG', { month: 'short' })}
+                          </span>
+                          <span className="text-sm font-bold text-red-700 leading-none mt-0.5">
+                            {d.getDate()}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{cl.title}</p>
+                          <p className="text-xs text-gray-400">
+                            {d.toLocaleDateString('en-SG', { weekday: 'long' })}
+                            {!cl.isFullDay && cl.startTime && cl.endTime
+                              ? ` · ${cl.startTime.slice(0, 5)} – ${cl.endTime.slice(0, 5)}`
+                              : ' · Full day'}
+                          </p>
+                          {cl.notes && (
+                            <p className="text-xs text-gray-400 mt-0.5">{cl.notes}</p>
+                          )}
+                        </div>
+                      </div>
+                      {!isPast && (
+                        <button
+                          onClick={() => handleDelete(cl.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                          title="Remove closure"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Settings Page ────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -1250,6 +1605,9 @@ function SettingsContent() {
             merchant={merchant}
             onSaved={(msg) => showToast(msg)}
           />
+        )}
+        {activeTab === 'closures' && (
+          <ClosuresTab onSaved={(msg) => showToast(msg)} />
         )}
         {activeTab === 'payments' && (
           <PaymentsTab

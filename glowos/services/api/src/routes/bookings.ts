@@ -46,6 +46,7 @@ const confirmSchema = z.object({
   client_name: z.string().min(1, "Client name is required"),
   client_phone: z.string().min(1, "Client phone is required"),
   client_email: z.string().email().optional(),
+  client_id: z.string().uuid().optional(),
   payment_method: z.string().optional(),
 });
 
@@ -924,12 +925,35 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
     return c.json({ error: "Not Found", message: "Service not found" }, 404);
   }
 
-  // Find or create client
-  const client = await findOrCreateClient(
-    body.client_phone,
-    body.client_name,
-    body.client_email
-  );
+  // Find or create client — use pre-authenticated client_id if provided (Google Sign-In)
+  let client: { id: string };
+  if (body.client_id) {
+    // Verify client exists
+    const [existing] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(eq(clients.id, body.client_id))
+      .limit(1);
+    if (!existing) {
+      return c.json({ error: "Not Found", message: "Client not found" }, 404);
+    }
+    client = existing;
+    // Update phone/name if changed (Google users may provide phone for first time)
+    await db
+      .update(clients)
+      .set({
+        ...(body.client_phone ? { phone: body.client_phone } : {}),
+        ...(body.client_name ? { name: body.client_name } : {}),
+        ...(body.client_email ? { email: body.client_email } : {}),
+      })
+      .where(eq(clients.id, client.id));
+  } else {
+    client = await findOrCreateClient(
+      body.client_phone,
+      body.client_name,
+      body.client_email
+    );
+  }
 
   // Find or create client profile for this merchant
   await findOrCreateClientProfile(merchant.id, client.id);

@@ -18,6 +18,8 @@ import { groupRouter } from "./routes/group.js";
 import { dutiesRouter } from "./routes/duties.js";
 import { staffAuthRouter } from "./routes/staff-auth.js";
 import { staffPortalRouter } from "./routes/staff-portal.js";
+import { customerAuthRouter } from "./routes/customer-auth.js";
+import { closuresRouter, publicClosuresRouter } from "./routes/closures.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -68,6 +70,9 @@ app.route("/group", groupRouter);
 app.route("/merchant/duties", dutiesRouter);
 app.route("/merchant/staff", staffAuthRouter);
 app.route("/staff", staffPortalRouter);
+app.route("/customer-auth", customerAuthRouter);
+app.route("/merchant/closures", closuresRouter);
+app.route("/booking", publicClosuresRouter);
 
 // Health check
 app.get("/health", (c) => {

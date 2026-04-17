@@ -7,6 +7,7 @@ import {
   staffHours,
   bookings,
   merchants,
+  merchantClosures,
 } from "@glowos/db";
 import { addMinutes, parseISO, format, startOfDay, endOfDay, getDay } from "date-fns";
 import { getCache, setCache, deleteCache } from "./redis.js";
@@ -153,6 +154,35 @@ export async function getAvailability(params: {
 
   if (!merchant) return [];
 
+  // 2b. Check for closures on this date
+  const closures = await db
+    .select({
+      isFullDay: merchantClosures.isFullDay,
+      startTime: merchantClosures.startTime,
+      endTime: merchantClosures.endTime,
+    })
+    .from(merchantClosures)
+    .where(
+      and(
+        eq(merchantClosures.merchantId, merchant.id),
+        eq(merchantClosures.date, date)
+      )
+    );
+
+  // If any full-day closure exists, no slots available
+  if (closures.some((cl) => cl.isFullDay)) {
+    await setCache(cacheKey, JSON.stringify([]), 30);
+    return [];
+  }
+
+  // Build partial closure ranges for later filtering
+  const closureRanges: TimeRange[] = closures
+    .filter((cl) => !cl.isFullDay && cl.startTime && cl.endTime)
+    .map((cl) => ({
+      start: combineDateAndTime(date, cl.startTime!),
+      end: combineDateAndTime(date, cl.endTime!),
+    }));
+
   // 3. Load service (duration + buffer = total slot duration)
   const [service] = await db
     .select({
@@ -262,7 +292,14 @@ export async function getAvailability(params: {
     const candidates = generateTimeSlots(workStart, workEnd, totalDuration, 30);
 
     for (const slot of candidates) {
+      // Check partial closures
+      const overlapsClosures = closureRanges.some((cl) => {
+        const slotEnd = addMinutes(slot.start, totalDuration);
+        return slot.start < cl.end && slotEnd > cl.start;
+      });
+
       if (
+        !overlapsClosures &&
         !overlapsWithBookings(slot.start, totalDuration, memberBookings) &&
         !overlapsWithLeases(slot.start, totalDuration, memberLeases)
       ) {

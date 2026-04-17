@@ -20,6 +20,7 @@ export default {
     "./src/schema/consult.ts",
     "./src/schema/post-service.ts",
     "./src/schema/staff-duties.ts",
+    "./src/schema/closures.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",

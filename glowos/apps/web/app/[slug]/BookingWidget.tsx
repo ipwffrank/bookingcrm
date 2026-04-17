@@ -1,8 +1,36 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+            auto_select?: boolean;
+          }) => void;
+          renderButton: (
+            element: HTMLElement,
+            config: {
+              theme?: string;
+              size?: string;
+              width?: number;
+              text?: string;
+              shape?: string;
+              logo_alignment?: string;
+            }
+          ) => void;
+          prompt: () => void;
+        };
+      };
+    };
+  }
+}
 
 interface Service {
   id: string;
@@ -128,6 +156,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
 
+  // Closures
+  const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
+
   // Lease
   const [leaseId, setLeaseId] = useState('');
   const [leaseExpiry, setLeaseExpiry] = useState<Date | null>(null);
@@ -139,11 +170,145 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
 
+  // Authenticated client (Google Sign-In)
+  const [authClient, setAuthClient] = useState<{
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone: string;
+    avatarUrl: string | null;
+    googleId: string | null;
+  } | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
   // Confirm
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmError, setConfirmError] = useState('');
 
   const days = next30Days();
+
+  // ── Google Sign-In ──────────────────────────────────────────────────────────
+
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // Fetch closed dates on mount
+  useEffect(() => {
+    apiFetch(`/booking/${slug}/closures`)
+      .then((data) => {
+        const dates = new Set<string>();
+        for (const cl of data.closures ?? []) {
+          if (cl.isFullDay) dates.add(cl.date);
+        }
+        setClosedDates(dates);
+      })
+      .catch(() => { /* ignore — closures are optional */ });
+  }, [slug]);
+
+  // Check for returning Google user on mount
+  useEffect(() => {
+    const storedGoogleId = sessionStorage.getItem(`glowos_google_id_${slug}`);
+    if (storedGoogleId) {
+      apiFetch('/customer-auth/lookup', {
+        method: 'POST',
+        body: JSON.stringify({ google_id: storedGoogleId, slug }),
+      })
+        .then((data) => {
+          const c = data.client;
+          setAuthClient(c);
+          setClientName(c.name ?? '');
+          setClientEmail(c.email ?? '');
+          setClientPhone(c.phone ?? '');
+        })
+        .catch(() => {
+          sessionStorage.removeItem(`glowos_google_id_${slug}`);
+        });
+    }
+  }, [slug]);
+
+  // Load Google Identity Services script
+  useEffect(() => {
+    if (!googleClientId) return;
+    if (document.getElementById('google-gsi-script')) return;
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+  }, [googleClientId]);
+
+  // Render Google button when step 4 is active and user hasn't signed in or chosen guest
+  useEffect(() => {
+    if (step !== 4 || authClient || isGuest || !googleClientId) return;
+    if (!window.google || !googleBtnRef.current) {
+      // Script may not be loaded yet — retry
+      const timer = setTimeout(() => {
+        if (window.google && googleBtnRef.current) {
+          window.google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: handleGoogleSignIn,
+          });
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            theme: 'outline',
+            size: 'large',
+            width: 320,
+            text: 'signin_with',
+            shape: 'pill',
+            logo_alignment: 'center',
+          });
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: handleGoogleSignIn,
+    });
+    window.google.accounts.id.renderButton(googleBtnRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 320,
+      text: 'signin_with',
+      shape: 'pill',
+      logo_alignment: 'center',
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, authClient, isGuest, googleClientId]);
+
+  async function handleGoogleSignIn(response: { credential: string }) {
+    setAuthLoading(true);
+    setConfirmError('');
+    try {
+      const data = await apiFetch('/customer-auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential: response.credential, slug }),
+      });
+      const c = data.client;
+      setAuthClient(c);
+      setClientName(c.name ?? '');
+      setClientEmail(c.email ?? '');
+      setClientPhone(c.phone ?? '');
+      // Remember for this session
+      if (c.googleId) {
+        sessionStorage.setItem(`glowos_google_id_${slug}`, c.googleId);
+      }
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : 'Google sign-in failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function handleSignOut() {
+    setAuthClient(null);
+    setClientName('');
+    setClientEmail('');
+    setClientPhone('');
+    setIsGuest(false);
+    sessionStorage.removeItem(`glowos_google_id_${slug}`);
+  }
 
   const staffWithAny: StaffMember[] = [
     { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member', bio: null, specialtyTags: null, isAnyAvailable: true },
@@ -266,6 +431,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
           client_name: clientName.trim(),
           client_phone: clientPhone.trim(),
           client_email: clientEmail.trim() || undefined,
+          client_id: authClient?.id || undefined,
           payment_method: 'cash',
         }),
       });
@@ -482,22 +648,27 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   const dayStr = toDateStr(day);
                   const isSelected = selectedDate ? toDateStr(selectedDate) === dayStr : false;
                   const isToday = toDateStr(new Date()) === dayStr;
+                  const isClosed = closedDates.has(dayStr);
                   return (
                     <button
                       key={dayStr}
-                      onClick={() => handleDateSelect(day)}
+                      onClick={() => !isClosed && handleDateSelect(day)}
+                      disabled={isClosed}
                       className={`shrink-0 rounded-xl px-3 py-2.5 text-center border-2 transition-all ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
-                          : 'border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'
+                        isClosed
+                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed line-through'
+                          : isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                            : 'border-gray-200 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'
                       }`}
+                      title={isClosed ? 'Closed' : undefined}
                     >
                       <div className="text-xs font-medium">
                         {isToday ? 'Today' : day.toLocaleDateString('en-SG', { weekday: 'short' })}
                       </div>
                       <div className="text-base font-bold mt-0.5">{day.getDate()}</div>
                       <div className="text-xs opacity-75">
-                        {day.toLocaleDateString('en-SG', { month: 'short' })}
+                        {isClosed ? 'Closed' : day.toLocaleDateString('en-SG', { month: 'short' })}
                       </div>
                     </button>
                   );
@@ -593,7 +764,13 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
             </h2>
             <div className="flex items-center gap-3">
               {clientName && step !== 4 && (
-                <span className="text-sm text-indigo-600 font-medium truncate">{clientName}</span>
+                <div className="flex items-center gap-2">
+                  {authClient?.avatarUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={authClient.avatarUrl} alt="" className="w-5 h-5 rounded-full" />
+                  )}
+                  <span className="text-sm text-indigo-600 font-medium truncate">{clientName}</span>
+                </div>
               )}
               {countdown > 0 && (
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
@@ -616,65 +793,146 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
               )}
 
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Full name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  autoComplete="name"
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
-                  placeholder="Jane Tan"
-                />
-              </div>
+              {/* ── Auth choice: Google Sign-In or Guest ─────────────────── */}
+              {!authClient && !isGuest && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600 mb-1">Sign in to save your details for faster booking next time</p>
+                    <p className="text-xs text-gray-400">We&apos;ll remember you on your next visit</p>
+                  </div>
 
-              {/* Phone */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Mobile number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
-                  autoComplete="tel"
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
-                  placeholder="+65 9123 4567"
-                />
-              </div>
+                  {/* Google Sign-In button container */}
+                  {googleClientId && (
+                    <div className="flex justify-center">
+                      {authLoading ? (
+                        <div className="flex items-center gap-2 px-6 py-3 rounded-full border-2 border-gray-200 text-sm text-gray-500">
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                          </svg>
+                          Signing in...
+                        </div>
+                      ) : (
+                        <div ref={googleBtnRef} />
+                      )}
+                    </div>
+                  )}
 
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Email <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="email"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  autoComplete="email"
-                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
-                  placeholder="jane@example.com"
-                />
-              </div>
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 font-medium">or</span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
 
-              <button
-                onClick={() => {
-                  if (!clientName.trim() || !clientPhone.trim()) {
-                    setConfirmError('Please fill in your name and mobile number');
-                    return;
-                  }
-                  setConfirmError('');
-                  setStep(5);
-                }}
-                disabled={!clientName.trim() || !clientPhone.trim()}
-                className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Continue to Review
-              </button>
+                  {/* Continue as Guest */}
+                  <button
+                    onClick={() => setIsGuest(true)}
+                    className="w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                  >
+                    Continue as Guest
+                  </button>
+                </div>
+              )}
+
+              {/* ── Signed-in user info ──────────────────────────────── */}
+              {authClient && (
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {authClient.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={authClient.avatarUrl}
+                          alt=""
+                          className="w-10 h-10 rounded-full border-2 border-white shadow-sm"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white text-sm font-bold">
+                          {(authClient.name ?? 'U').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{authClient.name ?? 'User'}</p>
+                        {authClient.email && (
+                          <p className="text-xs text-gray-500">{authClient.email}</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleSignOut}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      Switch
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Form fields (shown when auth'd or guest) ──────── */}
+              {(authClient || isGuest) && (
+                <>
+                  {/* Name */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Full name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      autoComplete="name"
+                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                      placeholder="Jane Tan"
+                    />
+                  </div>
+
+                  {/* Phone */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Mobile number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={clientPhone}
+                      onChange={(e) => setClientPhone(e.target.value)}
+                      autoComplete="tel"
+                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                      placeholder="+65 9123 4567"
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Email <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={clientEmail}
+                      onChange={(e) => setClientEmail(e.target.value)}
+                      autoComplete="email"
+                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                      placeholder="jane@example.com"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!clientName.trim() || !clientPhone.trim()) {
+                        setConfirmError('Please fill in your name and mobile number');
+                        return;
+                      }
+                      setConfirmError('');
+                      setStep(5);
+                    }}
+                    disabled={!clientName.trim() || !clientPhone.trim()}
+                    className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Continue to Review
+                  </button>
+                </>
+              )}
 
               {confirmError && (
                 <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">

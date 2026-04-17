@@ -19,6 +19,8 @@ export const clients = pgTable("clients", {
   phone: varchar("phone", { length: 20 }).notNull().unique(),
   email: varchar("email", { length: 255 }),
   name: varchar("name", { length: 255 }),
+  googleId: varchar("google_id", { length: 255 }).unique(),
+  avatarUrl: varchar("avatar_url", { length: 500 }),
   acquisitionSource: varchar("acquisition_source", { length: 30 })
     .notNull()
     .default("online_booking")

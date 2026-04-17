@@ -31,5 +31,7 @@ export const config = {
   fromEmail: process.env.FROM_EMAIL ?? "noreply@glowos.sg",
   fromName: process.env.FROM_NAME ?? "GlowOS",
 
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;

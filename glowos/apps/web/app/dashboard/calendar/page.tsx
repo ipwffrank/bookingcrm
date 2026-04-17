@@ -90,6 +90,7 @@ export default function CalendarPage() {
   const [bookings,   setBookings]   = useState<Booking[]>([]);
   const [loading,    setLoading]    = useState(false);
   const [density,    setDensity]    = useState<'compact' | 'comfortable'>('comfortable');
+  const [closureTitle, setClosureTitle] = useState<string | null>(null);
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
@@ -142,11 +143,15 @@ export default function CalendarPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sd, dd, bd] = await Promise.all([
+      const [sd, dd, bd, cd] = await Promise.all([
         apiFetch('/merchant/staff'),
         apiFetch(`/merchant/duties?from=${dateStr}&to=${dateStr}`),
         apiFetch(`/merchant/bookings?from=${dateStr}&to=${dateStr}`).catch(() => ({ bookings: [] })),
+        apiFetch(`/merchant/closures?from=${dateStr}&to=${dateStr}`).catch(() => ({ closures: [] })),
       ]);
+      const closures = cd.closures ?? [];
+      const fullDayClosure = closures.find((c: { isFullDay: boolean; title: string }) => c.isFullDay);
+      setClosureTitle(fullDayClosure ? fullDayClosure.title : null);
       setStaffList(sd.staff ?? []);
       setDuties(dd.duties ?? []);
       setBookings(
@@ -700,6 +705,21 @@ export default function CalendarPage() {
         {loading && <span className="text-xs text-gray-400 animate-pulse ml-2">Loading…</span>}
       </div>
 
+      {/* ── Closure banner ── */}
+      {closureTitle && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-red-800">Closed — {closureTitle}</p>
+            <p className="text-xs text-red-600 mt-0.5">Online bookings are blocked for this date. <a href="/dashboard/settings?tab=closures" className="underline hover:text-red-800">Manage closures</a></p>
+          </div>
+        </div>
+      )}
+
       {/* ── Resource grid ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
 
@@ -921,23 +941,43 @@ export default function CalendarPage() {
                           )}
                         </div>
 
-                        <div className="px-2 py-1.5 pr-1">
+                        <div className="px-2 py-1 pr-1 overflow-hidden" style={{ maxHeight: h - 4 }}>
                           <div className="text-[11px] font-semibold text-gray-900 truncate leading-tight">{b.clientName ?? 'Client'}</div>
-                          {h > 36 && <div className="text-[10px] text-gray-500 truncate mt-0.5">{b.serviceName}</div>}
-                          {h > 54 && (
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              {meta && (
-                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-sm ${meta.cls}`}>
-                                  {meta.label}
-                                </span>
-                              )}
-                              {b.priceSgd && (
-                                <span className="text-[9px] font-medium text-gray-400">
-                                  ${parseFloat(b.priceSgd).toFixed(0)}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                          <div className="text-[10px] text-gray-500 truncate mt-0.5">{b.serviceName}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {meta && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-sm whitespace-nowrap ${meta.cls}`}>
+                                {meta.label}
+                              </span>
+                            )}
+                            {b.priceSgd && (
+                              <span className="text-[9px] font-medium text-gray-400 whitespace-nowrap">
+                                ${parseFloat(b.priceSgd).toFixed(0)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Hover tooltip with full details */}
+                        <div className="hidden group-hover/card:block absolute left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-2.5 pointer-events-none" style={{ top: h + 2 }}>
+                          <div className="text-[11px] font-semibold text-gray-900">{b.clientName ?? 'Client'}</div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">{b.serviceName}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {' – '}
+                            {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {meta && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-sm ${meta.cls}`}>
+                                {meta.label}
+                              </span>
+                            )}
+                            {b.priceSgd && (
+                              <span className="text-[10px] font-medium text-gray-500">
+                                SGD {parseFloat(b.priceSgd).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Resize handle (confirmed/in_progress only) */}
