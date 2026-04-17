@@ -295,7 +295,7 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
 
   let refundMessage: string;
   if (refundAmount > 0) {
-    refundMessage = `A refund of SGD ${refundAmount.toFixed(2)} will be processed within 5-10 business days.`;
+    refundMessage = `A refund of SGD ${refundAmount.toFixed(2)} will be processed within 3–5 business days.`;
   } else {
     refundMessage = `No refund applies per our cancellation policy.`;
   }
@@ -365,7 +365,7 @@ async function handleRefundConfirmation(bookingId: string): Promise<void> {
 
   const message = [
     `Refund processed: SGD ${refundAmount} for your booking at ${merchant.name}.`,
-    `Expect it in 5-10 business days.`,
+    `Expect it in 3–5 business days.`,
   ].join("\n");
 
   const sid = await sendWhatsApp(client.phone, message);
