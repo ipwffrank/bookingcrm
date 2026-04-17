@@ -282,6 +282,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
   const [merchant] = await db
     .select({
       id: merchants.id,
+      name: merchants.name,
       stripeAccountId: merchants.stripeAccountId,
     })
     .from(merchants)
@@ -322,7 +323,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
 
   // 3. Load service for price
   const [service] = await db
-    .select({ id: services.id, priceSgd: services.priceSgd })
+    .select({ id: services.id, name: services.name, priceSgd: services.priceSgd })
     .from(services)
     .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchant.id)))
     .limit(1);
@@ -377,6 +378,8 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     amount: amountCents,
     currency: "sgd",
     customer: stripeCustomerId,
+    description: `${service.name} at ${merchant.name}`,
+    statement_descriptor_suffix: merchant.name.slice(0, 22),
     application_fee_amount: commissionCents > 0 ? commissionCents : undefined,
     transfer_data: {
       destination: merchant.stripeAccountId,
