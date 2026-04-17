@@ -705,6 +705,7 @@ bookingsRouter.get("/:slug", async (c) => {
       addressLine2: merchants.addressLine2,
       postalCode: merchants.postalCode,
       timezone: merchants.timezone,
+      stripeAccountId: merchants.stripeAccountId,
     })
     .from(merchants)
     .where(eq(merchants.slug, slug))
@@ -726,7 +727,14 @@ bookingsRouter.get("/:slug", async (c) => {
     .from(staff)
     .where(and(eq(staff.merchantId, merchant.id), eq(staff.isActive, true)));
 
-  return c.json({ merchant, services: activeServices, staff: activeStaff });
+  // Don't expose the actual stripe account ID to public, just whether payment is enabled
+  const { stripeAccountId, ...merchantPublic } = merchant;
+
+  return c.json({
+    merchant: { ...merchantPublic, paymentEnabled: !!stripeAccountId },
+    services: activeServices,
+    staff: activeStaff,
+  });
 });
 
 // ─── Public: GET /booking/:slug/availability ───────────────────────────────────

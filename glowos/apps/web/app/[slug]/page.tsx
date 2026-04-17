@@ -16,6 +16,7 @@ interface SalonData {
     addressLine2: string | null;
     postalCode: string | null;
     timezone: string;
+    paymentEnabled?: boolean;
   };
   services: Array<{
     id: string;

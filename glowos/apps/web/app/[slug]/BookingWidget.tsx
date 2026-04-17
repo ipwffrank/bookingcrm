@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
 declare global {
   interface Window {
@@ -65,6 +67,7 @@ interface Merchant {
   addressLine2: string | null;
   postalCode: string | null;
   timezone: string;
+  paymentEnabled?: boolean;
 }
 
 interface TimeSlot {
@@ -137,6 +140,76 @@ function StepBadge({ num, label, active, done }: { num: number; label: string; a
   );
 }
 
+// ── Stripe Payment Form ──────────────────────────────────────────────────────
+
+function StripePaymentForm({
+  amount,
+  onSuccess,
+  onError,
+  countdown,
+}: {
+  amount: string;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
+  countdown: number;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+
+    setProcessing(true);
+    const result = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: 'if_required',
+    });
+
+    if (result.error) {
+      onError(result.error.message ?? 'Payment failed');
+      setProcessing(false);
+    } else if (result.paymentIntent?.status === 'succeeded') {
+      onSuccess();
+    } else {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement
+        options={{
+          layout: 'tabs',
+        }}
+      />
+      <button
+        type="submit"
+        disabled={!stripe || processing || countdown === 0}
+        className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+      >
+        {processing ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            Processing payment...
+          </span>
+        ) : countdown === 0 ? (
+          'Slot expired — please select a new time'
+        ) : (
+          `Pay SGD ${parseFloat(amount).toFixed(2)}`
+        )}
+      </button>
+    </form>
+  );
+}
+
 // ── Main widget ───────────────────────────────────────────────────────────────
 
 export default function BookingWidget({ merchant, services, staff, slug }: BookingWidgetProps) {
@@ -186,6 +259,16 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   // Confirm
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmError, setConfirmError] = useState('');
+
+  // Stripe payment
+  const [stripePromise] = useState(() => {
+    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    return key ? loadStripe(key) : null;
+  });
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>(
+    merchant.paymentEnabled ? 'card' : 'cash'
+  );
 
   const days = next30Days();
 
@@ -917,19 +1000,71 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     />
                   </div>
 
+                  {/* Payment method toggle (only if merchant has Stripe) */}
+                  {merchant.paymentEnabled && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Payment method</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('card')}
+                          className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors ${
+                            paymentMethod === 'card'
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          Pay Online
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('cash')}
+                          className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors ${
+                            paymentMethod === 'cash'
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          Pay at Venue
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!clientName.trim() || !clientPhone.trim()) {
                         setConfirmError('Please fill in your name and mobile number');
                         return;
                       }
                       setConfirmError('');
-                      setStep(5);
+
+                      // If paying by card, create PaymentIntent first
+                      if (paymentMethod === 'card' && merchant.paymentEnabled && selectedService) {
+                        setConfirmLoading(true);
+                        try {
+                          const res = await apiFetch(`/booking/${slug}/create-payment-intent`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                              lease_id: leaseId,
+                              service_id: selectedService.id,
+                            }),
+                          });
+                          setClientSecret(res.client_secret as string);
+                          setStep(5);
+                        } catch (err) {
+                          setConfirmError(err instanceof Error ? err.message : 'Failed to set up payment');
+                        } finally {
+                          setConfirmLoading(false);
+                        }
+                      } else {
+                        setStep(5);
+                      }
                     }}
-                    disabled={!clientName.trim() || !clientPhone.trim()}
+                    disabled={!clientName.trim() || !clientPhone.trim() || confirmLoading}
                     className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Continue to Review
+                    {confirmLoading ? 'Setting up payment...' : 'Continue to Review'}
                   </button>
                 </>
               )}
@@ -994,7 +1129,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-0.5">Payment</p>
-                  <p className="text-sm font-semibold text-gray-800">Pay at appointment</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {paymentMethod === 'card' ? 'Pay now (online)' : 'Pay at appointment'}
+                  </p>
                 </div>
               </div>
 
@@ -1030,31 +1167,55 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
               </div>
             )}
 
-            {/* Confirm button */}
-            <button
-              onClick={handleConfirmBooking}
-              disabled={confirmLoading || countdown === 0}
-              className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
-            >
-              {confirmLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Confirming your booking…
-                </span>
-              ) : countdown === 0 ? (
-                'Slot expired — please select a new time'
-              ) : (
-                `Confirm Booking — SGD ${parseFloat(selectedService?.priceSgd || '0').toFixed(2)}`
-              )}
-            </button>
-
-            <p className="text-xs text-gray-400 text-center">
-              By confirming you agree to the cancellation policy above.
-              Payment is collected at your appointment.
-            </p>
+            {/* Payment form (card) or confirm button (cash) */}
+            {paymentMethod === 'card' && clientSecret && stripePromise ? (
+              <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe', variables: { colorPrimary: '#4f46e5', borderRadius: '12px' } } }}>
+                <StripePaymentForm
+                  amount={selectedService?.priceSgd || '0'}
+                  countdown={countdown}
+                  onSuccess={() => {
+                    router.push(
+                      `/${slug}/confirm?booking_id=payment` +
+                      `&service=${encodeURIComponent(selectedService?.name ?? '')}` +
+                      `&staff=${encodeURIComponent(resolvedStaffName)}` +
+                      `&time=${encodeURIComponent(selectedSlot.start_time)}` +
+                      `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
+                      `&paid=true`
+                    );
+                  }}
+                  onError={(msg) => setConfirmError(msg)}
+                />
+                <p className="text-xs text-gray-400 text-center">
+                  Payments are processed securely by Stripe.
+                </p>
+              </Elements>
+            ) : (
+              <>
+                <button
+                  onClick={handleConfirmBooking}
+                  disabled={confirmLoading || countdown === 0}
+                  className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+                >
+                  {confirmLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Confirming your booking…
+                    </span>
+                  ) : countdown === 0 ? (
+                    'Slot expired — please select a new time'
+                  ) : (
+                    `Confirm Booking — SGD ${parseFloat(selectedService?.priceSgd || '0').toFixed(2)}`
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 text-center">
+                  By confirming you agree to the cancellation policy above.
+                  Payment is collected at your appointment.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
