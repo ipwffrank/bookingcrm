@@ -276,6 +276,11 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   // First-timer check
   const [isFirstTimer, setIsFirstTimer] = useState<boolean | null>(null);
 
+  // Package state
+  const [availablePackages, setAvailablePackages] = useState<Array<{ id: string; name: string; description: string | null; totalSessions: number; priceSgd: string; includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>; validityDays: number }>>([]);
+  const [clientActivePackages, setClientActivePackages] = useState<Array<{ id: string; packageName: string; sessionsTotal: number; sessionsUsed: number; remaining: number; expiresAt: string; pendingSessions: Array<{ id: string; sessionNumber: number; serviceId: string; status: string }> }>>([]);
+  const [usePackageSession, setUsePackageSession] = useState<{ sessionId: string; packageName: string } | null>(null);
+
   // Confirm
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmError, setConfirmError] = useState('');
@@ -307,6 +312,13 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
         setClosedDates(dates);
       })
       .catch(() => { /* ignore — closures are optional */ });
+  }, [slug]);
+
+  // Fetch available packages on mount
+  useEffect(() => {
+    apiFetch(`/booking/${slug}/packages`)
+      .then((data) => setAvailablePackages(data.packages ?? []))
+      .catch(() => {});
   }, [slug]);
 
   // Check for returning Google user on mount
@@ -687,6 +699,44 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
               </label>
             ))}
+
+            {/* Packages */}
+            {availablePackages.length > 0 && (
+              <div className="px-6 py-4 border-t border-gray-100">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Packages</h3>
+                <div className="space-y-3">
+                  {availablePackages.map(pkg => {
+                    const totalIndividual = pkg.includedServices.reduce((sum, s) => {
+                      const svc = services.find(sv => sv.id === s.serviceId);
+                      return sum + (svc ? parseFloat(svc.priceSgd) * s.quantity : 0);
+                    }, 0);
+                    const savings = totalIndividual > 0 ? Math.round((1 - parseFloat(pkg.priceSgd) / totalIndividual) * 100) : 0;
+
+                    return (
+                      <div key={pkg.id} className="border border-indigo-200 bg-indigo-50/30 rounded-xl p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Package</span>
+                            <h4 className="text-sm font-semibold text-gray-900 mt-1">{pkg.name}</h4>
+                            {pkg.description && <p className="text-xs text-gray-500 mt-0.5">{pkg.description}</p>}
+                          </div>
+                          <div className="text-right">
+                            {savings > 0 && <span className="text-[10px] text-green-600 font-medium">Save {savings}%</span>}
+                            <p className="text-sm font-bold text-indigo-700">SGD {parseFloat(pkg.priceSgd).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 mb-2">
+                          {pkg.totalSessions} sessions &middot; Valid {pkg.validityDays} days
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          Includes: {pkg.includedServices.map(s => `${s.serviceName}${s.quantity > 1 ? ` x${s.quantity}` : ''}`).join(', ')}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1147,6 +1197,15 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                         } catch { /* ignore */ }
                       }
 
+                      // Check for active packages
+                      try {
+                        const pkgParams = new URLSearchParams({ slug });
+                        if (clientPhone.trim()) pkgParams.set('phone', clientPhone.trim());
+                        if (clientEmail.trim()) pkgParams.set('email', clientEmail.trim());
+                        const pkgRes = await apiFetch(`/booking/${slug}/client-packages?${pkgParams.toString()}`);
+                        setClientActivePackages(pkgRes.packages ?? []);
+                      } catch { /* ignore */ }
+
                       // If paying by card, create PaymentIntent first
                       if (paymentMethod === 'card' && merchant.paymentEnabled && selectedService) {
                         setConfirmLoading(true);
@@ -1289,7 +1348,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 <div>
                   <p className="text-xs text-gray-500 mb-0.5">Payment</p>
                   <p className="text-sm font-semibold text-gray-800">
-                    {paymentMethod === 'card' ? 'Pay now (online)' : 'Pay at appointment'}
+                    {usePackageSession ? 'Package session (free)' : paymentMethod === 'card' ? 'Pay now (online)' : 'Pay at appointment'}
                   </p>
                 </div>
               </div>
@@ -1320,12 +1379,125 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
               </p>
             </div>
 
+            {/* Package redemption option */}
+            {clientActivePackages.length > 0 && selectedService && (() => {
+              const matchingPkg = clientActivePackages.find(pkg =>
+                pkg.pendingSessions.some(s => s.serviceId === selectedService.id)
+              );
+              if (!matchingPkg) return null;
+              const matchingSession = matchingPkg.pendingSessions.find(s => s.serviceId === selectedService.id);
+              if (!matchingSession) return null;
+
+              return (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">🎁</span>
+                    <h3 className="text-sm font-semibold text-indigo-900">You have an active package!</h3>
+                  </div>
+                  <p className="text-xs text-indigo-700 mb-1">{matchingPkg.packageName}</p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex-1 h-1.5 bg-indigo-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${(matchingPkg.sessionsUsed / matchingPkg.sessionsTotal) * 100}%` }} />
+                    </div>
+                    <span className="text-[10px] text-indigo-600 font-medium">{matchingPkg.sessionsUsed}/{matchingPkg.sessionsTotal} used</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUsePackageSession({ sessionId: matchingSession.id, packageName: matchingPkg.packageName })}
+                      className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                        usePackageSession ? 'bg-indigo-600 text-white' : 'bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100'
+                      }`}
+                    >
+                      Use Package Session (free)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUsePackageSession(null)}
+                      className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+                        !usePackageSession ? 'bg-gray-800 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Pay Normally
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {confirmError && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
                 {confirmError}
               </div>
             )}
 
+            {/* Package session confirm button */}
+            {usePackageSession ? (
+              <>
+                <button
+                  onClick={async () => {
+                    if (!usePackageSession || !selectedSlot || !selectedStaff) return;
+                    setConfirmLoading(true);
+                    setConfirmError('');
+                    try {
+                      const res = await apiFetch(`/booking/${slug}/use-package-session`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          sessionId: usePackageSession.sessionId,
+                          staffId: selectedStaff.id === 'any' ? selectedSlot.staff_id : selectedStaff.id,
+                          startTime: selectedSlot.start_time,
+                          clientName: clientName.trim(),
+                          clientPhone: clientPhone.trim(),
+                          clientEmail: clientEmail.trim() || undefined,
+                        }),
+                      });
+                      const bookingId = (res.booking as { id: string }).id;
+                      router.push(
+                        `/${slug}/confirm?booking_id=${bookingId}` +
+                        `&service=${encodeURIComponent(selectedService?.name ?? '')}` +
+                        `&staff=${encodeURIComponent(resolvedStaffName)}` +
+                        `&time=${encodeURIComponent(selectedSlot.start_time)}` +
+                        `&amount=0` +
+                        `&package=${encodeURIComponent(usePackageSession.packageName)}`
+                      );
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : 'Booking failed. Please try again.';
+                      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('lease')) {
+                        setLeaseId('');
+                        setLeaseExpiry(null);
+                        setSelectedSlot(null);
+                        setStep(3);
+                        setConfirmError('Your slot hold expired. Please select a new time.');
+                      } else {
+                        setConfirmError(msg);
+                      }
+                    } finally {
+                      setConfirmLoading(false);
+                    }
+                  }}
+                  disabled={confirmLoading || countdown === 0}
+                  className="w-full rounded-2xl bg-indigo-600 py-4 text-base font-bold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+                >
+                  {confirmLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Confirming your booking…
+                    </span>
+                  ) : countdown === 0 ? (
+                    'Slot expired — please select a new time'
+                  ) : (
+                    'Confirm Booking (Package Session)'
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 text-center">
+                  This session will be deducted from your {usePackageSession.packageName} package.
+                </p>
+              </>
+            ) : (
+              <>
             {/* Payment form (card) or confirm button (cash) */}
             {paymentMethod === 'card' && clientSecret && stripePromise ? (
               <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe', variables: { colorPrimary: '#4f46e5', borderRadius: '12px' } } }}>
@@ -1388,6 +1560,8 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   By confirming you agree to the cancellation policy above.
                   Payment is collected at your appointment.
                 </p>
+              </>
+            )}
               </>
             )}
                 </>
