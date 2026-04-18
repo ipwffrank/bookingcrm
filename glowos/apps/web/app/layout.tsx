@@ -36,11 +36,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="scroll-smooth">
-      {/* Material Symbols icon font for landing page */}
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-      />
+      <head>
+        {/* Material Symbols icon font for landing page */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+          precedence="default"
+        />
+      </head>
       <body className={`${cormorant.variable} ${manrope.variable} font-[family-name:var(--font-body)] antialiased`}>
         {children}
       </body>

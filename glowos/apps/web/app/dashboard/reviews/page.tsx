@@ -96,8 +96,8 @@ export default function ReviewsPage() {
   useEffect(() => {
     apiFetch('/merchant/staff')
       .then((data: unknown) => {
-        const staffData = data as { id: string; name: string }[];
-        setStaffList(staffData);
+        const result = data as { staff: { id: string; name: string }[] };
+        setStaffList(result.staff);
       })
       .catch(() => {});
   }, []);
