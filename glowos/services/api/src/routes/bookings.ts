@@ -861,6 +861,7 @@ bookingsRouter.get("/:slug", async (c) => {
       postalCode: merchants.postalCode,
       timezone: merchants.timezone,
       stripeAccountId: merchants.stripeAccountId,
+      operatingHours: merchants.operatingHours,
     })
     .from(merchants)
     .where(eq(merchants.slug, slug))

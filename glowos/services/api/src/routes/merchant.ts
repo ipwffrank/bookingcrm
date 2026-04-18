@@ -24,6 +24,14 @@ const updateMerchantSchema = z.object({
   timezone: z.string().optional(),
   logoUrl: z.string().url().optional().or(z.literal("")),
   coverPhotoUrl: z.string().url().optional().or(z.literal("")),
+  operatingHours: z.record(
+    z.string(),
+    z.object({
+      open: z.string(),
+      close: z.string(),
+      closed: z.boolean(),
+    })
+  ).optional(),
 });
 
 // ─── GET /merchant/me ──────────────────────────────────────────────────────────

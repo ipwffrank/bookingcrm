@@ -31,6 +31,7 @@ export const merchants = pgTable("merchants", {
   payoutFrequency: varchar("payout_frequency", { length: 20 }).notNull().default("weekly"),
   googleActionsStatus: varchar("google_actions_status", { length: 50 }).notNull().default("pending"),
   cancellationPolicy: jsonb("cancellation_policy"),
+  operatingHours: jsonb("operating_hours").$type<Record<string, { open: string; close: string; closed: boolean }>>(),
   // Intentionally bare UUID (no .references()) — adding a FK to groups.id would create
   // a circular import: merchants.ts ← groups.ts ← merchants.ts (via staffMerchants).
   // The application layer enforces referential integrity via resolveClientVisibility().

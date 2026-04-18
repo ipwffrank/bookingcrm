@@ -43,6 +43,13 @@
       "when": 1776433691023,
       "tag": "0005_white_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1776496602527,
+      "tag": "0006_third_riptide",
+      "breakpoints": true
     }
   ]
 }

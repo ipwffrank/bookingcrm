@@ -147,12 +147,25 @@ export async function getAvailability(params: {
 
   // 2. Load merchant by slug
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, operatingHours: merchants.operatingHours })
     .from(merchants)
     .where(eq(merchants.slug, merchantSlug))
     .limit(1);
 
   if (!merchant) return [];
+
+  // 2a. Check merchant operating hours
+  if (merchant.operatingHours) {
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const requestedDate = new Date(params.date + 'T00:00:00');
+    const dayName = dayNames[requestedDate.getDay()];
+    const dayHours = merchant.operatingHours[dayName];
+
+    if (dayHours && dayHours.closed) {
+      await setCache(cacheKey, JSON.stringify([]), 30);
+      return []; // Business is closed on this day
+    }
+  }
 
   // 2b. Check for closures on this date
   const closures = await db

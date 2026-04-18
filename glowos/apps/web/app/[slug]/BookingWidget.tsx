@@ -68,6 +68,7 @@ interface Merchant {
   postalCode: string | null;
   timezone: string;
   paymentEnabled?: boolean;
+  operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
 }
 
 interface TimeSlot {
@@ -761,7 +762,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   const dayStr = toDateStr(day);
                   const isSelected = selectedDate ? toDateStr(selectedDate) === dayStr : false;
                   const isToday = toDateStr(new Date()) === dayStr;
-                  const isClosed = closedDates.has(dayStr);
+                  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                  const isClosedDay = merchant?.operatingHours?.[dayNames[day.getDay()]]?.closed === true;
+                  const isClosed = closedDates.has(dayStr) || isClosedDay;
                   return (
                     <button
                       key={dayStr}

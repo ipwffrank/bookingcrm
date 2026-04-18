@@ -63,7 +63,7 @@ interface CancellationForm {
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type TabId = 'profile' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account';
+type TabId = 'profile' | 'hours' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account';
 
 interface Tab {
   id: TabId;
@@ -72,6 +72,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'profile', label: 'Business Profile' },
+  { id: 'hours', label: 'Operating Hours' },
   { id: 'cancellation', label: 'Cancellation Policy' },
   { id: 'closures', label: 'Holidays & Closures' },
   { id: 'payments', label: 'Payments' },
@@ -207,8 +208,6 @@ function ProfileTab({
   const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors';
   const labelCls = 'block text-sm font-medium text-gray-700 mb-1.5';
 
-  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-
   return (
     <form onSubmit={handleSave} className="space-y-6">
       {error && (
@@ -336,31 +335,6 @@ function ProfileTab({
           </div>
         </div>
       </div>
-
-      {/* Operating Hours (display-only) */}
-      {merchant.operatingHours && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Operating Hours</h3>
-          <p className="text-xs text-gray-500 mb-4">Manage operating hours from the staff / schedule section.</p>
-          <div className="space-y-2">
-            {DAYS.map((day) => {
-              const hours = merchant.operatingHours?.[day];
-              return (
-                <div key={day} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                  <span className="text-sm font-medium text-gray-700 capitalize">{day}</span>
-                  {hours?.closed ? (
-                    <span className="text-sm text-gray-400">Closed</span>
-                  ) : (
-                    <span className="text-sm text-gray-600">
-                      {hours?.open ?? '—'} – {hours?.close ?? '—'}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="flex justify-end">
         <button
@@ -1134,6 +1108,113 @@ function AccountTab({ onSaved, onError }: { onSaved: (msg: string) => void; onEr
   );
 }
 
+// ─── Operating Hours Tab ──────────────────────────────────────────────────────
+
+const DEFAULT_HOURS: Record<string, { open: string; close: string; closed: boolean }> = {
+  monday: { open: '09:00', close: '18:00', closed: false },
+  tuesday: { open: '09:00', close: '18:00', closed: false },
+  wednesday: { open: '09:00', close: '18:00', closed: false },
+  thursday: { open: '09:00', close: '18:00', closed: false },
+  friday: { open: '09:00', close: '18:00', closed: false },
+  saturday: { open: '09:00', close: '18:00', closed: true },
+  sunday: { open: '09:00', close: '18:00', closed: true },
+};
+
+function OperatingHoursTab({
+  merchant,
+  onSaved,
+}: {
+  merchant: Merchant;
+  onSaved: (msg: string) => void;
+}) {
+  const [hoursForm, setHoursForm] = useState<Record<string, { open: string; close: string; closed: boolean }>>(
+    merchant.operatingHours ? { ...DEFAULT_HOURS, ...merchant.operatingHours } : DEFAULT_HOURS
+  );
+  const [saving, setSaving] = useState(false);
+  const [hoursSaved, setHoursSaved] = useState(false);
+
+  async function saveOperatingHours() {
+    setSaving(true);
+    try {
+      await apiFetch('/merchant/me', {
+        method: 'PUT',
+        body: JSON.stringify({ operatingHours: hoursForm }),
+      });
+      setHoursSaved(true);
+      setTimeout(() => setHoursSaved(false), 2000);
+      onSaved('Operating hours saved successfully');
+    } catch {
+      alert('Failed to save operating hours');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h3 className="text-sm font-semibold text-gray-900 mb-1">Operating Hours</h3>
+      <p className="text-xs text-gray-500 mb-6">Set your business opening days and hours. Closed days will block customer bookings.</p>
+
+      <div className="space-y-3">
+        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
+          const hours = hoursForm[day] || { open: '09:00', close: '18:00', closed: day === 'saturday' || day === 'sunday' };
+          return (
+            <div key={day} className="flex items-center gap-4 py-2">
+              <span className="w-24 text-sm font-medium text-gray-700 capitalize">{day}</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!hours.closed}
+                  onChange={e => setHoursForm(prev => ({
+                    ...prev,
+                    [day]: { ...hours, closed: !e.target.checked }
+                  }))}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-xs text-gray-500">{hours.closed ? 'Closed' : 'Open'}</span>
+              </label>
+              {!hours.closed && (
+                <>
+                  <input
+                    type="time"
+                    value={hours.open}
+                    onChange={e => setHoursForm(prev => ({
+                      ...prev,
+                      [day]: { ...hours, open: e.target.value }
+                    }))}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs text-gray-400">to</span>
+                  <input
+                    type="time"
+                    value={hours.close}
+                    onChange={e => setHoursForm(prev => ({
+                      ...prev,
+                      [day]: { ...hours, close: e.target.value }
+                    }))}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3 mt-6 pt-4 border-t border-gray-100">
+        <button
+          onClick={saveOperatingHours}
+          disabled={saving}
+          className="px-6 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving...' : 'Save Hours'}
+        </button>
+        {hoursSaved && <span className="text-xs text-emerald-600">Saved</span>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Holidays & Closures Tab ──────────────────────────────────────────────────
 
 interface Closure {
@@ -1602,6 +1683,12 @@ function SettingsContent() {
                   .catch(() => {/* ignore */});
               }
             }}
+          />
+        )}
+        {activeTab === 'hours' && (
+          <OperatingHoursTab
+            merchant={merchant}
+            onSaved={(msg) => showToast(msg)}
           />
         )}
         {activeTab === 'cancellation' && (
