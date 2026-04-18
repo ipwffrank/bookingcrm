@@ -958,7 +958,7 @@ bookingsRouter.get("/:slug/next-available", async (c) => {
         return c.json({
           found: true,
           date: dateStr,
-          firstSlot: slots[0].startTime,
+          firstSlot: slots[0].start_time,
           slotsCount: slots.length,
         });
       }
