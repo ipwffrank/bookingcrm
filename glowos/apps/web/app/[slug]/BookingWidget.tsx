@@ -237,6 +237,10 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
 
+  // Next available date suggestion
+  const [nextAvailable, setNextAvailable] = useState<{ date: string; firstSlot: string; slotsCount: number } | null>(null);
+  const [nextAvailableLoading, setNextAvailableLoading] = useState(false);
+
   // Closures
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
 
@@ -413,12 +417,30 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     setSlotsLoading(true);
     setSlotsError('');
     setSlots([]);
+    setNextAvailable(null);
     try {
       const dateStr = toDateStr(selectedDate);
       const params = new URLSearchParams({ service_id: selectedService.id, date: dateStr });
       if (selectedStaff.id !== 'any') params.append('staff_id', selectedStaff.id);
       const res = await apiFetch(`/booking/${slug}/availability?${params.toString()}`);
       setSlots((res.slots as TimeSlot[]) || []);
+
+      // If no slots found and a specific staff is selected, find next available
+      if ((res.slots ?? []).length === 0 && selectedStaff && selectedStaff.id !== 'any' && selectedDate) {
+        setNextAvailableLoading(true);
+        setNextAvailable(null);
+        try {
+          const nextParams = new URLSearchParams({ service_id: selectedService.id, after: dateStr });
+          nextParams.append('staff_id', selectedStaff.id);
+          const nextData = await apiFetch(`/booking/${slug}/next-available?${nextParams.toString()}`);
+          if (nextData.found) {
+            setNextAvailable({ date: nextData.date, firstSlot: nextData.firstSlot, slotsCount: nextData.slotsCount });
+          }
+        } catch { /* silent */ }
+        finally { setNextAvailableLoading(false); }
+      } else {
+        setNextAvailable(null);
+      }
     } catch (err) {
       setSlotsError(err instanceof Error ? err.message : 'Failed to load availability');
     } finally {
@@ -788,6 +810,39 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                       <div className="text-2xl mb-2">😔</div>
                       No availability on {formatDateFull(selectedDate)}.<br />
                       <span className="text-gray-400">Please try another day.</span>
+
+                      {/* Next available suggestion */}
+                      {nextAvailableLoading && (
+                        <div className="mt-4 text-xs text-gray-400 animate-pulse">
+                          Searching for next available slot...
+                        </div>
+                      )}
+                      {nextAvailable && !nextAvailableLoading && (
+                        <div className="mt-4 bg-white border border-indigo-200 rounded-xl px-4 py-3">
+                          <p className="text-xs text-indigo-600 font-semibold mb-1">Next available with {selectedStaff?.name}</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {new Date(nextAvailable.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {nextAvailable.slotsCount} slot{nextAvailable.slotsCount > 1 ? 's' : ''} available · First at {nextAvailable.firstSlot}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const jumpDate = new Date(nextAvailable.date + 'T00:00:00');
+                              setSelectedDate(jumpDate);
+                            }}
+                            className="mt-2 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                          >
+                            Jump to {new Date(nextAvailable.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </button>
+                        </div>
+                      )}
+                      {!nextAvailable && !nextAvailableLoading && selectedStaff && selectedStaff.id !== 'any' && (
+                        <div className="mt-3 text-xs text-gray-400">
+                          No availability with {selectedStaff.name} in the next 30 days.
+                        </div>
+                      )}
                     </div>
                   )}
                   {!slotsLoading && slots.length > 0 && (
