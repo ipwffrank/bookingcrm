@@ -35,8 +35,33 @@ interface TimeRange {
  * constructing an invalid ISO string like "T09:00:00:00" which makes parseISO
  * return Invalid Date and causes generateTimeSlots to loop forever.
  */
-function combineDateAndTime(dateStr: string, timeStr: string): Date {
+function combineDateAndTime(dateStr: string, timeStr: string, timezone?: string): Date {
   const [hh, mm] = timeStr.split(":");
+  if (timezone) {
+    // Staff hours are in the merchant's local timezone (e.g., 09:00 SGT).
+    // We need to find the UTC equivalent of "dateStr at hh:mm in timezone".
+    //
+    // Strategy: create a UTC Date at hh:mm, check what Intl says that is in
+    // the target timezone, then compute the offset and adjust.
+    const utcGuess = new Date(Date.UTC(
+      parseInt(dateStr.slice(0, 4)),
+      parseInt(dateStr.slice(5, 7)) - 1,
+      parseInt(dateStr.slice(8, 10)),
+      parseInt(hh),
+      parseInt(mm)
+    ));
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: false,
+    }).formatToParts(utcGuess);
+    const localHour = parseInt(parts.find(p => p.type === "hour")?.value ?? "0");
+    const localMin = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
+    // offset = how far the timezone is from UTC, in minutes
+    let offsetMin = (localHour * 60 + localMin) - (parseInt(hh) * 60 + parseInt(mm));
+    if (offsetMin > 12 * 60) offsetMin -= 24 * 60;
+    if (offsetMin < -12 * 60) offsetMin += 24 * 60;
+    // To get hh:mm in local tz, subtract offset from UTC guess
+    return new Date(utcGuess.getTime() - offsetMin * 60 * 1000);
+  }
   return parseISO(`${dateStr}T${hh}:${mm}:00`);
 }
 
@@ -147,7 +172,7 @@ export async function getAvailability(params: {
 
   // 2. Load merchant by slug
   const [merchant] = await db
-    .select({ id: merchants.id, operatingHours: merchants.operatingHours })
+    .select({ id: merchants.id, operatingHours: merchants.operatingHours, timezone: merchants.timezone })
     .from(merchants)
     .where(eq(merchants.slug, merchantSlug))
     .limit(1);
@@ -192,8 +217,8 @@ export async function getAvailability(params: {
   const closureRanges: TimeRange[] = closures
     .filter((cl) => !cl.isFullDay && cl.startTime && cl.endTime)
     .map((cl) => ({
-      start: combineDateAndTime(date, cl.startTime!),
-      end: combineDateAndTime(date, cl.endTime!),
+      start: combineDateAndTime(date, cl.startTime!, merchant.timezone),
+      end: combineDateAndTime(date, cl.endTime!, merchant.timezone),
     }));
 
   // 3. Load service (duration + buffer = total slot duration)
@@ -248,12 +273,15 @@ export async function getAvailability(params: {
   if (staffList.length === 0) return [];
 
   // 5. Determine day of week for this date (0=Sunday, 6=Saturday)
-  const parsedDate = parseISO(date);
-  const dayOfWeek = getDay(parsedDate);
+  // Parse as local date (not UTC) to get correct day-of-week
+  const [yr, mo, dy] = date.split("-").map(Number);
+  const parsedDate = new Date(yr, mo - 1, dy);
+  const dayOfWeek = parsedDate.getDay();
 
   // 6. Load existing bookings and active leases for the date range
-  const dayStart = startOfDay(parsedDate);
-  const dayEnd = endOfDay(parsedDate);
+  // Use timezone-aware day boundaries so we query the correct UTC range
+  const dayStart = combineDateAndTime(date, "00:00", merchant.timezone);
+  const dayEnd = combineDateAndTime(date, "23:59", merchant.timezone);
   const staffIds = staffList.map((s) => s.id);
 
   const existingBookingsRaw = await db
@@ -291,8 +319,8 @@ export async function getAvailability(params: {
 
     if (!hours || !hours.isWorking) continue;
 
-    const workStart = combineDateAndTime(date, hours.startTime);
-    const workEnd = combineDateAndTime(date, hours.endTime);
+    const workStart = combineDateAndTime(date, hours.startTime, merchant.timezone);
+    const workEnd = combineDateAndTime(date, hours.endTime, merchant.timezone);
 
     const memberBookings = existingBookingsRaw
       .filter((b) => b.staffId === member.id)
