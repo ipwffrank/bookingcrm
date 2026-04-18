@@ -55,6 +55,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const NAV = [
     { href: '/staff/bookings', label: 'All Bookings' },
     { href: '/staff/my-bookings', label: 'My Bookings' },
+    { href: '/staff/clients', label: 'Clients' },
   ];
 
   const sidebarContent = (
