@@ -3,6 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
+import FullCalendar from '@fullcalendar/react';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import type { EventInput, DatesSetArg, EventClickArg } from '@fullcalendar/core';
 
 // ─── Grid constants (static) ───────────────────────────────────────────────────
 const DAY_START_H = 7;
@@ -90,6 +95,7 @@ export default function CalendarPage() {
   const [bookings,   setBookings]   = useState<Booking[]>([]);
   const [loading,    setLoading]    = useState(false);
   const [density,    setDensity]    = useState<'compact' | 'comfortable'>('comfortable');
+  const [viewMode,   setViewMode]   = useState<'day' | 'week' | 'month'>('day');
   const [closureTitle, setClosureTitle] = useState<string | null>(null);
 
   // Modals
@@ -537,6 +543,52 @@ export default function CalendarPage() {
   const dateLabel = date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const viz = dragVizR.current;
 
+  // ─── FullCalendar events builder ────────────────────────────────────────────
+  function buildCalendarEvents(): EventInput[] {
+    const fcEvents: EventInput[] = [];
+
+    // Bookings
+    bookings.forEach(b => {
+      const staffColor = b.staffId ? STAFF_COLORS[staffList.findIndex(s => s.id === b.staffId) % STAFF_COLORS.length] : '#64748b';
+      fcEvents.push({
+        id: `booking-${b.id}`,
+        title: `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
+        start: b.startTime,
+        end: b.endTime,
+        backgroundColor: staffColor,
+        borderColor: 'transparent',
+        extendedProps: { type: 'booking', booking: b },
+      });
+    });
+
+    // Duties
+    duties.forEach(d => {
+      fcEvents.push({
+        id: `duty-${d.id}`,
+        title: d.notes ?? 'Duty',
+        start: `${d.date}T${d.startTime}`,
+        end: `${d.date}T${d.endTime}`,
+        backgroundColor: '#1a2313',
+        borderColor: '#1a2313',
+        textColor: '#fff',
+        extendedProps: { type: 'duty', duty: d },
+      });
+    });
+
+    // Closures
+    if (closureTitle) {
+      fcEvents.push({
+        title: `\u{1F6AB} ${closureTitle}`,
+        start: dateStr,
+        allDay: true,
+        display: 'background',
+        backgroundColor: '#fef2f2',
+      });
+    }
+
+    return fcEvents;
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4 font-manrope" style={{ userSelect: 'none' }}>
@@ -663,6 +715,22 @@ export default function CalendarPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* View mode toggle */}
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            {(['month', 'week', 'day'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === mode
+                    ? 'bg-[#1a2313] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </button>
+            ))}
+          </div>
           {/* Density toggle */}
           <button
             onClick={() => setDensity(d => d === 'compact' ? 'comfortable' : 'compact')}
@@ -690,6 +758,8 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {viewMode === 'day' ? (
+      <>
       {/* ── Date navigation ── */}
       <div className="flex items-center gap-2">
         <button onClick={() => nav(-1)} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
@@ -1057,6 +1127,42 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+      </>
+      ) : (
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <style>{`
+          .fc { font-family: var(--font-body, 'Manrope', sans-serif); }
+          .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: #111827; }
+          .fc .fc-button { font-size: 13px; font-weight: 500; }
+          .fc .fc-col-header-cell-cushion { font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.025em; }
+          .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: #374151; }
+          .fc .fc-timegrid-slot { border-bottom-color: #d1d5db; }
+          .fc .fc-timegrid-slot-minor { border-top: 1px dashed #e5e7eb !important; }
+          .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #374151; }
+          .fc .fc-event { border-radius: 6px; }
+        `}</style>
+        <FullCalendar
+          key={viewMode}
+          plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
+          initialView={viewMode === 'week' ? 'timeGridWeek' : 'dayGridMonth'}
+          initialDate={date}
+          headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
+          events={buildCalendarEvents()}
+          height="auto"
+          slotMinTime="07:00:00"
+          slotMaxTime="22:00:00"
+          eventClick={(info: EventClickArg) => {
+            if (info.event.extendedProps.type === 'booking') {
+              const b = info.event.extendedProps.booking as Booking;
+              openBooking(b);
+            }
+          }}
+          datesSet={(info: DatesSetArg) => {
+            setDate(info.start);
+          }}
+        />
+      </div>
+      )}
 
       {/* ── Duty modal ── */}
       {showDutyModal && (
