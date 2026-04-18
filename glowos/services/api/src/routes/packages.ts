@@ -7,6 +7,8 @@ import {
   packageSessions,
   services,
   clients,
+  clientProfiles,
+  bookings,
   merchants,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
@@ -315,6 +317,182 @@ packagesRouter.put(
     return c.json({ success: true });
   }
 );
+
+// ─── Public: list packages for booking page ─────────────────────────────────
+
+// GET /booking/:slug/packages — list package templates for the booking page
+publicPackagesRouter.get("/:slug/packages", async (c) => {
+  const slug = c.req.param("slug")!;
+
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) return c.json({ packages: [] });
+
+  const pkgs = await db
+    .select()
+    .from(servicePackages)
+    .where(
+      and(
+        eq(servicePackages.merchantId, merchant.id),
+        eq(servicePackages.isActive, true)
+      )
+    )
+    .orderBy(servicePackages.createdAt);
+
+  return c.json({ packages: pkgs });
+});
+
+// POST /booking/:slug/use-package-session — book using a package session (no payment)
+publicPackagesRouter.post("/:slug/use-package-session", async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = await c.req.json<{
+    sessionId: string;
+    staffId: string;
+    startTime: string;
+    clientName: string;
+    clientPhone: string;
+    clientEmail?: string;
+  }>();
+
+  // Find merchant
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+  if (!merchant) return c.json({ error: "Not Found" }, 404);
+
+  // Load the package session
+  const [session] = await db
+    .select()
+    .from(packageSessions)
+    .where(eq(packageSessions.id, body.sessionId))
+    .limit(1);
+  if (!session || session.status !== "pending") {
+    return c.json(
+      { error: "Bad Request", message: "Session not available" },
+      400
+    );
+  }
+
+  // Load the service for duration
+  const [service] = await db
+    .select({
+      durationMinutes: services.durationMinutes,
+      bufferMinutes: services.bufferMinutes,
+      name: services.name,
+      priceSgd: services.priceSgd,
+    })
+    .from(services)
+    .where(eq(services.id, session.serviceId))
+    .limit(1);
+  if (!service)
+    return c.json({ error: "Not Found", message: "Service not found" }, 404);
+
+  // Find or create client
+  const conditions = [];
+  if (body.clientPhone)
+    conditions.push(eq(clients.phone, body.clientPhone));
+  if (body.clientEmail)
+    conditions.push(eq(clients.email, body.clientEmail));
+
+  let clientId: string;
+  if (conditions.length > 0) {
+    const [existing] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(or(...conditions))
+      .limit(1);
+    if (existing) {
+      clientId = existing.id;
+    } else {
+      const [created] = await db
+        .insert(clients)
+        .values({
+          phone: body.clientPhone,
+          name: body.clientName,
+          email: body.clientEmail || null,
+        })
+        .returning({ id: clients.id });
+      clientId = created.id;
+    }
+  } else {
+    const [created] = await db
+      .insert(clients)
+      .values({
+        phone: body.clientPhone,
+        name: body.clientName,
+      })
+      .returning({ id: clients.id });
+    clientId = created.id;
+  }
+
+  // Ensure client profile exists
+  const [existingProfile] = await db
+    .select({ id: clientProfiles.id })
+    .from(clientProfiles)
+    .where(
+      and(
+        eq(clientProfiles.merchantId, merchant.id),
+        eq(clientProfiles.clientId, clientId)
+      )
+    )
+    .limit(1);
+  if (!existingProfile) {
+    await db
+      .insert(clientProfiles)
+      .values({ merchantId: merchant.id, clientId });
+  }
+
+  // Create booking
+  const startTime = new Date(body.startTime);
+  const endTime = new Date(
+    startTime.getTime() +
+      (service.durationMinutes + service.bufferMinutes) * 60 * 1000
+  );
+
+  const [booking] = await db
+    .insert(bookings)
+    .values({
+      merchantId: merchant.id,
+      serviceId: session.serviceId,
+      staffId: body.staffId,
+      clientId,
+      startTime,
+      endTime,
+      durationMinutes: service.durationMinutes,
+      status: "confirmed",
+      priceSgd: "0", // paid via package
+      paymentMethod: "package",
+      paymentStatus: "completed",
+      bookingSource: "direct_widget",
+    })
+    .returning();
+
+  // Update package session — mark as booked, link booking
+  await db
+    .update(packageSessions)
+    .set({
+      status: "booked",
+      bookingId: booking.id,
+      staffId: body.staffId,
+    })
+    .where(eq(packageSessions.id, body.sessionId));
+
+  // Queue notifications
+  const { addJob } = await import("../lib/queue.js");
+  await addJob("notifications", "booking_confirmation", {
+    booking_id: booking.id,
+  });
+  const { scheduleReminder } = await import("../lib/scheduler.js");
+  await scheduleReminder(booking.id, startTime);
+
+  return c.json({ success: true, booking }, 201);
+});
 
 // ─── Public: check client packages for booking widget ────────────────────────
 
