@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 16 April 2026 (Session 8)**
+**Last updated: 17 April 2026 (Session 9)**
 
 ---
 
@@ -19,8 +19,95 @@
 - **Neon:** ep-quiet-hall-ambckxnr-pooler
 - **Upstash:** ultimate-chimp-84494
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
-- **Stripe:** NOT yet signed up
+- **Stripe:** ✅ Test mode configured (sk_test_..., webhook endpoint registered on platform account)
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 9 — 17 April 2026)
+
+### Stripe Payment Fixes
+
+#### Confirm page shows "Pay at appointment" even after paying online ✅
+- **Root cause:** BookingWidget hardcoded `booking_id=payment` and never passed `paid=true` to the confirm page.
+- **Fix:** `onSuccess` now passes the Stripe `paymentIntentId` as `ref=` param. Confirm page shows "Payment received" (green) for online payments, "Pay at your appointment" (indigo) for cash.
+
+#### GrabPay redirect loses booking state ✅
+- **Root cause:** `return_url` was `window.location.href` (the booking page). After GrabPay redirect, the booking wizard resets to step 1 — customer never sees confirmation.
+- **Fix:** `return_url` now points to the confirm page with all booking details baked in. Confirm page also reads Stripe's `redirect_status` and `payment_intent` params.
+
+#### PayNow "processing" status silently dropped ✅
+- **Root cause:** After QR scan, PaymentIntent may return `processing` (not `succeeded`). Code only handled `succeeded`, resetting the spinner with no feedback.
+- **Fix:** `processing` status now also triggers `onSuccess` redirect to confirm page.
+
+#### PayNow/GrabPay confirm page missing booking details ✅
+- **Root cause:** Redirect-based payment methods can lose custom URL query params.
+- **Fix:** Booking details stored in `sessionStorage` before payment. Confirm page (converted to client component) reads sessionStorage as fallback. Consistent display across card, PayNow, GrabPay, and cash.
+
+#### PayNow/GrabPay show no payment description ✅
+- **Root cause:** PaymentIntent had no `description`. PayNow QR code and GrabPay redirect showed blank context.
+- **Fix:** Added `description` ("Service at Merchant") and `statement_descriptor_suffix` to PaymentIntent.
+
+### Per-Client Card Isolation (Stripe Customer) ✅
+- Each client now gets a Stripe Customer object. Saved cards are scoped per-customer, not shared.
+- Google Sign-In users linked by `client_id`; guest checkouts create anonymous Stripe Customers.
+- Added `stripe_customer_id` column to `clients` table (DB migration applied).
+- Frontend passes `client_id`, `client_name`, `client_email`, `client_phone` to `create-payment-intent`.
+
+### Cancellation & Refund Workflow ✅
+
+#### Client cancel now triggers Stripe refund ✅
+- **Root cause:** `POST /booking/cancel/:token` only set `status=cancelled` — never called `processRefund()`. Client's money was silently kept.
+- **Fix:** Cancel endpoint now loads merchant cancellation policy, calculates refund type (full/partial/none based on hours until appointment), and calls `processRefund()` with the correct percentage.
+
+#### Partial refund uses merchant's configured percentage ✅
+- **Root cause:** `processRefund()` hardcoded 50% for partial refunds. Merchant could set 20% in settings, but the actual Stripe refund was always 50%.
+- **Fix:** `processRefund()` now accepts `refundPercentage` parameter. Uses merchant's `late_cancellation_refund_pct` setting.
+
+#### Cancel link token missing HMAC signature ✅
+- **Root cause:** Notification worker generated tokens as plain `base64url({ bookingId })` without HMAC. But `verifyBookingToken()` expects `{ bookingId, sig }`. Every cancel link showed "Invalid cancellation link".
+- **Fix:** Uses `generateBookingToken()` from jwt.ts which includes HMAC signature.
+
+### Client Self-Service Reschedule ✅
+- New `POST /booking/reschedule/:token` endpoint — moves booking to a new slot, keeps Stripe payment intact.
+- Cancel page (`/cancel/[token]`) now shows two options: "Reschedule Instead (Keep Payment)" and "Cancel & Get Refund".
+- Reschedule flow has full date/time picker with 5-minute slot lease, same as booking widget.
+- WhatsApp notification sent after reschedule with updated date/time.
+- Merchant also notified of the reschedule.
+
+### Webhook & Notification Fixes
+
+#### Stripe webhook not receiving events ✅
+- **Root cause:** Webhook endpoint was registered for "Connected and v2 accounts" events. With destination charges, `payment_intent.succeeded` fires on the platform account. Webhook was filtering it out.
+- **Fix:** Created new webhook endpoint listening to "Events on your account" with correct events (`payment_intent.succeeded`, `payment_intent.payment_failed`, `charge.refunded`, `account.updated`).
+
+#### WhatsApp/email not arriving after card payment ✅
+- **Root cause:** Booking created by `payment_intent.succeeded` webhook. Webhook got client phone from Stripe billing_details (often empty for card/PayNow/GrabPay). Client got placeholder phone `pi_xxx`, WhatsApp failed silently.
+- **Fix:** Client name/email/phone/id from booking form now included in PaymentIntent metadata. Webhook reads metadata first, falls back to billing_details.
+
+#### Reschedule WhatsApp notification ✅
+- Added `reschedule_confirmation` notification type to worker.
+- Client receives WhatsApp with updated date/time. Merchant also notified.
+
+### Copy & UX Fixes
+- Cancel link wording: "Need to cancel?" → "Reschedule or cancel?"
+- Refund timeline: "5–10 business days" → "3–5 business days" (matches Stripe and cancel page)
+
+### Commits (Session 9)
+| Hash | Description |
+|---|---|
+| `5f2485b` | fix: Stripe payment confirmation, GrabPay/PayNow support, per-client card isolation |
+| `9d69225` | fix: wire cancellation refund to Stripe, add client self-service reschedule |
+| `87674f1` | fix: pass client details in PaymentIntent metadata for webhook notifications |
+| `a495a59` | fix: cancel link token missing HMAC signature |
+| `0cc9a30` | fix: add payment description for PayNow/GrabPay visibility |
+| `ddeec93` | chore: change cancel link wording to "Reschedule or cancel" |
+| `f1399ab` | fix: align refund timeline to 3–5 business days |
+| `8a4e488` | fix: consistent confirm page across payment types, add reschedule notification |
+
+### Database Changes (Session 9)
+- Added `stripe_customer_id` (varchar 255, unique) to `clients` table
+- Migration: `0005_white_johnny_storm.sql`
 
 ---
 

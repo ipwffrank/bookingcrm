@@ -13,7 +13,7 @@
 5. [The Google Advantage — Singapore](#5-the-google-advantage--singapore)
 6. [Solution Overview](#6-solution-overview)
 7. [Product Architecture](#7-product-architecture)
-8. [Booking Workflow](#8-booking-workflow)
+8. [Booking Workflow](#8-booking-woerkflow)
 9. [Google Integration Strategy](#9-google-integration-strategy)
 10. [Payment & Transaction Model](#10-payment--transaction-model)
 11. [Cancellation & Refund Policy](#11-cancellation--refund-policy)
