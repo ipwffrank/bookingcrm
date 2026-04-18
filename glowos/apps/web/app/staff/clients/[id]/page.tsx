@@ -370,7 +370,28 @@ export default function StaffClientProfilePage() {
                         <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-green-400' : s.status === 'booked' ? 'bg-blue-400' : 'bg-gray-300'}`} />
                         <span className="text-gray-700">Session {s.sessionNumber}</span>
                       </div>
-                      <span className="text-gray-400 capitalize">{s.status}{s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 capitalize">{s.status}{s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}</span>
+                        {(s.status === 'pending' || s.status === 'booked') && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Mark Session ${s.sessionNumber} as completed?`)) return;
+                              try {
+                                await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
+                                  method: 'PUT', body: JSON.stringify({}),
+                                });
+                                if (data?.client?.id) {
+                                  const pd = await apiFetch(`/merchant/packages/client/${data.client.id}`) as any;
+                                  setClientPackagesData(pd.packages ?? []);
+                                }
+                              } catch { alert('Failed to update'); }
+                            }}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            Mark Done
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

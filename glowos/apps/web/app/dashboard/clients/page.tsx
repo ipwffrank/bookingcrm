@@ -143,6 +143,7 @@ function ClientDetailDrawer({
   const [newNoteContent, setNewNoteContent] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+  const [clientPkgs, setClientPkgs] = useState<any[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -158,6 +159,12 @@ function ClientDetailDrawer({
         const d = clientData as ClientDetail;
         setDetail(d);
         setTreatmentLog((notesData as { notes: NoteEntry[] }).notes ?? []);
+        // Fetch packages
+        if (d.client?.id) {
+          apiFetch(`/merchant/packages/client/${d.client.id}`)
+            .then((pd: any) => setClientPkgs(pd.packages ?? []))
+            .catch(() => {});
+        }
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -326,6 +333,68 @@ function ClientDetailDrawer({
                 </div>
               )}
             </div>
+
+            {/* Packages */}
+            {clientPkgs.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">Packages</h4>
+                <div className="space-y-3">
+                  {clientPkgs.map((pkg: any) => (
+                    <div key={pkg.id} className="border border-gray-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-gray-900">{pkg.packageName}</span>
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                          pkg.status === 'active' ? 'bg-green-50 text-green-700' :
+                          pkg.status === 'completed' ? 'bg-gray-100 text-gray-500' :
+                          'bg-red-50 text-red-600'
+                        }`}>{pkg.status}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${(pkg.sessionsUsed / pkg.sessionsTotal) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-medium text-gray-500">{pkg.sessionsUsed}/{pkg.sessionsTotal}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {pkg.sessions?.map((s: any) => (
+                          <div key={s.id} className="flex items-center justify-between text-xs py-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-green-400' : s.status === 'booked' ? 'bg-blue-400' : 'bg-gray-300'}`} />
+                              <span className="text-gray-700">Session {s.sessionNumber}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400 capitalize">{s.status}</span>
+                              {s.status === 'pending' || s.status === 'booked' ? (
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`Mark Session ${s.sessionNumber} as completed?`)) return;
+                                    try {
+                                      await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
+                                        method: 'PUT',
+                                        body: JSON.stringify({}),
+                                      });
+                                      // Refresh packages
+                                      if (detail?.client?.id) {
+                                        const pd = await apiFetch(`/merchant/packages/client/${detail.client.id}`) as any;
+                                        setClientPkgs(pd.packages ?? []);
+                                      }
+                                    } catch { alert('Failed to update session'); }
+                                  }}
+                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+                                >
+                                  Mark Done
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">Expires {new Date(pkg.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
