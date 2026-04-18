@@ -925,6 +925,52 @@ bookingsRouter.get("/:slug/availability", async (c) => {
   }
 });
 
+// ─── GET /booking/:slug/next-available ────────────────────────────────────────
+// Find the next date with available slots for a given service + staff
+
+bookingsRouter.get("/:slug/next-available", async (c) => {
+  const slug = c.req.param("slug")!;
+  const serviceId = c.req.query("service_id");
+  const staffId = c.req.query("staff_id");
+  const afterDate = c.req.query("after"); // YYYY-MM-DD
+
+  if (!serviceId || !afterDate) {
+    return c.json({ error: "Bad Request", message: "service_id and after are required" }, 400);
+  }
+
+  // Search up to 30 days forward
+  const maxDays = 30;
+  const startDate = new Date(afterDate + "T00:00:00");
+
+  for (let i = 1; i <= maxDays; i++) {
+    const checkDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+    const dateStr = checkDate.toISOString().slice(0, 10);
+
+    try {
+      const slots = await getAvailability({
+        merchantSlug: slug,
+        serviceId,
+        staffId: staffId || "any",
+        date: dateStr,
+      });
+
+      if (slots.length > 0) {
+        return c.json({
+          found: true,
+          date: dateStr,
+          firstSlot: slots[0].startTime,
+          slotsCount: slots.length,
+        });
+      }
+    } catch {
+      // Skip dates that error (e.g. invalid)
+      continue;
+    }
+  }
+
+  return c.json({ found: false, message: "No availability in the next 30 days" });
+});
+
 // ─── Public: POST /booking/:slug/lease ────────────────────────────────────────
 
 bookingsRouter.post("/:slug/lease", zValidator(leaseSchema), async (c) => {
