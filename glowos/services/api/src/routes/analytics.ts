@@ -477,4 +477,78 @@ analyticsRouter.get("/revenue-by-dow", requireMerchant, async (c) => {
   });
 });
 
+// ─── GET /merchant/analytics/review-distribution ──────────────────────────────
+
+analyticsRouter.get("/review-distribution", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const rows = await db
+    .select({
+      rating: reviews.rating,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.merchantId, merchantId),
+        gte(reviews.createdAt, start),
+        lte(reviews.createdAt, end)
+      )
+    )
+    .groupBy(reviews.rating)
+    .orderBy(sql`${reviews.rating} desc`);
+
+  const total = rows.reduce((sum, r) => sum + Number(r.count), 0);
+
+  const distribution = [5, 4, 3, 2, 1].map(rating => {
+    const row = rows.find(r => r.rating === rating);
+    const count = row ? Number(row.count) : 0;
+    return {
+      rating,
+      count,
+      percentage: total > 0 ? parseFloat(((count / total) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  return c.json({ period: periodParam, distribution });
+});
+
+// ─── GET /merchant/analytics/review-trend ─────────────────────────────────────
+
+analyticsRouter.get("/review-trend", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const rows = await db
+    .select({
+      week: sql<string>`to_char(date_trunc('week', ${reviews.createdAt}), 'YYYY-MM-DD')`,
+      avgRating: sql<number>`avg(cast(${reviews.rating} as numeric))`,
+      count: sql<number>`cast(count(*) as int)`,
+    })
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.merchantId, merchantId),
+        gte(reviews.createdAt, start),
+        lte(reviews.createdAt, end)
+      )
+    )
+    .groupBy(sql`date_trunc('week', ${reviews.createdAt})`)
+    .orderBy(sql`date_trunc('week', ${reviews.createdAt}) asc`);
+
+  return c.json({
+    period: periodParam,
+    trend: rows.map(r => ({
+      week: r.week,
+      avgRating: parseFloat(Number(r.avgRating).toFixed(1)),
+      count: Number(r.count),
+    })),
+  });
+});
+
 export { analyticsRouter };

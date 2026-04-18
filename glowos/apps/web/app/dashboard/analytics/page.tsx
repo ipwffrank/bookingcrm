@@ -94,6 +94,12 @@ interface ClientRetentionData {
 interface RevByDowRow { dow: number; label: string; revenue: number; count: number; }
 interface RevByDowData { period: string; revenue_by_dow: RevByDowRow[]; }
 
+interface ReviewDistributionRow { rating: number; count: number; percentage: number; }
+interface ReviewDistributionData { period: string; distribution: ReviewDistributionRow[]; }
+
+interface ReviewTrendRow { week: string; avgRating: number; count: number; }
+interface ReviewTrendData { period: string; trend: ReviewTrendRow[]; }
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(amount: number): string {
@@ -719,6 +725,137 @@ function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loadi
   );
 }
 
+// ─── Rating Distribution ──────────────────────────────────────────────────────
+
+function RatingDistribution({ data }: { data: ReviewDistributionData | null }) {
+  if (!data || data.distribution.every(d => d.count === 0)) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Rating Distribution</h3>
+        <p className="text-xs text-gray-400">No reviews in this period.</p>
+      </div>
+    );
+  }
+
+  const total = data.distribution.reduce((sum, d) => sum + d.count, 0);
+  const avg = total > 0
+    ? data.distribution.reduce((sum, d) => sum + d.rating * d.count, 0) / total
+    : 0;
+
+  function barColor(rating: number): string {
+    if (rating >= 4) return 'bg-[#c4a778]';
+    if (rating === 3) return 'bg-amber-400';
+    return 'bg-red-400';
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h3 className="text-sm font-semibold text-gray-900 mb-4">Rating Distribution</h3>
+      <div className="space-y-2">
+        {data.distribution.map(d => (
+          <div key={d.rating} className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 w-7 text-right">{d.rating} ★</span>
+            <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
+              <div
+                className={`h-full ${barColor(d.rating)} rounded`}
+                style={{ width: `${d.percentage}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-500 w-16">{d.count} ({d.percentage}%)</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between mt-3 pt-3 border-t border-gray-100">
+        <span className="text-xs text-gray-400">{total} reviews</span>
+        <span className="text-sm font-semibold text-[#c4a778]">★ {avg.toFixed(1)} avg</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rating Trend ─────────────────────────────────────────────────────────────
+
+function RatingTrend({ data }: { data: ReviewTrendData | null }) {
+  if (!data || data.trend.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Average Rating Over Time</h3>
+        <p className="text-xs text-gray-400">No reviews in this period.</p>
+      </div>
+    );
+  }
+
+  const maxRating = 5;
+  const minRating = 1;
+  const range = maxRating - minRating;
+  const points = data.trend;
+  const chartWidth = 400;
+  const chartHeight = 140;
+  const padding = 10;
+
+  const xStep = points.length > 1 ? (chartWidth - 2 * padding) / (points.length - 1) : 0;
+
+  const polyline = points
+    .map((p, i) => {
+      const x = padding + i * xStep;
+      const y = chartHeight - padding - ((p.avgRating - minRating) / range) * (chartHeight - 2 * padding);
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  function formatWeek(weekStr: string): string {
+    const d = new Date(weekStr + 'T00:00:00');
+    return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <h3 className="text-sm font-semibold text-gray-900 mb-4">Average Rating Over Time</h3>
+      <div className="relative" style={{ height: chartHeight + 30 }}>
+        {[5, 4, 3, 2, 1].map(val => {
+          const y = chartHeight - padding - ((val - minRating) / range) * (chartHeight - 2 * padding);
+          return (
+            <span key={val} className="absolute text-[10px] text-gray-400" style={{ left: 0, top: y - 6 }}>
+              {val}.0
+            </span>
+          );
+        })}
+
+        <svg
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          className="w-full"
+          style={{ height: chartHeight, marginLeft: 28 }}
+          preserveAspectRatio="none"
+        >
+          {[5, 4, 3, 2, 1].map(val => {
+            const y = chartHeight - padding - ((val - minRating) / range) * (chartHeight - 2 * padding);
+            return <line key={val} x1={0} y1={y} x2={chartWidth} y2={y} stroke="#f3f4f6" strokeWidth={1} />;
+          })}
+          <polyline
+            fill="none"
+            stroke="#c4a778"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={polyline}
+          />
+          {points.map((p, i) => {
+            const x = padding + i * xStep;
+            const y = chartHeight - padding - ((p.avgRating - minRating) / range) * (chartHeight - 2 * padding);
+            return <circle key={i} cx={x} cy={y} r={3.5} fill="#c4a778" />;
+          })}
+        </svg>
+
+        <div className="flex justify-between" style={{ marginLeft: 28, marginTop: 4 }}>
+          {points.map((p, i) => (
+            <span key={i} className="text-[10px] text-gray-400">{formatWeek(p.week)}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Period Selector ───────────────────────────────────────────────────────────
 
 function PeriodSelector({
@@ -768,6 +905,8 @@ export default function AnalyticsPage() {
   const [peakData, setPeakData]                 = useState<PeakHoursData | null>(null);
   const [retentionData, setRetentionData]       = useState<ClientRetentionData | null>(null);
   const [revDowData, setRevDowData]             = useState<RevByDowData | null>(null);
+  const [reviewDistribution, setReviewDistribution] = useState<ReviewDistributionData | null>(null);
+  const [reviewTrend, setReviewTrend]           = useState<ReviewTrendData | null>(null);
 
   const [loadingSummary, setLoadingSummary]     = useState(true);
   const [loadingRevenue, setLoadingRevenue]     = useState(true);
@@ -874,6 +1013,20 @@ export default function AnalyticsPage() {
           setRevDowData(data);
         } catch (e) { handleError(e); } finally { setLoadingRevDow(false); }
       })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/review-distribution?period=${p}`, { headers }) as ReviewDistributionData;
+          setReviewDistribution(data);
+        } catch (e) { handleError(e); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/review-trend?period=${p}`, { headers }) as ReviewTrendData;
+          setReviewTrend(data);
+        } catch (e) { handleError(e); }
+      })();
     },
     [router]
   );
@@ -951,6 +1104,12 @@ export default function AnalyticsPage() {
       {/* Peak Hours Heatmap */}
       <div className="mb-6">
         <PeakHoursHeatmap data={peakData} loading={loadingPeak} />
+      </div>
+
+      {/* Rating Distribution + Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <RatingDistribution data={reviewDistribution} />
+        <RatingTrend data={reviewTrend} />
       </div>
     </>
   );
