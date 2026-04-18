@@ -50,6 +50,13 @@
       "when": 1776496602527,
       "tag": "0006_third_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1776504469249,
+      "tag": "0007_late_molten_man",
+      "breakpoints": true
     }
   ]
 }

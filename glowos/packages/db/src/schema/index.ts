@@ -13,3 +13,4 @@ export * from "./consult.js";
 export * from "./post-service.js";
 export * from "./staff-duties.js";
 export * from "./closures.js";
+export * from "./client-notes.js";

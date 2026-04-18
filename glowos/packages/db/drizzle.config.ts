@@ -21,6 +21,7 @@ export default {
     "./src/schema/post-service.ts",
     "./src/schema/staff-duties.ts",
     "./src/schema/closures.ts",
+    "./src/schema/client-notes.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
