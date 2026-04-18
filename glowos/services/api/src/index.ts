@@ -20,6 +20,7 @@ import { staffAuthRouter } from "./routes/staff-auth.js";
 import { staffPortalRouter } from "./routes/staff-portal.js";
 import { customerAuthRouter } from "./routes/customer-auth.js";
 import { closuresRouter, publicClosuresRouter } from "./routes/closures.js";
+import { publicReviewRouter, merchantReviewRouter } from "./routes/reviews.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -73,6 +74,8 @@ app.route("/staff", staffPortalRouter);
 app.route("/customer-auth", customerAuthRouter);
 app.route("/merchant/closures", closuresRouter);
 app.route("/booking", publicClosuresRouter);
+app.route("/review", publicReviewRouter);
+app.route("/merchant/reviews", merchantReviewRouter);
 
 // Health check
 app.get("/health", (c) => {
