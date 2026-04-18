@@ -123,10 +123,11 @@ export default function ClientProfilePage() {
   const [data,       setData]       = useState<ClientDetailData | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
-  const [notes,      setNotes]      = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [notesSaved,  setNotesSaved]  = useState(false);
   const [clientReviews, setClientReviews] = useState<ClientReview[]>([]);
+  const [treatmentLog, setTreatmentLog] = useState<Array<{ id: string; staffName: string | null; content: string; createdAt: string }>>([]);
+  const [showAddNote, setShowAddNote] = useState(false);
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -136,13 +137,20 @@ export default function ClientProfilePage() {
       .then((d: unknown) => {
         const detail = d as ClientDetailData;
         setData(detail);
-        setNotes(detail.profile.notes ?? '');
       })
       .catch(err => {
         if (err instanceof ApiError && err.status === 401) router.push('/login');
         else setError(err instanceof Error ? err.message : 'Failed to load client');
       })
       .finally(() => setLoading(false));
+
+    // Fetch treatment log
+    apiFetch(`/merchant/clients/${profileId}/notes`)
+      .then((d: unknown) => {
+        const result = d as { notes: Array<{ id: string; staffName: string | null; content: string; createdAt: string }> };
+        setTreatmentLog(result.notes);
+      })
+      .catch(() => {});
 
     // Fetch client reviews
     apiFetch(`/merchant/reviews?clientId=${profileId}&period=all&limit=10`)
@@ -153,19 +161,22 @@ export default function ClientProfilePage() {
       .catch(() => {});
   }, [profileId, router]);
 
-  async function saveNotes() {
-    setSavingNotes(true);
-    setNotesSaved(false);
+  async function handleAddNote() {
+    if (!newNoteContent.trim()) return;
+    setAddingNote(true);
     try {
-      await apiFetch(`/merchant/clients/${profileId}/notes`, {
-        method: 'PUT',
-        body: JSON.stringify({ notes }),
-      });
-      setData(d => d ? { ...d, profile: { ...d.profile, notes } } : d);
-      setNotesSaved(true);
-      setTimeout(() => setNotesSaved(false), 2000);
-    } catch { /* silent */ }
-    finally { setSavingNotes(false); }
+      const result = await apiFetch(`/merchant/clients/${profileId}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ content: newNoteContent.trim() }),
+      }) as { note: { id: string; staffName: string | null; content: string; createdAt: string } };
+      setTreatmentLog(prev => [result.note, ...prev]);
+      setNewNoteContent('');
+      setShowAddNote(false);
+    } catch {
+      alert('Failed to save note');
+    } finally {
+      setAddingNote(false);
+    }
   }
 
   if (loading) {
@@ -310,46 +321,77 @@ export default function ClientProfilePage() {
         )}
       </div>
 
-      {/* ── Staff Notes ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-gray-900">Staff Notes</h2>
+      {/* ── Treatment Log ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-900">Treatment Log</h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+          >
+            + Add Entry
+          </button>
+        </div>
 
-        {/* Saved notes display — always visible if notes exist */}
-        {notes.trim() ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-            <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">{notes}</p>
-          </div>
-        ) : (
-          <div className="bg-gray-50 rounded-lg px-4 py-3">
-            <p className="text-xs text-gray-400 italic">No notes yet — add notes below.</p>
-          </div>
-        )}
-
-        {/* Edit / Add notes */}
-        <details className="group">
-          <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors select-none">
-            {notes.trim() ? 'Edit notes' : 'Add notes'}
-          </summary>
-          <div className="mt-2 space-y-2">
+        {/* Add note form */}
+        {showAddNote && (
+          <div className="mb-4 space-y-2">
             <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={4}
-              placeholder="Add private notes about this client (allergies, preferences, special requests…)"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 resize-none"
+              value={newNoteContent}
+              onChange={e => setNewNoteContent(e.target.value)}
+              rows={3}
+              placeholder="Treatment details, client preferences, observations..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 resize-none"
+              autoFocus
             />
-            <div className="flex items-center justify-between">
-              <span className={`text-xs transition-opacity ${notesSaved ? 'text-emerald-600 opacity-100' : 'opacity-0'}`}>Saved</span>
+            <div className="flex gap-2">
               <button
-                onClick={saveNotes}
-                disabled={savingNotes}
-                className="px-4 py-1.5 bg-[#1a2313] text-white text-xs font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors"
+                onClick={handleAddNote}
+                disabled={!newNoteContent.trim() || addingNote}
+                className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
-                {savingNotes ? 'Saving…' : 'Save Notes'}
+                {addingNote ? 'Saving...' : 'Save Entry'}
+              </button>
+              <button
+                onClick={() => { setShowAddNote(false); setNewNoteContent(''); }}
+                className="px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
               </button>
             </div>
           </div>
-        </details>
+        )}
+
+        {/* Legacy notes from old system */}
+        {data?.profile.notes?.trim() && treatmentLog.length === 0 && !showAddNote && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <p className="text-[10px] text-amber-600 font-medium uppercase tracking-wide mb-1">Legacy Notes</p>
+            <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">{data.profile.notes}</p>
+          </div>
+        )}
+
+        {/* Log entries */}
+        {treatmentLog.length === 0 && !data?.profile.notes?.trim() ? (
+          <p className="text-xs text-gray-400 italic">No entries yet. Add the first treatment note above.</p>
+        ) : (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {treatmentLog.map(entry => (
+              <div key={entry.id} className="border-l-2 border-indigo-200 pl-3 py-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-700">{entry.staffName || 'Admin'}</span>
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(entry.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' '}
+                      {new Date(entry.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Reviews ── */}

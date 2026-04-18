@@ -122,7 +122,14 @@ function ChurnBadge({ risk }: { risk: ChurnRisk | null }) {
 
 // ─── Client Detail Drawer ──────────────────────────────────────────────────────
 
-function ClientDetail({
+interface NoteEntry {
+  id: string;
+  staffName: string | null;
+  content: string;
+  createdAt: string;
+}
+
+function ClientDetailDrawer({
   profileId,
   onClose,
 }: {
@@ -132,23 +139,27 @@ function ClientDetail({
   const router = useRouter();
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notesValue, setNotesValue] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [notesSaved, setNotesSaved] = useState(false);
+  const [treatmentLog, setTreatmentLog] = useState<NoteEntry[]>([]);
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
+  const [showAddNote, setShowAddNote] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
-    apiFetch(`/merchant/clients/${profileId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((data: unknown) => {
-        const d = data as ClientDetail;
+
+    Promise.all([
+      apiFetch(`/merchant/clients/${profileId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      apiFetch(`/merchant/clients/${profileId}/notes`).catch(() => ({ notes: [] })),
+    ])
+      .then(([clientData, notesData]) => {
+        const d = clientData as ClientDetail;
         setDetail(d);
-        setNotesValue(d.profile.notes ?? '');
+        setTreatmentLog((notesData as { notes: NoteEntry[] }).notes ?? []);
       })
       .catch((err) => {
-        const msg = err instanceof Error ? err.message : '';
         if (err instanceof ApiError && err.status === 401) {
           router.push('/login');
         }
@@ -156,22 +167,21 @@ function ClientDetail({
       .finally(() => setLoading(false));
   }, [profileId, router]);
 
-  async function handleSaveNotes() {
-    setSaving(true);
+  async function handleAddNote() {
+    if (!newNoteContent.trim()) return;
+    setAddingNote(true);
     try {
-      await apiFetch(`/merchant/clients/${profileId}/notes`, {
-        method: 'PUT',
-        body: JSON.stringify({ notes: notesValue }),
-      });
-      if (detail) {
-        setDetail({ ...detail, profile: { ...detail.profile, notes: notesValue } });
-      }
-      setNotesSaved(true);
-      setTimeout(() => setNotesSaved(false), 2000);
+      const result = await apiFetch(`/merchant/clients/${profileId}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ content: newNoteContent.trim() }),
+      }) as { note: NoteEntry };
+      setTreatmentLog(prev => [result.note, ...prev]);
+      setNewNoteContent('');
+      setShowAddNote(false);
     } catch {
-      alert('Failed to save notes');
+      alert('Failed to save note');
     } finally {
-      setSaving(false);
+      setAddingNote(false);
     }
   }
 
@@ -255,46 +265,66 @@ function ClientDetail({
               )}
             </div>
 
-            {/* Notes */}
+            {/* Treatment Log */}
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold text-gray-900">Notes</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-900">Treatment Log</h4>
+                <button
+                  onClick={() => setShowAddNote(true)}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                >
+                  + Add Entry
+                </button>
+              </div>
 
-              {/* Saved notes display */}
-              {notesValue.trim() ? (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                  <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">{notesValue}</p>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-lg px-3 py-2.5">
-                  <p className="text-xs text-gray-400 italic">No notes yet</p>
+              {/* Add note form */}
+              {showAddNote && (
+                <div className="space-y-2">
+                  <textarea
+                    value={newNoteContent}
+                    onChange={e => setNewNoteContent(e.target.value)}
+                    rows={3}
+                    placeholder="Treatment details, client preferences, observations..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 resize-none"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAddNote}
+                      disabled={!newNoteContent.trim() || addingNote}
+                      className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                    >
+                      {addingNote ? 'Saving...' : 'Save Entry'}
+                    </button>
+                    <button
+                      onClick={() => { setShowAddNote(false); setNewNoteContent(''); }}
+                      className="px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Edit / Add */}
-              <details className="group">
-                <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors select-none">
-                  {notesValue.trim() ? 'Edit notes' : 'Add notes'}
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    value={notesValue}
-                    onChange={(e) => setNotesValue(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                    placeholder="Add notes about this client..."
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleSaveNotes}
-                      disabled={saving}
-                      className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-                    >
-                      {saving ? 'Saving...' : 'Save Notes'}
-                    </button>
-                    {notesSaved && <span className="text-xs text-emerald-600">Saved</span>}
-                  </div>
+              {treatmentLog.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No entries yet.</p>
+              ) : (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {treatmentLog.map(entry => (
+                    <div key={entry.id} className="border-l-2 border-indigo-200 pl-3 py-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-700">{entry.staffName || 'Admin'}</span>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(entry.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {' '}
+                          {new Date(entry.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+                    </div>
+                  ))}
                 </div>
-              </details>
+              )}
             </div>
           </div>
         )}
@@ -536,7 +566,7 @@ export default function ClientsPage() {
       )}
 
       {selectedProfileId && (
-        <ClientDetail
+        <ClientDetailDrawer
           profileId={selectedProfileId}
           onClose={() => setSelectedProfileId(null)}
         />
