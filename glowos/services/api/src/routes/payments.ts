@@ -24,6 +24,7 @@ const createPaymentIntentSchema = z.object({
   client_email: z.string().email().optional(),
   client_phone: z.string().optional(),
   client_id: z.string().uuid().optional(),
+  is_first_timer: z.boolean().optional(),
   booking_source: z
     .enum([
       "google_reserve",
@@ -321,9 +322,16 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     );
   }
 
-  // 3. Load service for price
+  // 3. Load service for price + discount
   const [service] = await db
-    .select({ id: services.id, name: services.name, priceSgd: services.priceSgd })
+    .select({
+      id: services.id,
+      name: services.name,
+      priceSgd: services.priceSgd,
+      discountPct: services.discountPct,
+      firstTimerDiscountPct: services.firstTimerDiscountPct,
+      firstTimerDiscountEnabled: services.firstTimerDiscountEnabled,
+    })
     .from(services)
     .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchant.id)))
     .limit(1);
@@ -332,8 +340,22 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     return c.json({ error: "Not Found", message: "Service not found" }, 404);
   }
 
-  // 4. Calculate amounts
-  const priceSgd = parseFloat(String(service.priceSgd));
+  // 4. Calculate amounts (apply discounts)
+  const basePrice = parseFloat(String(service.priceSgd));
+  let priceSgd = basePrice;
+
+  if (service.discountPct) {
+    priceSgd = basePrice * (1 - service.discountPct / 100);
+  }
+
+  // Check first-timer discount if applicable
+  if (service.firstTimerDiscountEnabled && service.firstTimerDiscountPct && body.is_first_timer) {
+    const firstTimerPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
+    if (firstTimerPrice < priceSgd) {
+      priceSgd = firstTimerPrice;
+    }
+  }
+
   const amountCents = Math.round(priceSgd * 100);
   const commissionRate = getCommissionRate(body.booking_source);
   const commissionCents = Math.round(amountCents * commissionRate);

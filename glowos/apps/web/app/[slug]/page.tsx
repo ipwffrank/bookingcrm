@@ -28,6 +28,10 @@ interface SalonData {
     category: string;
     slotType: 'standard' | 'consult' | 'treatment';
     requiresConsultFirst: boolean;
+    discountPct: number | null;
+    discountShowOnline: boolean;
+    firstTimerDiscountPct: number | null;
+    firstTimerDiscountEnabled: boolean;
   }>;
   staff: Array<{
     id: string;

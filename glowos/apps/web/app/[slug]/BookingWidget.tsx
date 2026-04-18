@@ -43,6 +43,10 @@ interface Service {
   category: string;
   slotType: 'standard' | 'consult' | 'treatment';
   requiresConsultFirst: boolean;
+  discountPct: number | null;
+  discountShowOnline: boolean;
+  firstTimerDiscountPct: number | null;
+  firstTimerDiscountEnabled: boolean;
 }
 
 interface StaffMember {
@@ -268,6 +272,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [authLoading, setAuthLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  // First-timer check
+  const [isFirstTimer, setIsFirstTimer] = useState<boolean | null>(null);
 
   // Confirm
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -550,12 +557,20 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
         }),
       });
       const bookingId = (res.booking as { id: string }).id;
+      // Compute effective price for confirm page
+      const bp = parseFloat(selectedService.priceSgd);
+      let ep = bp;
+      if (selectedService.discountPct) ep = bp * (1 - selectedService.discountPct / 100);
+      if (isFirstTimer && selectedService.firstTimerDiscountEnabled && selectedService.firstTimerDiscountPct) {
+        const ftp = bp * (1 - selectedService.firstTimerDiscountPct / 100);
+        if (ftp < ep) ep = ftp;
+      }
       router.push(
         `/${slug}/confirm?booking_id=${bookingId}` +
         `&service=${encodeURIComponent(selectedService.name)}` +
         `&staff=${encodeURIComponent(selectedStaff?.id === 'any' ? 'Any Available' : (selectedStaff?.name || ''))}` +
         `&time=${encodeURIComponent(selectedSlot?.start_time || '')}` +
-        `&amount=${encodeURIComponent(selectedService.priceSgd)}`
+        `&amount=${encodeURIComponent(String(ep))}`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Booking failed. Please try again.';
@@ -636,11 +651,26 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-gray-900">{svc.name}</span>
-                    <span className="text-sm font-bold text-indigo-600 shrink-0">
-                      SGD {parseFloat(svc.priceSgd).toFixed(2)}
-                    </span>
+                    {svc.discountPct && svc.discountShowOnline ? (
+                      <div className="text-right shrink-0">
+                        <span className="text-xs text-gray-400 line-through">SGD {parseFloat(svc.priceSgd).toFixed(2)}</span>
+                        <span className="text-sm font-bold text-green-600 ml-1">
+                          SGD {(parseFloat(svc.priceSgd) * (1 - svc.discountPct / 100)).toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-green-600 font-medium ml-1">-{svc.discountPct}%</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-bold text-indigo-600 shrink-0">
+                        SGD {parseFloat(svc.priceSgd).toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">{svc.durationMinutes} min</p>
+                  {svc.firstTimerDiscountEnabled && svc.discountShowOnline && (
+                    <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                      {svc.firstTimerDiscountPct}% off for first visit
+                    </span>
+                  )}
                   {svc.description && (
                     <p className="text-xs text-gray-400 mt-1 leading-relaxed line-clamp-2">
                       {svc.description}
@@ -1105,6 +1135,18 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                       }
                       setConfirmError('');
 
+                      // Check first-timer status
+                      if (selectedService?.firstTimerDiscountEnabled) {
+                        try {
+                          const params = new URLSearchParams({ slug });
+                          if (clientPhone.trim()) params.set('phone', clientPhone.trim());
+                          if (clientEmail.trim()) params.set('email', clientEmail.trim());
+                          if (authClient?.googleId) params.set('google_id', authClient.googleId);
+                          const ftRes = await apiFetch(`/merchant/services/check-first-timer?${params.toString()}`);
+                          setIsFirstTimer((ftRes as { isFirstTimer: boolean }).isFirstTimer);
+                        } catch { /* ignore */ }
+                      }
+
                       // If paying by card, create PaymentIntent first
                       if (paymentMethod === 'card' && merchant.paymentEnabled && selectedService) {
                         setConfirmLoading(true);
@@ -1118,17 +1160,26 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                               client_name: clientName.trim(),
                               client_email: clientEmail.trim() || undefined,
                               client_phone: clientPhone.trim(),
+                              is_first_timer: isFirstTimer ?? undefined,
                             }),
                           });
                           setClientSecret(res.client_secret as string);
                           // Store booking details for the confirm page — ensures
                           // details survive redirects (PayNow, GrabPay).
                           try {
+                            // Compute effective price for session storage
+                            const bp = parseFloat(selectedService.priceSgd);
+                            let ep = bp;
+                            if (selectedService.discountPct) ep = bp * (1 - selectedService.discountPct / 100);
+                            if (isFirstTimer && selectedService.firstTimerDiscountEnabled && selectedService.firstTimerDiscountPct) {
+                              const ftp = bp * (1 - selectedService.firstTimerDiscountPct / 100);
+                              if (ftp < ep) ep = ftp;
+                            }
                             sessionStorage.setItem(`glowos_booking_${slug}`, JSON.stringify({
                               service: selectedService.name,
                               staff: resolvedStaffName,
                               time: selectedSlot?.start_time,
-                              amount: selectedService.priceSgd,
+                              amount: String(ep),
                               paid: true,
                             }));
                           } catch { /* ignore */ }
@@ -1178,6 +1229,27 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
 
           <div className="px-6 py-5 space-y-4">
             {/* Booking summary card */}
+            {(() => {
+              const basePrice = parseFloat(selectedService?.priceSgd || '0');
+              let effectivePrice = basePrice;
+              let discountLabel = '';
+
+              if (selectedService?.discountPct) {
+                effectivePrice = basePrice * (1 - selectedService.discountPct / 100);
+                discountLabel = `${selectedService.discountPct}% discount applied`;
+              }
+
+              // First-timer discount overrides regular discount if higher
+              if (isFirstTimer && selectedService?.firstTimerDiscountEnabled && selectedService?.firstTimerDiscountPct) {
+                const firstTimerPrice = basePrice * (1 - selectedService.firstTimerDiscountPct / 100);
+                if (firstTimerPrice < effectivePrice) {
+                  effectivePrice = firstTimerPrice;
+                  discountLabel = `${selectedService.firstTimerDiscountPct}% first-visit discount`;
+                }
+              }
+
+              return (
+                <>
             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-5 border border-indigo-100 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1187,9 +1259,15 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-xs text-indigo-500 font-semibold uppercase tracking-wide mb-0.5">Price</p>
-                  <p className="text-xl font-bold text-indigo-700">
-                    SGD {parseFloat(selectedService?.priceSgd || '0').toFixed(2)}
-                  </p>
+                  {discountLabel ? (
+                    <div>
+                      <span className="text-sm text-gray-400 line-through">SGD {basePrice.toFixed(2)}</span>
+                      <p className="text-xl font-bold text-green-600">SGD {effectivePrice.toFixed(2)}</p>
+                      <p className="text-xs text-green-600 mt-0.5">{discountLabel}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xl font-bold text-indigo-700">SGD {basePrice.toFixed(2)}</p>
+                  )}
                 </div>
               </div>
 
@@ -1259,12 +1337,12 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     `service=${encodeURIComponent(selectedService?.name ?? '')}` +
                     `&staff=${encodeURIComponent(resolvedStaffName)}` +
                     `&time=${encodeURIComponent(selectedSlot.start_time)}` +
-                    `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
+                    `&amount=${encodeURIComponent(String(effectivePrice))}` +
                     `&paid=true`;
 
                   return (
                     <StripePaymentForm
-                      amount={selectedService?.priceSgd || '0'}
+                      amount={String(effectivePrice)}
                       returnUrl={confirmBase}
                       countdown={countdown}
                       onSuccess={(paymentIntentId) => {
@@ -1273,7 +1351,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                           `&service=${encodeURIComponent(selectedService?.name ?? '')}` +
                           `&staff=${encodeURIComponent(resolvedStaffName)}` +
                           `&time=${encodeURIComponent(selectedSlot.start_time)}` +
-                          `&amount=${encodeURIComponent(selectedService?.priceSgd ?? '')}` +
+                          `&amount=${encodeURIComponent(String(effectivePrice))}` +
                           `&paid=true`
                         );
                       }}
@@ -1303,7 +1381,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   ) : countdown === 0 ? (
                     'Slot expired — please select a new time'
                   ) : (
-                    `Confirm Booking — SGD ${parseFloat(selectedService?.priceSgd || '0').toFixed(2)}`
+                    `Confirm Booking — SGD ${effectivePrice.toFixed(2)}`
                   )}
                 </button>
                 <p className="text-xs text-gray-400 text-center">
@@ -1312,6 +1390,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </p>
               </>
             )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
