@@ -355,11 +355,8 @@ export default function ClientsPage() {
       await Promise.all(
         tiers.map(async (tier) => {
           try {
-            const d = await apiFetch(`/merchant/clients?tier=${tier}&limit=1`, {
-              headers: { Authorization: `Bearer ${token}` },
-            }) as { pagination: { count: number } };
-            // Note: count here is the page count, not total — use for display
-            counts[tier] = d.pagination?.count ?? 0;
+            const d = await apiFetch(`/merchant/clients?tier=${tier}&limit=1`) as { pagination: { total: number } };
+            counts[tier] = d.pagination?.total ?? 0;
           } catch {
             // ignore
           }

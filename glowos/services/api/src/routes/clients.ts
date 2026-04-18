@@ -114,9 +114,16 @@ clientsRouter.get("/", requireMerchant, async (c) => {
     };
   });
 
+  // Total count (before pagination) for accurate tier counts
+  const [totalRow] = await db
+    .select({ total: sql<number>`cast(count(*) as int)` })
+    .from(clientProfiles)
+    .where(and(...profileConditions));
+  const total = Number(totalRow?.total ?? 0);
+
   return c.json({
     clients: enrichedRows,
-    pagination: { limit, offset, count: enrichedRows.length },
+    pagination: { limit, offset, count: enrichedRows.length, total },
   });
 });
 
