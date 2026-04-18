@@ -256,25 +256,45 @@ function ClientDetail({
             </div>
 
             {/* Notes */}
-            <div>
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Notes</h4>
-              <textarea
-                value={notesValue}
-                onChange={(e) => setNotesValue(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                placeholder="Add notes about this client..."
-              />
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={handleSaveNotes}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-                >
-                  {saving ? 'Saving...' : 'Save Notes'}
-                </button>
-                {notesSaved && <span className="text-xs text-emerald-600">Saved</span>}
-              </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-gray-900">Notes</h4>
+
+              {/* Saved notes display */}
+              {notesValue.trim() ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                  <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">{notesValue}</p>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg px-3 py-2.5">
+                  <p className="text-xs text-gray-400 italic">No notes yet</p>
+                </div>
+              )}
+
+              {/* Edit / Add */}
+              <details className="group">
+                <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors select-none">
+                  {notesValue.trim() ? 'Edit notes' : 'Add notes'}
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    value={notesValue}
+                    onChange={(e) => setNotesValue(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    placeholder="Add notes about this client..."
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveNotes}
+                      disabled={saving}
+                      className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                    >
+                      {saving ? 'Saving...' : 'Save Notes'}
+                    </button>
+                    {notesSaved && <span className="text-xs text-emerald-600">Saved</span>}
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         )}

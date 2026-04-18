@@ -310,26 +310,46 @@ export default function ClientProfilePage() {
         )}
       </div>
 
-      {/* ── Notes ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold text-gray-900 mb-3">Staff Notes</h2>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          rows={4}
-          placeholder="Add private notes about this client (allergies, preferences, special requests…)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 resize-none"
-        />
-        <div className="flex items-center justify-between mt-2">
-          <span className={`text-xs transition-opacity ${notesSaved ? 'text-emerald-600 opacity-100' : 'opacity-0'}`}>Saved</span>
-          <button
-            onClick={saveNotes}
-            disabled={savingNotes}
-            className="px-4 py-1.5 bg-[#1a2313] text-white text-xs font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors"
-          >
-            {savingNotes ? 'Saving…' : 'Save Notes'}
-          </button>
-        </div>
+      {/* ── Staff Notes ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-900">Staff Notes</h2>
+
+        {/* Saved notes display — always visible if notes exist */}
+        {notes.trim() ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">{notes}</p>
+          </div>
+        ) : (
+          <div className="bg-gray-50 rounded-lg px-4 py-3">
+            <p className="text-xs text-gray-400 italic">No notes yet — add notes below.</p>
+          </div>
+        )}
+
+        {/* Edit / Add notes */}
+        <details className="group">
+          <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors select-none">
+            {notes.trim() ? 'Edit notes' : 'Add notes'}
+          </summary>
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={4}
+              placeholder="Add private notes about this client (allergies, preferences, special requests…)"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 resize-none"
+            />
+            <div className="flex items-center justify-between">
+              <span className={`text-xs transition-opacity ${notesSaved ? 'text-emerald-600 opacity-100' : 'opacity-0'}`}>Saved</span>
+              <button
+                onClick={saveNotes}
+                disabled={savingNotes}
+                className="px-4 py-1.5 bg-[#1a2313] text-white text-xs font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors"
+              >
+                {savingNotes ? 'Saving…' : 'Save Notes'}
+              </button>
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* ── Reviews ── */}
