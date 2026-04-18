@@ -48,6 +48,11 @@ export default function WalkinsPage() {
 
   const [form, setForm] = useState<WalkinForm>(emptyForm);
 
+  // Client search / autocomplete
+  const [clientResults, setClientResults] = useState<{ id: string; name: string; phone: string; email: string | null }[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [searchTimer, setSearchTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+
   const loadOptions = useCallback(async () => {
     try {
       const [svcRes, staffRes] = await Promise.all([
@@ -62,6 +67,35 @@ export default function WalkinsPage() {
   }, [router]);
 
   useEffect(() => { loadOptions(); }, [loadOptions]);
+
+  // ── Client search (debounced) ──
+  function searchClients(query: string) {
+    if (searchTimer) clearTimeout(searchTimer);
+    if (query.length < 2) { setClientResults([]); setShowResults(false); return; }
+
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiFetch(`/merchant/clients?search=${encodeURIComponent(query)}&limit=5`) as any;
+        const results = (data.clients || []).map((c: any) => ({
+          id: c.client?.id || c.id,
+          name: c.client?.name || c.name,
+          phone: c.client?.phone || c.phone,
+          email: c.client?.email || c.email,
+        }));
+        setClientResults(results);
+        setShowResults(results.length > 0);
+      } catch {
+        setClientResults([]);
+      }
+    }, 300);
+    setSearchTimer(timer);
+  }
+
+  function selectClient(client: { name: string; phone: string; email: string | null }) {
+    setForm({ ...form, client_name: client.name, client_phone: client.phone, client_email: client.email || '' });
+    setShowResults(false);
+    setClientResults([]);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -130,19 +164,45 @@ export default function WalkinsPage() {
         {/* ── Client ── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</h2>
-          <input
-            type="text"
-            value={form.client_name}
-            onChange={e => setForm({ ...form, client_name: e.target.value })}
-            placeholder="Full name *"
-            required
-            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 transition"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              value={form.client_name}
+              onChange={e => {
+                setForm({ ...form, client_name: e.target.value });
+                searchClients(e.target.value);
+              }}
+              onFocus={() => { if (clientResults.length > 0) setShowResults(true); }}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+              placeholder="Search by name, phone, or email..."
+              required
+              autoComplete="off"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 transition"
+            />
+            {showResults && clientResults.length > 0 && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {clientResults.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => selectClient(c)}
+                    className="w-full text-left px-3 py-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-gray-900">{c.name}</p>
+                    <p className="text-xs text-gray-400">{c.phone}{c.email ? ` · ${c.email}` : ''}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <input
             type="tel"
             value={form.client_phone}
-            onChange={e => setForm({ ...form, client_phone: e.target.value })}
-            placeholder="Phone number * (used for client profile)"
+            onChange={e => {
+              setForm({ ...form, client_phone: e.target.value });
+              searchClients(e.target.value);
+            }}
+            placeholder="Phone number *"
             required
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 transition"
           />
