@@ -34,10 +34,10 @@ export async function scheduleReminder(
 // ─── scheduleReviewRequest ─────────────────────────────────────────────────────
 
 /**
- * Queue a review request 30 minutes after completion.
+ * Queue a review request 24 hours after completion.
  */
 export async function scheduleReviewRequest(bookingId: string): Promise<void> {
-  const delay = 30 * 60 * 1000; // 30 minutes
+  const delay = 24 * 60 * 60 * 1000; // 24 hours
   await addJob("notifications", "review_request", { booking_id: bookingId }, { delay });
   console.log("[Scheduler] Review request scheduled", { bookingId, delayMs: delay });
 }
