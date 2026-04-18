@@ -29,6 +29,15 @@ interface Booking {
   staffName: string | null;
 }
 
+interface Closure {
+  id: string;
+  date: string;
+  title: string;
+  isFullDay: boolean;
+  startTime: string | null;
+  endTime: string | null;
+}
+
 const DUTY_BG = '#1a2313';
 const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -62,9 +71,10 @@ export default function StaffAllBookingsPage() {
     const from = start.slice(0, 10);
     const to   = end.slice(0, 10);
     try {
-      const [dutiesData, bookingsData] = await Promise.all([
+      const [dutiesData, bookingsData, closuresData] = await Promise.all([
         apiFetch(`/merchant/duties?from=${from}&to=${to}`),
         apiFetch(`/staff/bookings?from=${from}&to=${to}`).catch(() => ({ bookings: [] })),
+        apiFetch(`/merchant/closures?from=${from}&to=${to}`).catch(() => ({ closures: [] })),
       ]);
 
       const dutyEvents: EventInput[] = (dutiesData.duties ?? []).map((d: DutyBlock) => ({
@@ -95,7 +105,32 @@ export default function StaffAllBookingsPage() {
         };
       });
 
-      setEvents([...dutyEvents, ...bookingEvents]);
+      const closureEvents: EventInput[] = ((closuresData.closures ?? []) as Closure[]).map((cl) => {
+        if (cl.isFullDay) {
+          return {
+            id: `closure-${cl.id}`,
+            title: `🚫 ${cl.title}`,
+            start: cl.date,
+            allDay: true,
+            display: 'background',
+            backgroundColor: '#fef2f2',
+            borderColor: '#fecaca',
+            extendedProps: { type: 'closure' },
+          };
+        }
+        return {
+          id: `closure-${cl.id}`,
+          title: `🚫 ${cl.title}`,
+          start: `${cl.date}T${cl.startTime}`,
+          end: `${cl.date}T${cl.endTime}`,
+          display: 'background',
+          backgroundColor: '#fef2f2',
+          borderColor: '#fecaca',
+          extendedProps: { type: 'closure' },
+        };
+      });
+
+      setEvents([...closureEvents, ...dutyEvents, ...bookingEvents]);
     } catch { /* silent fail */ }
   }, [staffColorMap, colorIdx]);
 
@@ -138,6 +173,15 @@ export default function StaffAllBookingsPage() {
   }
 
   function handleDateClick(info: { dateStr: string }) {
+    // Check if date has a full-day closure
+    const clickedDate = info.dateStr.slice(0, 10);
+    const hasClosure = events.some(e =>
+      e.extendedProps?.type === 'closure' &&
+      typeof e.start === 'string' && e.start.startsWith(clickedDate) &&
+      (e as any).allDay
+    );
+    if (hasClosure) return; // Don't allow duty creation on closed dates
+
     setEditDuty(null);
     setDutyForm({ date: info.dateStr.slice(0, 10), startTime: '09:00', endTime: '17:00', notes: '' });
     setDutyError(null);
@@ -183,14 +227,33 @@ export default function StaffAllBookingsPage() {
     }
   }
 
+  function renderEventContent(eventInfo: { event: { extendedProps: Record<string, unknown>; title: string }; timeText: string }) {
+    if (eventInfo.event.extendedProps.type === 'closure') {
+      return <div className="text-xs text-red-400 font-medium px-1">{eventInfo.event.title}</div>;
+    }
+    return (
+      <div className="text-xs px-1 truncate">
+        <span className="font-medium">{eventInfo.timeText}</span>{' '}
+        <span>{eventInfo.event.title}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 font-manrope">
       <style>{`
+        .fc { font-family: var(--font-body, 'Manrope', sans-serif); }
+        .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: #111827; }
+        .fc .fc-button { font-size: 13px; font-weight: 500; }
+        .fc .fc-col-header-cell-cushion { font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.025em; }
+        .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: #374151; }
         .fc .fc-timegrid-slot { border-bottom-color: #d1d5db; }
         .fc .fc-timegrid-slot-minor { border-top: 1px dashed #e5e7eb !important; }
         .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #374151; }
         .fc .fc-timegrid-slot-label.fc-timegrid-slot-minor { font-size: 9px; font-weight: 400; color: #9ca3af; }
         .fc .fc-timegrid-col { border-right: 1px solid #e5e7eb; }
+        .fc .fc-event { border-radius: 6px; }
+        .fc-direction-ltr .fc-daygrid-event.fc-event-end, .fc-direction-ltr .fc-daygrid-event.fc-event-start { margin-left: 2px; margin-right: 2px; }
       `}</style>
 
       <div className="flex items-center justify-between">
@@ -222,6 +285,7 @@ export default function StaffAllBookingsPage() {
           eventDrop={handleEventDrop}
           eventResize={handleEventResize}
           eventClick={handleEventClick}
+          eventContent={renderEventContent}
           dateClick={handleDateClick}
           datesSet={(info: DatesSetArg) => {
             setDateRange({ start: info.startStr, end: info.endStr });
