@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, or } from "drizzle-orm";
 import { z } from "zod";
-import { db, services, consultOutcomes, bookings } from "@glowos/db";
+import { db, services, consultOutcomes, bookings, merchants, clients } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
@@ -29,6 +29,10 @@ const createServiceSchema = z.object({
   slot_type: z.enum(["standard", "consult", "treatment"]).optional().default("standard"),
   requires_consult_first: z.boolean().optional().default(false),
   consult_service_id: z.string().uuid().nullable().optional(),
+  discount_pct: z.number().int().min(0).max(100).nullable().optional(),
+  discount_show_online: z.boolean().optional().default(false),
+  first_timer_discount_pct: z.number().int().min(0).max(100).nullable().optional(),
+  first_timer_discount_enabled: z.boolean().optional().default(false),
 });
 
 const updateServiceSchema = createServiceSchema.partial();
@@ -53,6 +57,57 @@ servicesRouter.get("/", requireMerchant, async (c) => {
   return c.json({ services: rows });
 });
 
+// ─── GET /merchant/services/check-first-timer ─────────────────────────────────
+
+servicesRouter.get("/check-first-timer", async (c) => {
+  const phone = c.req.query("phone");
+  const email = c.req.query("email");
+  const googleId = c.req.query("google_id");
+  const slug = c.req.query("slug");
+
+  if (!slug) return c.json({ error: "Bad Request", message: "slug is required" }, 400);
+
+  // Find merchant
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+
+  if (!merchant) return c.json({ isFirstTimer: true });
+
+  // Check if client exists by phone, email, or google_id
+  const conditions = [];
+  if (phone) conditions.push(eq(clients.phone, phone));
+  if (email) conditions.push(eq(clients.email, email));
+  if (googleId) conditions.push(eq(clients.googleId, googleId));
+
+  if (conditions.length === 0) return c.json({ isFirstTimer: true });
+
+  const [existing] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(or(...conditions))
+    .limit(1);
+
+  if (!existing) return c.json({ isFirstTimer: true });
+
+  // Check if they have any completed bookings with this merchant
+  const [booking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, existing.id),
+        eq(bookings.merchantId, merchant.id),
+        eq(bookings.status, "completed")
+      )
+    )
+    .limit(1);
+
+  return c.json({ isFirstTimer: !booking });
+});
+
 // ─── POST /merchant/services ───────────────────────────────────────────────────
 
 servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async (c) => {
@@ -73,6 +128,10 @@ servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async
       slotType: body.slot_type,
       requiresConsultFirst: body.requires_consult_first,
       consultServiceId: body.consult_service_id ?? null,
+      discountPct: body.discount_pct ?? null,
+      discountShowOnline: body.discount_show_online,
+      firstTimerDiscountPct: body.first_timer_discount_pct ?? null,
+      firstTimerDiscountEnabled: body.first_timer_discount_enabled,
     })
     .returning();
 
@@ -112,6 +171,10 @@ servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), asy
   if (body.slot_type !== undefined) updateData.slotType = body.slot_type;
   if (body.requires_consult_first !== undefined) updateData.requiresConsultFirst = body.requires_consult_first;
   if (body.consult_service_id !== undefined) updateData.consultServiceId = body.consult_service_id;
+  if (body.discount_pct !== undefined) updateData.discountPct = body.discount_pct;
+  if (body.discount_show_online !== undefined) updateData.discountShowOnline = body.discount_show_online;
+  if (body.first_timer_discount_pct !== undefined) updateData.firstTimerDiscountPct = body.first_timer_discount_pct;
+  if (body.first_timer_discount_enabled !== undefined) updateData.firstTimerDiscountEnabled = body.first_timer_discount_enabled;
 
   if (Object.keys(updateData).length === 0) {
     return c.json({ error: "Bad Request", message: "No fields provided to update" }, 400);

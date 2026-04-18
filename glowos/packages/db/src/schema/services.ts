@@ -33,6 +33,10 @@ export const services = pgTable(
     requiresConsultFirst: boolean("requires_consult_first").notNull().default(false),
     consultServiceId: uuid("consult_service_id"),
     displayOrder: integer("display_order").notNull().default(0),
+    discountPct: integer("discount_pct"), // e.g. 10 = 10% off, null = no discount
+    discountShowOnline: boolean("discount_show_online").notNull().default(false), // show on public booking page
+    firstTimerDiscountPct: integer("first_timer_discount_pct"), // null = no first-timer discount
+    firstTimerDiscountEnabled: boolean("first_timer_discount_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
