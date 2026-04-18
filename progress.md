@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 17 April 2026 (Session 9)**
+**Last updated: 19 April 2026 (Session 10)**
 
 ---
 
@@ -9,7 +9,7 @@
 |---|---|---|
 | Website (frontend) | https://glowos-nine.vercel.app | Vercel |
 | API Server | https://bookingcrm-production.up.railway.app | Railway |
-| Database | Neon PostgreSQL (15 tables, US East) | Neon |
+| Database | Neon PostgreSQL (21 tables, US East) | Neon |
 | Cache / Queue | Upstash Redis | Upstash |
 | Source Code | https://github.com/ipwffrank/bookingcrm | GitHub |
 
@@ -21,6 +21,119 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** ✅ Test mode configured (sk_test_..., webhook endpoint registered on platform account)
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 10 — 18-19 April 2026)
+
+### Client Reviews Feature ✅
+- Public review submission page at `/review/[bookingId]` — star rating + optional comment + staff attribution
+- Review API: public GET/POST for submission, merchant GET list/stats with filters
+- Low-rating alert: WhatsApp to merchant for reviews ≤3 stars (via BullMQ worker)
+- Reviews dashboard tab with 4 stat cards, filters (rating/staff/period), review list with red highlights for bad reviews
+- Client profile integration — real review history replacing placeholder
+- Analytics: rating distribution horizontal bar chart + average rating over time line chart
+- Review request timing changed from 30 minutes to 24 hours post-completion
+
+### Service Discounts ✅
+- Per-service discount percentage (0-100%) with admin toggle for online visibility
+- First-timer discount: separate percentage for new customers, auto-detected by phone/email/Google ID
+- Booking widget shows strikethrough prices + discount badges + first-timer badges
+- First-timer check API: searches clients table by phone/email/google_id against completed bookings
+- Stripe payment uses discounted price; first-timer discount overrides regular if higher
+
+### Service Packages & Multi-Session Tracking ✅
+- 3 new tables: `service_packages` (templates), `client_packages` (purchased), `package_sessions` (individual sessions)
+- Admin Packages page: create package templates with multi-service picker, pricing, validity period
+- Assign packages to clients with payment tracking and auto-generated session rows
+- Session progress tracking: pending → booked → completed, with "Mark Done" button on admin + staff + drawer
+- Package progress bar + session list visible on all client views (admin profile, admin popup, staff profile)
+- Auto-complete: when all sessions done, package status changes to "completed"
+- Booking widget: shows available packages for purchase, detects active packages for returning clients, "Use Package Session" option (free booking) vs "Pay Normally"
+- Public API: `GET /booking/:slug/packages` + `GET /booking/:slug/client-packages` + `POST /booking/:slug/use-package-session`
+
+### Treatment Log (replaces simple notes) ✅
+- New `client_notes` table with staff attribution + timestamps
+- API: GET/POST/DELETE for timestamped log entries
+- Chronological timeline UI with author name, date/time, content
+- Available on admin profile, admin popup, staff profile — all views can add entries
+- Legacy notes preserved as amber block when treatment log is empty
+
+### Operating Hours ✅
+- New `operating_hours` jsonb column on merchants table (migration 0006)
+- Operating Hours tab in Settings: 7-day grid with open/close toggles + time pickers
+- Availability engine blocks closed days before checking staff hours
+- Booking widget greys out closed day-of-week dates
+
+### Calendar Improvements ✅
+- Admin calendar: Month / Week / Day toggle (hybrid — FullCalendar for month/week, custom grid for day)
+- Month/week views load full date range of bookings, duties, and closures
+- Staff calendar: holiday closures shown as red background events, blocks duty creation on closed dates
+- Staff calendar font/style alignment with admin (Manrope, consistent sizing)
+
+### Walk-in Client Lookup ✅
+- Autocomplete search by name, phone, or email when registering walk-ins
+- Selects existing client to auto-fill fields; new clients created on registration
+
+### Staff Access to Client Profiles ✅
+- Clients nav item added to staff portal sidebar
+- Staff clients list page with search
+- Staff client profile now matches admin: VIP tier, churn risk, service history, reviews, treatment log, packages
+
+### Bug Fixes & Polish ✅
+- Logo URL + cover photo URL now save via merchant settings (Zod schema fix)
+- VIP tier counts use total count query, not page-limited count
+- Timezone-aware slot generation — staff hours interpreted in merchant timezone (was UTC)
+- Root layout `<link>` tag precedence fix (React 19 warning)
+- Staff list response shape fix in reviews dashboard
+- Client notes: persistent amber display box + prominent in booking detail panel
+
+### Landing Page Refresh ✅
+- Copy broadened from "clinics" to all self-care verticals (hair, facial, fitness, dental, spa, etc.)
+- Mobile responsiveness: reduced padding, responsive pricing text, touch targets, scroll-padding
+- Nav: shorter CTA on mobile, icon touch targets
+- Hero: responsive padding, video height, CTA sizing
+
+### Next Available Date ✅
+- API: `GET /booking/:slug/next-available` — searches up to 30 days forward for first date with slots
+- Booking widget: when selected staff has no availability, shows "Next available with [staff]" card with date, slot count, and "Jump to" button
+
+### Commits (Session 10)
+| Hash | Description |
+|---|---|
+| `87236e6` | feat: review API — public submission + merchant list/stats endpoints |
+| `ecc74c2` | fix: guard review API against race conditions and malformed input |
+| `eb61c87` | feat: low-rating alert — WhatsApp notification to merchant for reviews ≤3 stars |
+| `a9d89ec` | feat: review submission page — star rating + comment for clients |
+| `f44e56b` | feat: merchant reviews dashboard — stats, filters, review list |
+| `344c4b0` | feat: client profile shows real review history |
+| `e313f45` | feat: analytics — rating distribution + rating trend charts |
+| `ad52ec1` | fix: staff list response shape, root layout link tag precedence |
+| `7fcd223` | fix: allow logoUrl and coverPhotoUrl to be saved via merchant settings |
+| `fc55c16` | feat: walk-in client lookup |
+| `d7b5209` | feat: staff calendar shows holiday closures |
+| `e6fb654` | feat: admin calendar month/week views |
+| `4cb93c7` | fix: client notes prominent in booking detail panel |
+| `a780b29` | fix: admin calendar month/week views load full date range |
+| `6a30016` | fix: client notes save correctly |
+| `fb9d3e1` | fix: client notes persistent display box |
+| `776a0d8` | feat: next-available API endpoint |
+| `3b853b3` | feat: booking widget shows next available date |
+| `07b9af0` | refactor: landing page copy + mobile responsiveness |
+| `1b3a704` | feat: merchant operating hours |
+| `0a6ceb2` | fix: timezone-aware slot generation |
+| `8e430aa` | fix: VIP tier counts use total count query |
+| `32de481` | fix: review request sent 24 hours after treatment |
+| `c821d29` | feat: client_notes table + treatment log API |
+| `0baba09` | feat: treatment log replaces simple notes in client profile |
+| `29ed969` | feat: staff portal clients section with treatment log |
+| Various | feat: service discounts, packages, package booking flow, mark done |
+
+### Database Changes (Session 10)
+- Added `operating_hours` (jsonb) to `merchants` table — migration 0006
+- Added `client_notes` table — migration 0007
+- Added `service_packages`, `client_packages`, `package_sessions` tables — migration 0008
+- Added `discount_pct`, `discount_show_online`, `first_timer_discount_pct`, `first_timer_discount_enabled` to `services` table
 
 ---
 
@@ -209,31 +322,36 @@
 ### Fully Built ✅
 | Feature | Notes |
 |---|---|
-| Analytics/Reports | 9 sections: summary, revenue, staff perf, top services, booking sources, cancellation rate, peak hours heatmap, client retention, revenue by DOW |
-| Online booking page | 5-step wizard at `/{slug}` with slot leasing, staff selection, date/time picker |
-| Appointment reminders | WhatsApp + email via BullMQ (24h reminder, 30min review, no-show re-engagement, rebook CTA) |
-| Services management UI | Full CRUD with consult/treatment slot types |
+| Analytics/Reports | 11 sections: summary, revenue, staff perf, top services, booking sources, cancellation rate, peak hours heatmap, client retention, revenue by DOW, **rating distribution, rating trend** |
+| Online booking page | 5-step wizard with slot leasing, staff selection, date/time picker, **discount display, first-timer detection, package redemption, next-available suggestion** |
+| Appointment reminders | WhatsApp + email via BullMQ (24h reminder, **24h review request**, no-show re-engagement, rebook CTA) |
+| Client reviews | **Full system**: public review page, star rating + comment, low-rating WhatsApp alert, reviews dashboard tab, analytics charts |
+| Services management UI | Full CRUD with consult/treatment slot types, **discount %, first-timer discount, show-online toggle** |
+| Service packages | **Package templates, client assignment, multi-session tracking, progress bars, Mark Done, online package redemption** |
 | Staff management UI | Full CRUD with profiles, working hours, specialty tags |
-| Settings page | 5 tabs: profile, cancellation policy, payments (Stripe Connect), booking page (QR), account |
-| Client CRM | VIP tiers, churn risk, search/filters, rich profile snippet |
+| Settings page | **7 tabs**: profile, **operating hours**, cancellation policy, holidays & closures, payments (Stripe Connect), booking page (QR), account |
+| Client CRM | VIP tiers, churn risk, search/filters, rich profile snippet, **treatment log (timestamped), package progress** |
+| Treatment log | **Timestamped entries by staff, replaces simple notes, visible on admin + staff + popup** |
 | Campaigns | Email/WhatsApp/SMS blasts with audience filtering |
 | CSV import | Client import with preview + validation |
-| Walk-in bookings | Light-theme form, service/staff/payment selection |
-| Calendar (admin) | Custom resource grid, drag/drop duties + booking reschedule, density toggle |
-| Calendar (staff) | FullCalendar with duty management merged into All Bookings |
-| Responsive layout | Mobile hamburger, collapsible desktop sidebar, responsive grids |
+| Walk-in bookings | Light-theme form, service/staff/payment selection, **client search/autocomplete** |
+| Calendar (admin) | Custom resource grid, drag/drop duties, density toggle, **month/week/day toggle** |
+| Calendar (staff) | FullCalendar with duty management, **holiday closures displayed, font alignment** |
+| Staff portal | All Bookings, My Bookings, **Clients section with full profile + treatment log + packages** |
+| Operating hours | **Business open/closed days with time ranges, blocks availability + booking widget** |
+| Responsive layout | Mobile-friendly nav, collapsible sidebar, **landing page responsive overhaul** |
+| Landing page | **Copy broadened to all self-care verticals, mobile responsiveness fixes** |
 
 ### Remaining Gaps
 | Feature | Priority | Notes |
 |---|---|---|
-| Stripe payment in booking checkout | **High** | Connect is wired in settings but checkout doesn't collect payment |
-| Holiday/closure management | **High** | No way to block out dates (CNY, Deepavali etc.) — slots still show |
-| Client reviews | **Medium** | Placeholder in profile snippet; needs collection flow + display |
 | Embed booking widget | **Medium** | Generate `<iframe>` or `<script>` snippet for merchant websites |
 | SMS fallback | **Medium** | Twilio infrastructure exists; add SMS when WhatsApp delivery fails |
 | Notification preferences | **Low** | Let merchant toggle which reminders fire + customize templates |
 | Custom domain mapping | **Low** | Custom booking URLs instead of `/{slug}` |
 | Push notifications | **Low** | Mobile/web push for real-time booking alerts |
+| Campaign testing | **Low** | Verify end-to-end campaign delivery |
+| Package purchase via booking page | **Low** | Currently packages are admin-assigned; allow customers to buy packages online |
 
 ---
 
@@ -242,13 +360,13 @@
 ```
 1. cd ~/Desktop/Projects/Bookingcrm/glowos
 2. Read progress.md
-3. git log --oneline -5  →  should see dc236f9 as latest
+3. git log --oneline -5  →  should see 9875d8b as latest
 4. Pick next feature from "Remaining Gaps" table above
 5. Recommended order:
-   a. Stripe payment in booking checkout (highest user friction)
-   b. Holiday/closure management (prevents incorrect availability)
-   c. Client reviews infrastructure (post-service flow)
-   d. Embed widget (distribution channel)
+   a. Embed booking widget (distribution — grow bookings)
+   b. Campaign testing (verify marketing works)
+   c. SMS fallback (reliability)
+   d. Package purchase online (conversion)
 ```
 
 ---
