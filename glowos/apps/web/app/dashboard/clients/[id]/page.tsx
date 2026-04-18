@@ -41,6 +41,16 @@ interface ClientDetailData {
   recent_bookings: BookingEntry[];
 }
 
+interface ClientReview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  serviceName: string;
+  staffName: string;
+  appointmentDate: string;
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const VIP_CONFIG: Record<VipTier, { label: string; cls: string; dot: string }> = {
@@ -116,6 +126,7 @@ export default function ClientProfilePage() {
   const [notes,      setNotes]      = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesSaved,  setNotesSaved]  = useState(false);
+  const [clientReviews, setClientReviews] = useState<ClientReview[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -132,6 +143,14 @@ export default function ClientProfilePage() {
         else setError(err instanceof Error ? err.message : 'Failed to load client');
       })
       .finally(() => setLoading(false));
+
+    // Fetch client reviews
+    apiFetch(`/merchant/reviews?clientId=${profileId}&period=all&limit=10`)
+      .then((d: unknown) => {
+        const result = d as { reviews: ClientReview[] };
+        setClientReviews(result.reviews);
+      })
+      .catch(() => {});
   }, [profileId, router]);
 
   async function saveNotes() {
@@ -313,16 +332,39 @@ export default function ClientProfilePage() {
         </div>
       </div>
 
-      {/* ── Reviews placeholder ── */}
-      <PlaceholderSection
-        title="Reviews"
-        icon={
+      {/* ── Reviews ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center gap-2 mb-3">
           <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z"/>
           </svg>
-        }
-        description="Review requests and client ratings will appear here once the review integration is live."
-      />
+          <h3 className="text-sm font-semibold text-gray-700">Reviews</h3>
+        </div>
+        {clientReviews.length === 0 ? (
+          <p className="text-xs text-gray-400">No reviews yet</p>
+        ) : (
+          <div className="space-y-3">
+            {clientReviews.map(review => (
+              <div key={review.id} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs tracking-wider">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <span key={s} className={s <= review.rating ? 'text-[#c4a778]' : 'text-gray-200'}>★</span>
+                    ))}
+                  </span>
+                  <span className="text-[11px] text-gray-400">
+                    {new Date(review.appointmentDate).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">{review.serviceName} · {review.staffName}</p>
+                {review.comment && (
+                  <p className="text-xs text-gray-700 mt-1">&ldquo;{review.comment}&rdquo;</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Marketing preferences placeholder ── */}
       <PlaceholderSection
