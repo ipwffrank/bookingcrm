@@ -134,6 +134,7 @@ function ClientDetail({
   const [loading, setLoading] = useState(true);
   const [notesValue, setNotesValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -156,17 +157,17 @@ function ClientDetail({
   }, [profileId, router]);
 
   async function handleSaveNotes() {
-    const token = localStorage.getItem('access_token');
     setSaving(true);
     try {
       await apiFetch(`/merchant/clients/${profileId}/notes`, {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notes: notesValue }),
       });
       if (detail) {
         setDetail({ ...detail, profile: { ...detail.profile, notes: notesValue } });
       }
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
     } catch {
       alert('Failed to save notes');
     } finally {
@@ -264,13 +265,16 @@ function ClientDetail({
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 placeholder="Add notes about this client..."
               />
-              <button
-                onClick={handleSaveNotes}
-                disabled={saving}
-                className="mt-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-              >
-                {saving ? 'Saving...' : 'Save Notes'}
-              </button>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={handleSaveNotes}
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save Notes'}
+                </button>
+                {notesSaved && <span className="text-xs text-emerald-600">Saved</span>}
+              </div>
             </div>
           </div>
         )}
