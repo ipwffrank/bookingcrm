@@ -1345,6 +1345,14 @@ export default function CalendarPage() {
                         </div>
                       </div>
 
+                      {/* Client notes — shown prominently before stats */}
+                      {clientSnippet.notes && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                          <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide mb-1">Client Notes</p>
+                          <p className="text-xs text-amber-900 leading-relaxed">{clientSnippet.notes}</p>
+                        </div>
+                      )}
+
                       {/* Stats row */}
                       <div className="grid grid-cols-3 gap-2">
                         <div className="bg-gray-50 rounded-lg p-2.5 text-center">
@@ -1380,13 +1388,6 @@ export default function CalendarPage() {
                           {clientSnippet.marketingOptIn ? 'Marketing OK' : 'No marketing'}
                         </span>
                       </div>
-
-                      {/* Notes */}
-                      {clientSnippet.notes && (
-                        <div className="bg-amber-50 rounded-lg px-3 py-2">
-                          <p className="text-[11px] text-amber-800 leading-relaxed">{clientSnippet.notes}</p>
-                        </div>
-                      )}
 
                       {/* Service history */}
                       {clientSnippet.serviceHistory.length > 0 && (
