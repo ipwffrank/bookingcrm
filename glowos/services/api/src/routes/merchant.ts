@@ -22,6 +22,8 @@ const updateMerchantSchema = z.object({
     .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"])
     .optional(),
   timezone: z.string().optional(),
+  logoUrl: z.string().url().optional().or(z.literal("")),
+  coverPhotoUrl: z.string().url().optional().or(z.literal("")),
 });
 
 // ─── GET /merchant/me ──────────────────────────────────────────────────────────
