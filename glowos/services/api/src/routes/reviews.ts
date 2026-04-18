@@ -66,7 +66,12 @@ publicReviewRouter.post("/:bookingId", async (c) => {
     return c.json({ error: "Bad Request", message: "Invalid booking ID" }, 400);
   }
 
-  const body = await c.req.json<{ rating: number; comment?: string }>();
+  let body: { rating: number; comment?: string };
+  try {
+    body = await c.req.json<{ rating: number; comment?: string }>();
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid JSON body" }, 400);
+  }
 
   // Validate rating
   if (!body.rating || !Number.isInteger(body.rating) || body.rating < 1 || body.rating > 5) {
@@ -106,13 +111,21 @@ publicReviewRouter.post("/:bookingId", async (c) => {
   }
 
   // Insert review
-  await db.insert(reviews).values({
-    merchantId: booking.merchantId,
-    clientId: booking.clientId,
-    bookingId: booking.id,
-    rating: body.rating,
-    comment: body.comment?.trim() || null,
-  });
+  try {
+    await db.insert(reviews).values({
+      merchantId: booking.merchantId,
+      clientId: booking.clientId,
+      bookingId: booking.id,
+      rating: body.rating,
+      comment: body.comment?.trim() || null,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "";
+    if (message.includes("unique") || message.includes("duplicate")) {
+      return c.json({ error: "Conflict", message: "You've already reviewed this appointment" }, 409);
+    }
+    throw err;
+  }
 
   // Queue low-rating alert if rating <= 3
   if (body.rating <= 3) {
@@ -147,6 +160,14 @@ merchantReviewRouter.get("/", requireMerchant, async (c) => {
   const period = c.req.query("period") ?? "30d";
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 100);
   const offset = Number(c.req.query("offset") ?? 0);
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (staffFilter && !uuidRegex.test(staffFilter)) {
+    return c.json({ error: "Bad Request", message: "Invalid staffId" }, 400);
+  }
+  if (clientFilter && !uuidRegex.test(clientFilter)) {
+    return c.json({ error: "Bad Request", message: "Invalid clientId" }, 400);
+  }
 
   const bounds = getReviewPeriodBounds(period);
 
