@@ -97,6 +97,8 @@ export default function CalendarPage() {
   const [density,    setDensity]    = useState<'compact' | 'comfortable'>('comfortable');
   const [viewMode,   setViewMode]   = useState<'day' | 'week' | 'month'>('day');
   const [closureTitle, setClosureTitle] = useState<string | null>(null);
+  const [fcRange, setFcRange] = useState<{ start: string; end: string } | null>(null);
+  const [allClosures, setAllClosures] = useState<Array<{ id: string; date: string; title: string; isFullDay: boolean; startTime: string | null; endTime: string | null }>>([]);
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
@@ -176,6 +178,38 @@ export default function CalendarPage() {
       );
     } finally { setLoading(false); }
   }, [dateStr]);
+
+  const loadRange = useCallback(async (from: string, to: string) => {
+    setLoading(true);
+    try {
+      const [sd, dd, bd, cd] = await Promise.all([
+        apiFetch('/merchant/staff'),
+        apiFetch(`/merchant/duties?from=${from}&to=${to}`),
+        apiFetch(`/merchant/bookings?from=${from}&to=${to}`).catch(() => ({ bookings: [] })),
+        apiFetch(`/merchant/closures?from=${from}&to=${to}`).catch(() => ({ closures: [] })),
+      ]);
+      setStaffList(((sd as any).staff ?? []).filter((s: any) => !s.isAnyAvailable));
+      setDuties((dd as any).duties ?? []);
+      setBookings(
+        (((bd as any).bookings ?? []) as RawBookingRow[]).map(r => ({
+          id:          r.booking.id,
+          staffId:     r.booking.staffId ?? null,
+          clientId:    r.booking.clientId ?? null,
+          startTime:   r.booking.startTime,
+          endTime:     r.booking.endTime,
+          status:      r.booking.status,
+          clientName:  r.client?.name ?? null,
+          serviceName: r.service?.name ?? null,
+          staffName:   r.staffMember?.name ?? null,
+          priceSgd:    r.booking.priceSgd ?? null,
+        }))
+      );
+      const closureList = (cd as any).closures ?? [];
+      setClosureTitle(closureList.length > 0 ? closureList[0].title : null);
+      setAllClosures(closureList);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, []);
 
   useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { load(); }, [load]);
@@ -575,16 +609,32 @@ export default function CalendarPage() {
       });
     });
 
-    // Closures
-    if (closureTitle) {
-      fcEvents.push({
-        title: `\u{1F6AB} ${closureTitle}`,
-        start: dateStr,
-        allDay: true,
-        display: 'background',
-        backgroundColor: '#fef2f2',
-      });
-    }
+    // Closures (all dates in range)
+    allClosures.forEach(cl => {
+      if (cl.isFullDay) {
+        fcEvents.push({
+          id: `closure-${cl.id}`,
+          title: `\u{1F6AB} ${cl.title}`,
+          start: cl.date,
+          allDay: true,
+          display: 'background',
+          backgroundColor: '#fef2f2',
+          borderColor: '#fecaca',
+          extendedProps: { type: 'closure' },
+        });
+      } else if (cl.startTime && cl.endTime) {
+        fcEvents.push({
+          id: `closure-${cl.id}`,
+          title: `\u{1F6AB} ${cl.title}`,
+          start: `${cl.date}T${cl.startTime}`,
+          end: `${cl.date}T${cl.endTime}`,
+          display: 'background',
+          backgroundColor: '#fef2f2',
+          borderColor: '#fecaca',
+          extendedProps: { type: 'closure' },
+        });
+      }
+    });
 
     return fcEvents;
   }
@@ -1133,13 +1183,19 @@ export default function CalendarPage() {
         <style>{`
           .fc { font-family: var(--font-body, 'Manrope', sans-serif); }
           .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: #111827; }
-          .fc .fc-button { font-size: 13px; font-weight: 500; }
-          .fc .fc-col-header-cell-cushion { font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.025em; }
+          .fc .fc-button { font-size: 12px; font-weight: 500; padding: 4px 10px; }
+          .fc .fc-button-primary { background-color: #1a2313; border-color: #1a2313; }
+          .fc .fc-button-primary:hover { background-color: #2f3827; border-color: #2f3827; }
+          .fc .fc-button-primary:not(:disabled).fc-button-active { background-color: #1a2313; border-color: #1a2313; }
+          .fc .fc-col-header-cell-cushion { font-size: 11px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; }
           .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: #374151; }
-          .fc .fc-timegrid-slot { border-bottom-color: #d1d5db; }
-          .fc .fc-timegrid-slot-minor { border-top: 1px dashed #e5e7eb !important; }
-          .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #374151; }
-          .fc .fc-event { border-radius: 6px; }
+          .fc .fc-timegrid-slot { border-bottom-color: #e5e7eb; }
+          .fc .fc-timegrid-slot-minor { border-top: 1px dashed #f3f4f6 !important; }
+          .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #6b7280; }
+          .fc .fc-event { border-radius: 4px; font-size: 11px; }
+          .fc .fc-daygrid-event { padding: 1px 4px; }
+          .fc td, .fc th { border-color: #e5e7eb; }
+          .fc .fc-scrollgrid { border-color: #e5e7eb; }
         `}</style>
         <FullCalendar
           key={viewMode}
@@ -1158,7 +1214,10 @@ export default function CalendarPage() {
             }
           }}
           datesSet={(info: DatesSetArg) => {
-            setDate(info.start);
+            const from = info.startStr.slice(0, 10);
+            const to = info.endStr.slice(0, 10);
+            setFcRange({ start: from, end: to });
+            loadRange(from, to);
           }}
         />
       </div>
