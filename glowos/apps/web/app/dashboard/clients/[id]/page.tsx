@@ -125,6 +125,7 @@ export default function ClientProfilePage() {
   const [error,      setError]      = useState<string | null>(null);
   const [clientReviews, setClientReviews] = useState<ClientReview[]>([]);
   const [treatmentLog, setTreatmentLog] = useState<Array<{ id: string; staffName: string | null; content: string; createdAt: string }>>([]);
+  const [clientPackagesData, setClientPackagesData] = useState<any[]>([]);
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [addingNote, setAddingNote] = useState(false);
@@ -160,6 +161,14 @@ export default function ClientProfilePage() {
       })
       .catch(() => {});
   }, [profileId, router]);
+
+  // Fetch client packages once client data is available
+  useEffect(() => {
+    if (!data?.client?.id) return;
+    apiFetch(`/merchant/packages/client/${data.client.id}`)
+      .then((d: any) => setClientPackagesData(d.packages ?? []))
+      .catch(() => {});
+  }, [data?.client?.id]);
 
   async function handleAddNote() {
     if (!newNoteContent.trim()) return;
@@ -388,6 +397,53 @@ export default function ClientProfilePage() {
                   </div>
                 </div>
                 <p className="text-xs text-gray-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Package Progress ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">Packages</h2>
+        {clientPackagesData.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">No packages assigned.</p>
+        ) : (
+          <div className="space-y-4">
+            {clientPackagesData.map((pkg: any) => (
+              <div key={pkg.id} className="border border-gray-100 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">{pkg.packageName}</h3>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                    pkg.status === 'active' ? 'bg-green-50 text-green-700' :
+                    pkg.status === 'completed' ? 'bg-gray-100 text-gray-500' :
+                    'bg-red-50 text-red-600'
+                  }`}>{pkg.status}</span>
+                </div>
+                {/* Progress bar */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(pkg.sessionsUsed / pkg.sessionsTotal) * 100}%` }} />
+                  </div>
+                  <span className="text-xs font-medium text-gray-600">{pkg.sessionsUsed}/{pkg.sessionsTotal}</span>
+                </div>
+                {/* Session list */}
+                <div className="space-y-1.5">
+                  {pkg.sessions?.map((s: any) => (
+                    <div key={s.id} className="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${
+                          s.status === 'completed' ? 'bg-green-400' :
+                          s.status === 'booked' ? 'bg-blue-400' :
+                          'bg-gray-300'
+                        }`} />
+                        <span className="text-gray-700">Session {s.sessionNumber}</span>
+                      </div>
+                      <span className="text-gray-400 capitalize">{s.status}{s.completedAt ? ` \u00B7 ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-2">Expires {new Date(pkg.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
               </div>
             ))}
           </div>
