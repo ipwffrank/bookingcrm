@@ -3,29 +3,29 @@ import ProductShowcase from './components/ProductShowcase';
 
 export default function LandingPage() {
   return (
-    <div className="bg-surface text-on-surface overflow-x-hidden antialiased">
+    <div className="bg-surface text-on-surface overflow-x-hidden antialiased scroll-pt-20 scroll-smooth">
 
       {/* ── Navigation ──────────────────────────────────────────────────────── */}
       <nav className="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl transition-all duration-300 border-b border-outline-variant/10">
-        <div className="flex justify-between items-center px-6 sm:px-12 py-6 max-w-[1440px] mx-auto">
+        <div className="flex justify-between items-center px-6 sm:px-12 py-4 md:py-6 max-w-[1440px] mx-auto">
           <span className="font-serif text-2xl font-semibold tracking-tight text-primary">GlowOS</span>
 
           <div className="hidden md:flex gap-10 items-center">
             <a href="#features" className="font-sans text-[13px] font-medium text-primary uppercase tracking-[0.15em] border-b border-primary/20 pb-1 hover:text-secondary hover:border-secondary transition-colors duration-300">Platform</a>
             <a href="#concierge" className="font-sans text-[13px] font-medium text-primary/70 uppercase tracking-[0.15em] hover:text-primary transition-colors duration-300">Solutions</a>
             <a href="#pricing" className="font-sans text-[13px] font-medium text-primary/70 uppercase tracking-[0.15em] hover:text-primary transition-colors duration-300">Membership</a>
-            <a href="#" className="font-sans text-[13px] font-medium text-primary/70 uppercase tracking-[0.15em] hover:text-primary transition-colors duration-300">Journal</a>
           </div>
 
-          <div className="flex items-center gap-6">
-            <Link href="/login">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <Link href="/login" className="p-2 -m-2">
               <span className="material-symbols-outlined text-primary/70 hover:text-primary transition-colors cursor-pointer">account_circle</span>
             </Link>
             <Link
               href="/signup"
-              className="bg-primary text-on-primary px-8 py-2.5 rounded font-sans text-xs uppercase tracking-[0.2em] font-semibold hover:bg-primary-container transition-all duration-200 active:scale-95"
+              className="bg-primary text-on-primary px-4 sm:px-8 py-2.5 rounded font-sans text-xs uppercase tracking-[0.2em] font-semibold hover:bg-primary-container transition-all duration-200 active:scale-95"
             >
-              Request Access
+              <span className="hidden sm:inline">Request Access</span>
+              <span className="sm:hidden">Sign Up</span>
             </Link>
           </div>
         </div>
@@ -37,10 +37,10 @@ export default function LandingPage() {
         <section className="min-h-screen flex flex-col md:flex-row relative">
 
           {/* Left: Content */}
-          <div className="w-full md:w-1/2 flex items-center px-6 sm:px-12 md:px-24 py-32 bg-surface">
+          <div className="w-full md:w-1/2 flex items-center px-6 sm:px-12 md:px-16 lg:px-24 pt-24 pb-12 md:py-32 bg-surface">
             <div className="max-w-xl flex flex-col items-start">
               <span className="label-luxury text-secondary mb-6">
-                For Clinics That Don&apos;t Compete on Price
+                For Self-Care Businesses That Refuse to Blend In
               </span>
               <h1 className="font-serif text-fluid-h1 text-primary tracking-tight mb-8 font-light">
                 They booked<br />
@@ -52,7 +52,7 @@ export default function LandingPage() {
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
                 <Link
                   href="/login"
-                  className="bg-primary text-on-primary px-10 py-5 rounded font-sans text-xs font-semibold uppercase tracking-[0.2em] hover:bg-primary-container transition-all"
+                  className="bg-primary text-on-primary px-8 py-4 md:px-10 md:py-5 rounded font-sans text-xs font-semibold uppercase tracking-[0.2em] hover:bg-primary-container transition-all"
                 >
                   See What You&apos;re Missing
                 </Link>
@@ -67,7 +67,7 @@ export default function LandingPage() {
           </div>
 
           {/* Right: Video */}
-          <div className="w-full md:w-1/2 relative bg-black overflow-hidden min-h-[50vh] md:min-h-screen">
+          <div className="w-full md:w-1/2 relative bg-black overflow-hidden min-h-[35vh] sm:min-h-[50vh] md:min-h-screen">
             <video
               autoPlay
               muted
@@ -83,19 +83,19 @@ export default function LandingPage() {
         </section>
 
         {/* ── Feature Bento Grid ──────────────────────────────────────────────── */}
-        <section id="features" className="bg-surface-container-low py-40 px-6 sm:px-12">
+        <section id="features" className="bg-surface-container-low py-20 md:py-40 px-6 sm:px-12">
           <div className="max-w-[1440px] mx-auto">
-            <div className="mb-24 flex flex-col items-start">
+            <div className="mb-12 md:mb-24 flex flex-col items-start">
               <span className="label-luxury text-secondary mb-4 block">The Platform</span>
               <h2 className="font-serif text-fluid-h2 text-primary max-w-2xl font-light italic">
                 The things you shouldn&apos;t be doing manually.
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-12">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
 
               {/* Command Center — wide */}
-              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-16 rounded flex flex-col justify-between min-h-[480px] shadow-sm">
+              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded flex flex-col justify-between min-h-[320px] md:min-h-[480px] shadow-sm">
                 <div>
                   <span
                     className="material-symbols-outlined text-secondary mb-10 block text-4xl"
@@ -105,10 +105,10 @@ export default function LandingPage() {
                   </span>
                   <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Command Center</h3>
                   <p className="font-sans text-fluid-body text-on-surface-variant max-w-sm mb-8">
-                    Revenue, no-shows, chair utilisation, top clients—one screen, no spreadsheets. Know exactly where the money is and where it&apos;s leaking.
+                    Revenue, no-shows, schedule utilisation, top clients—one screen, no spreadsheets. Know exactly where the money is and where it&apos;s leaking.
                   </p>
                 </div>
-                <div className="pt-10 border-t border-outline-variant/30 flex gap-12 sm:gap-20">
+                <div className="pt-10 border-t border-outline-variant/30 flex gap-6 sm:gap-12 lg:gap-20">
                   <div className="flex flex-col gap-1">
                     <div className="label-luxury text-secondary mb-1">Clients Today</div>
                     <div className="font-serif text-fluid-h3 text-primary">24</div>
@@ -121,27 +121,27 @@ export default function LandingPage() {
               </div>
 
               {/* Smart Scheduling — narrow, dark */}
-              <div className="md:col-span-4 bg-primary text-on-primary p-8 sm:p-16 rounded flex flex-col justify-between min-h-[480px]">
+              <div className="md:col-span-4 bg-primary text-on-primary p-8 sm:p-10 lg:p-16 rounded flex flex-col justify-between min-h-[320px] md:min-h-[480px]">
                 <span className="material-symbols-outlined text-primary-fixed/60 mb-10 block text-4xl">event_upcoming</span>
                 <div>
                   <h3 className="font-serif italic text-fluid-h3 mb-6">Smart Scheduling</h3>
                   <p className="font-sans text-on-primary-container text-fluid-body opacity-90">
-                    Empty chairs cost you $200/hour. GlowOS fills cancellations automatically and lets your best clients book 24/7—even while you sleep.
+                    Empty slots cost you $200/hour. GlowOS fills cancellations automatically and lets your best clients book 24/7—even while you sleep.
                   </p>
                 </div>
               </div>
 
               {/* Client Portfolios — narrow */}
-              <div className="md:col-span-4 bg-surface-container-highest p-8 sm:p-16 rounded min-h-[400px]">
+              <div className="md:col-span-4 bg-surface-container-highest p-8 sm:p-10 lg:p-16 rounded min-h-[280px] md:min-h-[400px]">
                 <span className="material-symbols-outlined text-secondary mb-10 block text-4xl">folder_shared</span>
                 <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Client Portfolios</h3>
                 <p className="font-sans text-on-surface-variant text-fluid-body">
-                  She prefers Dr. Lim, hates cold rooms, and hasn&apos;t been in since March. You&apos;ll know all of this before she walks in.
+                  She always requests Rachel, prefers the quiet room, and hasn&apos;t been in since March. You&apos;ll know all of this before she walks in.
                 </p>
               </div>
 
               {/* Revenue Ops — wide */}
-              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-16 rounded flex items-center gap-16 min-h-[400px] shadow-sm">
+              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded flex items-center gap-16 min-h-[280px] md:min-h-[400px] shadow-sm">
                 <div className="flex-1">
                   <span className="material-symbols-outlined text-secondary mb-10 block text-4xl">payments</span>
                   <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Revenue Ops</h3>
@@ -156,16 +156,16 @@ export default function LandingPage() {
         </section>
 
         {/* ── Concierge Section ───────────────────────────────────────────────── */}
-        <section id="concierge" className="py-40 px-6 sm:px-12 max-w-[1440px] mx-auto">
-          <div className="flex flex-col md:flex-row gap-24 items-center">
+        <section id="concierge" className="py-20 md:py-40 px-6 sm:px-12 max-w-[1440px] mx-auto">
+          <div className="flex flex-col md:flex-row gap-12 md:gap-24 items-center">
 
             <div className="w-full md:w-1/2">
               <span className="label-luxury text-secondary mb-6 block">The Concierge</span>
               <h2 className="font-serif text-fluid-h2 text-primary mb-10 font-light italic">
                 Your front desk, minus the front desk.
               </h2>
-              <p className="font-sans text-fluid-body-lg text-on-surface-variant mb-14 max-w-lg">
-                Most clinics lose clients between appointments—missed follow-ups, slow replies, forgotten birthdays. GlowOS handles the relationship when you&apos;re not in the room.
+              <p className="font-sans text-fluid-body-lg text-on-surface-variant mb-8 md:mb-14 max-w-lg">
+                Most businesses lose clients between appointments—missed follow-ups, slow replies, forgotten birthdays. GlowOS handles the relationship when you&apos;re not in the room.
               </p>
               <ul className="space-y-8">
                 <li className="flex gap-6 items-start">
@@ -173,7 +173,7 @@ export default function LandingPage() {
                   <div>
                     <span className="block font-semibold text-primary font-sans text-[13px] uppercase tracking-[0.15em] mb-1">Intelligent Routing</span>
                     <span className="font-sans text-fluid-body text-on-surface-variant opacity-80">
-                      New enquiry at 2am? Sorted by urgency, matched to the right practitioner, and replied to before your competitor wakes up.
+                      New enquiry at 2am? Sorted by urgency, matched to the right team member, and replied to before your competitor wakes up.
                     </span>
                   </div>
                 </li>
@@ -182,7 +182,7 @@ export default function LandingPage() {
                   <div>
                     <span className="block font-semibold text-primary font-sans text-[13px] uppercase tracking-[0.15em] mb-1">Automated Follow-Up</span>
                     <span className="font-sans text-fluid-body text-on-surface-variant opacity-80">
-                      Confirmations, reminders, post-treatment check-ins—sent at the right time, in the right tone. Clients feel remembered, not marketed to.
+                      Confirmations, reminders, post-visit check-ins—sent at the right time, in the right tone. Clients feel remembered, not marketed to.
                     </span>
                   </div>
                 </li>
@@ -198,46 +198,46 @@ export default function LandingPage() {
         </section>
 
         {/* ── Quote / Dark CTA ─────────────────────────────────────────────────── */}
-        <section className="bg-primary text-on-primary py-48 text-center overflow-hidden relative">
+        <section className="bg-primary text-on-primary py-24 md:py-48 text-center overflow-hidden relative">
           <div className="max-w-4xl mx-auto px-6 sm:px-12 relative z-10">
             <h3 className="font-serif text-fluid-h3 leading-[1.4] font-light">
-              The clinics that win don&apos;t work harder. They stop losing.
+              The businesses that win don&apos;t work harder. They stop losing.
               <span className="block mt-10 italic opacity-80">
-                Losing clients to slow replies. Losing revenue to empty chairs. Losing staff to admin chaos. GlowOS closes every gap quietly.
+                Losing clients to slow replies. Losing revenue to empty slots. Losing staff to admin chaos. GlowOS closes every gap quietly.
               </span>
             </h3>
             <div className="mt-16">
               <div className="label-luxury text-primary-fixed/60 tracking-[0.4em]">
-                GlowOS | Trusted by 200+ Premium Clinics Across Asia
+                GlowOS | Trusted by 200+ Premium Service Businesses Across Asia
               </div>
             </div>
           </div>
           {/* Ambient glows */}
-          <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary-container rounded-full blur-[150px] -mr-[300px] -mt-[300px] opacity-30" />
-          <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-primary-container rounded-full blur-[150px] -ml-[300px] -mb-[300px] opacity-20" />
+          <div className="hidden md:block absolute top-0 right-0 w-[600px] h-[600px] bg-primary-container rounded-full blur-[150px] -mr-[300px] -mt-[300px] opacity-30" />
+          <div className="hidden md:block absolute bottom-0 left-0 w-[600px] h-[600px] bg-primary-container rounded-full blur-[150px] -ml-[300px] -mb-[300px] opacity-20" />
         </section>
 
         {/* ── Pricing ─────────────────────────────────────────────────────────── */}
-        <section id="pricing" className="py-40 px-6 sm:px-12 bg-surface">
+        <section id="pricing" className="py-20 md:py-40 px-6 sm:px-12 bg-surface">
           <div className="max-w-[1440px] mx-auto">
 
-            <div className="text-center mb-24">
+            <div className="text-center mb-12 md:mb-24">
               <span className="label-luxury text-secondary mb-4 block">Membership</span>
               <h2 className="font-serif text-fluid-h2 text-primary font-light italic">Choose How Seriously You Take This</h2>
-              <p className="font-sans text-fluid-body text-on-surface-variant mt-6 opacity-80">
+              <p className="font-sans text-fluid-body text-on-surface-variant mt-6 opacity-80 max-w-2xl mx-auto">
                 Every tier pays for itself. The only question is how much revenue you&apos;re currently leaving on the table.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-12 items-stretch">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 lg:gap-12 items-stretch">
 
               {/* Studio */}
-              <div className="bg-surface-container-low p-8 sm:p-16 rounded border border-transparent hover:border-outline-variant/20 transition-all duration-500 flex flex-col h-full">
+              <div className="bg-surface-container-low p-8 sm:p-10 lg:p-16 rounded border border-transparent hover:border-outline-variant/20 transition-all duration-500 flex flex-col h-full">
                 <div className="label-luxury text-secondary mb-10">Studio</div>
-                <div className="font-serif text-6xl text-primary mb-8 font-light">
+                <div className="font-serif text-4xl sm:text-5xl md:text-6xl text-primary mb-8 font-light">
                   $499<span className="text-lg text-on-surface-variant font-sans font-normal">/mo</span>
                 </div>
-                <ul className="space-y-6 mb-16 flex-grow font-sans">
+                <ul className="space-y-6 mb-10 md:mb-16 flex-grow font-sans">
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
                     <span>Live Dashboard &amp; Analytics</span>
@@ -260,15 +260,15 @@ export default function LandingPage() {
               </div>
 
               {/* Estate — featured */}
-              <div className="bg-surface-container-lowest p-8 sm:p-16 rounded border-2 border-primary relative shadow-2xl flex flex-col h-full md:-translate-y-4">
-                <div className="absolute top-0 right-0 bg-primary text-on-primary text-[9px] uppercase tracking-[0.2em] px-6 py-2 rounded-bl font-sans font-semibold">
+              <div className="bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded border-2 border-primary relative shadow-2xl flex flex-col h-full md:-translate-y-4">
+                <div className="absolute top-0 right-0 bg-primary text-on-primary text-[9px] uppercase tracking-[0.2em] px-3 py-1.5 sm:px-6 sm:py-2 rounded-bl font-sans font-semibold">
                   Most Popular
                 </div>
                 <div className="label-luxury text-secondary mb-10">Estate</div>
-                <div className="font-serif text-6xl text-primary mb-8 font-light">
+                <div className="font-serif text-4xl sm:text-5xl md:text-6xl text-primary mb-8 font-light">
                   $1,299<span className="text-lg text-on-surface-variant font-sans font-normal">/mo</span>
                 </div>
-                <ul className="space-y-6 mb-16 flex-grow font-sans">
+                <ul className="space-y-6 mb-10 md:mb-16 flex-grow font-sans">
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
                     <span>AI Concierge &amp; Auto Follow-Up</span>
@@ -295,13 +295,13 @@ export default function LandingPage() {
               </div>
 
               {/* Institutional */}
-              <div className="bg-surface-container-low p-8 sm:p-16 rounded border border-transparent flex flex-col h-full">
+              <div className="bg-surface-container-low p-8 sm:p-10 lg:p-16 rounded border border-transparent flex flex-col h-full">
                 <div className="label-luxury text-secondary mb-10">Institutional</div>
-                <div className="font-serif text-6xl text-primary mb-8 font-light italic">Bespoke</div>
+                <div className="font-serif text-4xl sm:text-5xl md:text-6xl text-primary mb-8 font-light italic">Bespoke</div>
                 <p className="font-sans text-fluid-body text-on-surface-variant mb-8 opacity-80">
-                  For multi-location clinics and aesthetic groups requiring custom infrastructure.
+                  For multi-location brands and service groups requiring custom infrastructure.
                 </p>
-                <ul className="space-y-6 mb-16 flex-grow font-sans">
+                <ul className="space-y-6 mb-10 md:mb-16 flex-grow font-sans">
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
                     <span>White-glove Onboarding</span>
@@ -327,19 +327,19 @@ export default function LandingPage() {
       </main>
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="bg-surface-container-low w-full py-24 px-6 sm:px-12 border-t border-outline-variant/20">
+      <footer className="bg-surface-container-low w-full py-12 md:py-24 px-6 sm:px-12 border-t border-outline-variant/20">
         <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-12 w-full">
           <div className="flex flex-col gap-4">
-            <span className="font-serif text-2xl italic font-semibold text-primary">GlowOS Hospitality.</span>
+            <span className="font-serif text-2xl italic font-semibold text-primary">GlowOS.</span>
             <p className="font-sans text-fluid-small tracking-wide text-on-surface-variant/60 font-medium">
-              &copy; 2026 GlowOS Hospitality. All rights reserved.
+              &copy; 2026 GlowOS. All rights reserved.
             </p>
           </div>
           <div className="flex flex-wrap gap-x-12 gap-y-4">
-            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors underline underline-offset-8 decoration-outline-variant/30">Privacy Policy</a>
-            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors">Terms of Service</a>
-            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors">Accessibility</a>
-            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors">Contact</a>
+            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors underline underline-offset-8 decoration-outline-variant/30 py-2">Privacy Policy</a>
+            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors py-2">Terms of Service</a>
+            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors py-2">Accessibility</a>
+            <a href="#" className="label-luxury text-on-surface-variant/60 hover:text-primary transition-colors py-2">Contact</a>
           </div>
         </div>
       </footer>
