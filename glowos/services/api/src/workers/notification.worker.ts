@@ -10,6 +10,8 @@ import {
   staff,
   clients,
   notificationLog,
+  reviews,
+  merchantUsers,
 } from "@glowos/db";
 import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
@@ -52,6 +54,10 @@ interface PostServiceReceiptData {
 }
 
 interface PostServiceRebookData {
+  booking_id: string;
+}
+
+interface LowRatingAlertData {
   booking_id: string;
 }
 
@@ -688,6 +694,73 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
   console.log("[NotificationWorker] post_service_rebook handled", { bookingId });
 }
 
+async function handleLowRatingAlert(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) {
+    console.warn("[NotificationWorker] low_rating_alert: booking not found", { bookingId });
+    return;
+  }
+
+  const { booking, merchant, service, client } = row;
+
+  // Load the review
+  const [review] = await db
+    .select({ id: reviews.id, rating: reviews.rating, comment: reviews.comment })
+    .from(reviews)
+    .where(eq(reviews.bookingId, bookingId))
+    .limit(1);
+
+  if (!review) {
+    console.warn("[NotificationWorker] low_rating_alert: review not found", { bookingId });
+    return;
+  }
+
+  // Find merchant owner's phone (from merchant_users with role=owner)
+  const [owner] = await db
+    .select({ phone: merchantUsers.phone })
+    .from(merchantUsers)
+    .where(and(eq(merchantUsers.merchantId, merchant.id), eq(merchantUsers.role, "owner")))
+    .limit(1);
+
+  if (!owner?.phone) {
+    console.warn("[NotificationWorker] low_rating_alert: merchant owner has no phone", { merchantId: merchant.id });
+    return;
+  }
+
+  const commentLine = review.comment ? `"${review.comment}"` : "No comment left.";
+
+  const message = [
+    `⚠️ New review needs attention`,
+    ``,
+    `${client.name} rated their ${service.name} appointment ${review.rating}/5 stars.`,
+    commentLine,
+    ``,
+    `Check your dashboard: ${config.frontendUrl}/dashboard/reviews`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(owner.phone, message);
+
+  // Mark alert as sent
+  await db
+    .update(reviews)
+    .set({ isAlertSent: true })
+    .where(eq(reviews.id, review.id));
+
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: "low_rating_alert",
+    channel: "whatsapp",
+    recipient: owner.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+
+  console.log("[NotificationWorker] low_rating_alert handled", { bookingId, rating: review.rating });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -749,6 +822,11 @@ export function createNotificationWorker(): Worker {
         case "post_service_rebook": {
           const data = job.data as PostServiceRebookData;
           await handlePostServiceRebook(data.booking_id);
+          break;
+        }
+        case "low_rating_alert": {
+          const data = job.data as LowRatingAlertData;
+          await handleLowRatingAlert(data.booking_id);
           break;
         }
         default:
