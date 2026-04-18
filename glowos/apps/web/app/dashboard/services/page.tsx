@@ -21,6 +21,10 @@ interface Service {
   slotType: 'standard' | 'consult' | 'treatment';
   requiresConsultFirst: boolean;
   consultServiceId: string | null;
+  discountPct: number | null;
+  discountShowOnline: boolean;
+  firstTimerDiscountPct: number | null;
+  firstTimerDiscountEnabled: boolean;
 }
 
 interface ServiceForm {
@@ -33,6 +37,10 @@ interface ServiceForm {
   slot_type: 'standard' | 'consult' | 'treatment';
   requires_consult_first: boolean;
   consult_service_id: string;
+  discount_pct: string;
+  discount_show_online: boolean;
+  first_timer_discount_pct: string;
+  first_timer_discount_enabled: boolean;
 }
 
 const CATEGORIES: { value: Category; label: string }[] = [
@@ -68,7 +76,7 @@ function Spinner() {
 }
 
 function blankForm(): ServiceForm {
-  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '', slot_type: 'standard', requires_consult_first: false, consult_service_id: '' };
+  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '', slot_type: 'standard', requires_consult_first: false, consult_service_id: '', discount_pct: '', discount_show_online: false, first_timer_discount_pct: '', first_timer_discount_enabled: false };
 }
 
 type FormErrors = Partial<Record<keyof ServiceForm, string>>;
@@ -112,6 +120,10 @@ function ServiceModal({
           slot_type: initial.slotType ?? 'standard',
           requires_consult_first: initial.requiresConsultFirst ?? false,
           consult_service_id: initial.consultServiceId ?? '',
+          discount_pct: initial.discountPct?.toString() ?? '',
+          discount_show_online: initial.discountShowOnline ?? false,
+          first_timer_discount_pct: initial.firstTimerDiscountPct?.toString() ?? '',
+          first_timer_discount_enabled: initial.firstTimerDiscountEnabled ?? false,
         }
       : blankForm()
   );
@@ -139,6 +151,10 @@ function ServiceModal({
         slot_type: form.slot_type,
         requires_consult_first: form.requires_consult_first,
         consult_service_id: form.consult_service_id || null,
+        discount_pct: form.discount_pct ? parseInt(form.discount_pct) : null,
+        discount_show_online: form.discount_show_online,
+        first_timer_discount_pct: form.first_timer_discount_pct ? parseInt(form.first_timer_discount_pct) : null,
+        first_timer_discount_enabled: form.first_timer_discount_enabled,
       };
       if (initial) {
         await apiFetch(`/merchant/services/${initial.id}`, {
@@ -282,6 +298,63 @@ function ServiceModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">Price (S$)</label>
               <input type="number" min="0.01" step="0.01" {...field('price_sgd')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
               {errors.price_sgd && <p className="text-xs text-red-500 mt-1">{errors.price_sgd}</p>}
+            </div>
+          </div>
+
+          {/* Discount */}
+          <div className="border-t border-gray-100 pt-4 mt-4">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Discount</h4>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discount (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.discount_pct}
+                  onChange={e => setForm({ ...form, discount_pct: e.target.value })}
+                  placeholder="0"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.discount_show_online}
+                    onChange={e => setForm({ ...form, discount_show_online: e.target.checked })}
+                    className="rounded border-gray-300 text-indigo-600"
+                  />
+                  <span className="text-sm text-gray-700">Show on booking page</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">First-timer discount (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.first_timer_discount_pct}
+                  onChange={e => setForm({ ...form, first_timer_discount_pct: e.target.value })}
+                  placeholder="0"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.first_timer_discount_enabled}
+                    onChange={e => setForm({ ...form, first_timer_discount_enabled: e.target.checked })}
+                    className="rounded border-gray-300 text-indigo-600"
+                  />
+                  <span className="text-sm text-gray-700">Enable for first-timers</span>
+                </label>
+              </div>
             </div>
           </div>
 
