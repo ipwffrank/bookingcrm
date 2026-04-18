@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: CalendarIcon },
   { href: '/dashboard/analytics', label: 'Analytics', icon: ChartBarIcon },
   { href: '/dashboard/services', label: 'Services', icon: ScissorsIcon },
+  { href: '/dashboard/packages', label: 'Packages', icon: PackageIcon },
   { href: '/dashboard/staff', label: 'Staff', icon: UsersIcon },
   { href: '/dashboard/calendar', label: 'Calendar', icon: CalendarGridIcon },
   { href: '/dashboard/clients', label: 'Clients', icon: HeartIcon },
@@ -36,6 +37,14 @@ function ScissorsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M7.848 8.25l1.536.887M7.848 8.25a3 3 0 1 1-5.196-3 3 3 0 0 1 5.196 3zm1.536.887a2.165 2.165 0 0 1 1.083 1.839c.005.351.054.695.14 1.024M9.384 9.137l2.077 1.199M7.848 15.75l1.536-.887m-1.536.887a3 3 0 1 1-5.196 3 3 3 0 0 1 5.196-3zm1.536-.887a2.165 2.165 0 0 0 1.083-1.839 8.057 8.057 0 0 0 .128-1.024M9.384 14.863l2.077-1.199m0-3.328 4.445 2.566M13.461 11.336l4.445-2.566m0 0a3 3 0 1 1 5.196-3 3 3 0 0 1-5.196 3zm0 0a3 3 0 1 1 5.196 3 3 3 0 0 1-5.196-3z" />
+    </svg>
+  );
+}
+
+function PackageIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
     </svg>
   );
 }
