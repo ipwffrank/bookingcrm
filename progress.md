@@ -521,28 +521,37 @@ Closed an abuse vector where returning customers could claim the "first-visit" d
 ### Remaining Gaps
 | Feature | Priority | Notes |
 |---|---|---|
-| Embed booking widget | **Medium** | Generate `<iframe>` or `<script>` snippet for merchant websites |
+| Client CSV export | **Medium** | Admin-side "download all clients" button — deferred from Session 12 |
 | SMS fallback | **Medium** | Twilio infrastructure exists; add SMS when WhatsApp delivery fails |
+| Package purchase via booking page | **Medium** | Currently packages are admin-assigned; allow customers to buy packages online |
+| MY-merchant admin UI | **Low** | Flip `merchants.country` to MY via dashboard (currently SQL-only) |
+| Price-at-booking-time snapshot | **Low** | Improves first-timer analytics accuracy when service prices change |
+| Drizzle migration reconciliation | **Low** | Pre-Session-9 schema drift means `db:generate` still emits spurious deltas |
 | Notification preferences | **Low** | Let merchant toggle which reminders fire + customize templates |
 | Custom domain mapping | **Low** | Custom booking URLs instead of `/{slug}` |
 | Push notifications | **Low** | Mobile/web push for real-time booking alerts |
 | Campaign testing | **Low** | Verify end-to-end campaign delivery |
-| Package purchase via booking page | **Low** | Currently packages are admin-assigned; allow customers to buy packages online |
+
+### Shipped this Session 12 (removed from gaps)
+- ✅ Embed booking widget (A)
+- ✅ merchants.country column + hardcode removal (E)
+- ✅ findOrCreateClient dedup (F)
+- ✅ First-timer discount ROI analytics (G)
 
 ---
 
 ## Resume Checklist (Next Session)
 
 ```
-1. cd ~/Desktop/Projects/Bookingcrm/glowos
-2. Read progress.md
-3. git log --oneline -5  →  should see 9875d8b as latest
+1. cd ~/Desktop/Projects/Bookingcrm
+2. Read progress.md (focus on Session 12's E/F/G and "Remaining Gaps")
+3. git log --oneline -5  →  should see 5a0ca8e as latest (or 5a0ca8e's successor if progress.md updated further)
 4. Pick next feature from "Remaining Gaps" table above
 5. Recommended order:
-   a. Embed booking widget (distribution — grow bookings)
-   b. Campaign testing (verify marketing works)
+   a. Client CSV export (H — quick, user-requested, deferred from S12)
+   b. Online package purchase (conversion — biggest revenue lever left)
    c. SMS fallback (reliability)
-   d. Package purchase online (conversion)
+   d. MY-merchant admin UI (unblocks MY onboarding)
 ```
 
 ---
