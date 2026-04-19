@@ -70,7 +70,7 @@ Audit log. One row per changed field per edit action. Supports both booking-leve
 | `booking_id` | uuid, fk, nullable | |
 | `booking_group_id` | uuid, fk, nullable | |
 | `edited_by_user_id` | uuid | |
-| `edited_by_role` | enum: `admin` / `staff` | |
+| `edited_by_role` | enum: `owner` / `manager` / `staff` | Matches the project's actual RBAC roles defined in `middleware/auth.ts`. In the spec, "admin" is shorthand for either `owner` or `manager`. |
 | `field_name` | text | e.g. `"service_id"`, `"price_sgd"`, `"start_time"` |
 | `old_value` | jsonb | |
 | `new_value` | jsonb | |
