@@ -95,9 +95,11 @@ function Spinner() {
 function BookingCard({
   row,
   onAction,
+  onEdit,
 }: {
   row: BookingRow;
   onAction: (bookingId: string, action: 'check-in' | 'complete' | 'no-show') => Promise<void>;
+  onEdit: (bookingId: string) => void;
 }) {
   const { booking, service, staffMember, client } = row;
   const [acting, setActing] = useState<string | null>(null);
@@ -145,8 +147,15 @@ function BookingCard({
           )}
         </div>
 
-        {(canCheckIn || canComplete || canNoShow) && (
+        {booking.status !== 'cancelled' && (
           <div className="flex gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => onEdit(booking.id)}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200"
+              aria-label="Edit booking"
+            >
+              Edit
+            </button>
             {canCheckIn && (
               <button
                 onClick={() => handleAction('check-in')}
@@ -191,6 +200,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showWalkIn, setShowWalkIn] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ bookingId: string } | null>(null);
   const [date] = useState(todayDateString());
 
   const fetchBookings = useCallback(async () => {
@@ -336,7 +346,7 @@ export default function DashboardPage() {
       {!loading && !error && bookings.length > 0 && (
         <div className="space-y-3">
           {bookings.map((row) => (
-            <BookingCard key={row.booking.id} row={row} onAction={handleAction} />
+            <BookingCard key={row.booking.id} row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
           ))}
         </div>
       )}
@@ -349,6 +359,18 @@ export default function DashboardPage() {
           onClose={() => setShowWalkIn(false)}
           onSave={() => {
             setShowWalkIn(false);
+            void fetchBookings();
+          }}
+        />
+      )}
+
+      {editTarget && (
+        <BookingForm
+          mode="edit"
+          bookingId={editTarget.bookingId}
+          onClose={() => setEditTarget(null)}
+          onSave={() => {
+            setEditTarget(null);
             void fetchBookings();
           }}
         />

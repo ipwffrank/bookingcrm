@@ -30,6 +30,7 @@ export function BookingForm(props: BookingFormProps) {
 
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
+  const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(props.groupId ?? null);
   const [apiError, setApiError] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -56,6 +57,7 @@ export function BookingForm(props: BookingFormProps) {
       .then((data) => {
         const ctx = data as EditContextResponse;
         setServices(ctx.services);
+        setResolvedGroupId(ctx.group?.id ?? null);
         setStaffList(ctx.staff);
         setActivePackages(ctx.activePackages);
         setClientName(ctx.client.name ?? '');
@@ -181,8 +183,8 @@ export function BookingForm(props: BookingFormProps) {
             })),
           }),
         });
-      } else if (props.groupId) {
-        await apiFetch(`/merchant/bookings/group/${props.groupId}`, {
+      } else if (resolvedGroupId) {
+        await apiFetch(`/merchant/bookings/group/${resolvedGroupId}`, {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({
