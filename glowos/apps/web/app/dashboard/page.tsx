@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../lib/api';
+import type { ServiceOption, StaffOption } from './bookings/types';
+import { BookingForm } from './bookings/BookingForm';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -22,26 +24,6 @@ interface BookingRow {
   service: { id: string; name: string };
   staffMember: { id: string; name: string };
   client: { id: string; name: string | null; phone: string };
-}
-
-interface StaffOption {
-  id: string;
-  name: string;
-}
-
-interface ServiceOption {
-  id: string;
-  name: string;
-}
-
-interface WalkInForm {
-  service_id: string;
-  staff_id: string;
-  client_name: string;
-  client_phone: string;
-  start_time: string;
-  payment_method: string;
-  notes: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -104,206 +86,6 @@ function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
       <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-    </div>
-  );
-}
-
-// ─── Walk-In Modal ─────────────────────────────────────────────────────────────
-
-function WalkInModal({
-  services,
-  staffList,
-  onClose,
-  onSave,
-}: {
-  services: ServiceOption[];
-  staffList: StaffOption[];
-  onClose: () => void;
-  onSave: () => void;
-}) {
-  const router = useRouter();
-  const now = new Date();
-  const defaultDateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-  const [form, setForm] = useState<WalkInForm>({
-    service_id: services[0]?.id ?? '',
-    staff_id: staffList[0]?.id ?? '',
-    client_name: '',
-    client_phone: '',
-    start_time: defaultDateTime,
-    payment_method: 'cash',
-    notes: '',
-  });
-  const [errors, setErrors] = useState<Partial<Record<keyof WalkInForm, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const [apiError, setApiError] = useState('');
-
-  function validate(): boolean {
-    const e: Partial<Record<keyof WalkInForm, string>> = {};
-    if (!form.client_name.trim()) e.client_name = 'Client name is required';
-    if (!form.client_phone.trim()) e.client_phone = 'Phone is required';
-    if (!form.service_id) e.service_id = 'Select a service';
-    if (!form.staff_id) e.staff_id = 'Select a staff member';
-    if (!form.start_time) e.start_time = 'Start time is required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!validate()) return;
-    setSaving(true);
-    setApiError('');
-    const token = localStorage.getItem('access_token');
-    try {
-      await apiFetch('/merchant/bookings', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          service_id: form.service_id,
-          staff_id: form.staff_id,
-          client_name: form.client_name,
-          client_phone: form.client_phone,
-          start_time: new Date(form.start_time).toISOString(),
-          payment_method: form.payment_method || undefined,
-          notes: form.notes || undefined,
-        }),
-      });
-      onSave();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create booking';
-      if (err instanceof ApiError && err.status === 401) {
-        router.push('/login');
-      } else {
-        setApiError(msg);
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 z-10">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Add Walk-in Booking</h2>
-
-        {apiError && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-            {apiError}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
-              <input
-                type="text"
-                value={form.client_name}
-                onChange={(e) => setForm({ ...form, client_name: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Jane Doe"
-              />
-              {errors.client_name && <p className="text-xs text-red-500 mt-1">{errors.client_name}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-              <input
-                type="tel"
-                value={form.client_phone}
-                onChange={(e) => setForm({ ...form, client_phone: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="+65 9123 4567"
-              />
-              {errors.client_phone && <p className="text-xs text-red-500 mt-1">{errors.client_phone}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Service</label>
-            <select
-              value={form.service_id}
-              onChange={(e) => setForm({ ...form, service_id: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">Select service...</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            {errors.service_id && <p className="text-xs text-red-500 mt-1">{errors.service_id}</p>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Staff</label>
-            <select
-              value={form.staff_id}
-              onChange={(e) => setForm({ ...form, staff_id: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="">Select staff...</option>
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            {errors.staff_id && <p className="text-xs text-red-500 mt-1">{errors.staff_id}</p>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-            <input
-              type="datetime-local"
-              value={form.start_time}
-              onChange={(e) => setForm({ ...form, start_time: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            {errors.start_time && <p className="text-xs text-red-500 mt-1">{errors.start_time}</p>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-            <select
-              value={form.payment_method}
-              onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="paynow">PayNow</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-              placeholder="Any special requests..."
-            />
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-            >
-              {saving ? 'Creating...' : 'Create Booking'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
@@ -560,7 +342,8 @@ export default function DashboardPage() {
       )}
 
       {showWalkIn && (
-        <WalkInModal
+        <BookingForm
+          mode="create"
           services={services}
           staffList={staffList}
           onClose={() => setShowWalkIn(false)}
