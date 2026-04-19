@@ -101,18 +101,28 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
     "unknown";
   try {
     const phoneCount = await redis.incr(rateKeyPhone(phone));
-    if (phoneCount === 1) await redis.expire(rateKeyPhone(phone), 900);
+    if (phoneCount === 1) await redis.expire(rateKeyPhone(phone), 60);
     if (phoneCount > 3) {
+      const ttl = await redis.ttl(rateKeyPhone(phone));
       return c.json(
-        { error: "Too Many Requests", message: "Too many codes sent. Wait a few minutes." },
+        {
+          error: "Too Many Requests",
+          message: "Too many codes sent. Wait a moment.",
+          retry_after_seconds: ttl > 0 ? ttl : 60,
+        },
         429
       );
     }
     const ipCount = await redis.incr(rateKeyIp(ip));
     if (ipCount === 1) await redis.expire(rateKeyIp(ip), 3600);
     if (ipCount > 10) {
+      const ttl = await redis.ttl(rateKeyIp(ip));
       return c.json(
-        { error: "Too Many Requests", message: "Too many codes sent from this network." },
+        {
+          error: "Too Many Requests",
+          message: "Too many codes sent from this network.",
+          retry_after_seconds: ttl > 0 ? ttl : 3600,
+        },
         429
       );
     }

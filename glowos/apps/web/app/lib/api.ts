@@ -28,11 +28,13 @@ function getApiUrl(): string {
 
 export class ApiError extends Error {
   status: number;
+  body: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -156,7 +158,7 @@ export async function apiFetch(path: string, options?: RequestInit) {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const message = (body as { message?: string }).message || 'API error';
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, body);
   }
 
   return res.json();

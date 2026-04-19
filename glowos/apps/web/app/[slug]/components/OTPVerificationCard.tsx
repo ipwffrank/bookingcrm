@@ -1,6 +1,12 @@
 'use client';
-import { useState } from 'react';
-import { apiFetch } from '../../lib/api';
+import { useState, useEffect } from 'react';
+import { apiFetch, ApiError } from '../../lib/api';
+
+function formatMMSS(total: number): string {
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 interface VerifiedClient {
   id: string;
@@ -35,6 +41,23 @@ export function OTPVerificationCard({
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number>(0);
+
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining === 0) {
+        setCooldownUntil(null);
+        setError(null);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [cooldownUntil]);
 
   async function sendCode(useChannel: 'whatsapp' | 'email') {
     setLoading(true);
@@ -53,11 +76,18 @@ export function OTPVerificationCard({
       setMaskedDestination(res.masked_destination);
       setStage('enter');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send code';
-      if (useChannel === 'whatsapp' && email) {
-        setError("WhatsApp send failed — try email instead?");
+      if (err instanceof ApiError && err.status === 429) {
+        const body = err.body as { retry_after_seconds?: number } | null;
+        const retry = body?.retry_after_seconds ?? 60;
+        setCooldownUntil(Date.now() + retry * 1000);
+        setError(err.message);
       } else {
-        setError(msg);
+        const msg = err instanceof Error ? err.message : 'Failed to send code';
+        if (useChannel === 'whatsapp' && email) {
+          setError("WhatsApp send failed — try email instead?");
+        } else {
+          setError(msg);
+        }
       }
     } finally {
       setLoading(false);
@@ -96,19 +126,23 @@ export function OTPVerificationCard({
           <button
             type="button"
             onClick={() => sendCode('whatsapp')}
-            disabled={loading}
+            disabled={loading || secondsLeft > 0}
             className="w-full rounded bg-green-600 text-white py-2 text-sm font-medium disabled:opacity-50"
           >
-            {loading ? 'Sending…' : 'Send WhatsApp code'}
+            {loading
+              ? 'Sending…'
+              : secondsLeft > 0
+                ? `Try again in ${formatMMSS(secondsLeft)}`
+                : 'Send WhatsApp code'}
           </button>
           {email && (
             <button
               type="button"
               onClick={() => sendCode('email')}
-              disabled={loading}
+              disabled={loading || secondsLeft > 0}
               className="w-full rounded border border-gray-300 py-2 text-sm disabled:opacity-50"
             >
-              Use email instead
+              {secondsLeft > 0 ? `Try again in ${formatMMSS(secondsLeft)}` : 'Use email instead'}
             </button>
           )}
           {onSkip && (
