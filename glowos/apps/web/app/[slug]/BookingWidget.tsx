@@ -365,6 +365,17 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     }
   }, [slug]);
 
+  // Clear verification token when phone changes (unless Google-authenticated)
+  useEffect(() => {
+    if (authClient) return; // Google users' token binds to google_id, not phone
+    if (verificationToken === null && !skippedFirstTimerOtp) return; // nothing to reset
+    setVerificationToken(null);
+    setSkippedFirstTimerOtp(false);
+    // Also reset UI-derived signal so the next verify prompt fires cleanly
+    setIsFirstTimer(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientPhone]);
+
   // Debounced phone lookup for returning-customer detection
   useEffect(() => {
     if (authClient) { setLookupResult(null); return; } // Google user, skip lookup
