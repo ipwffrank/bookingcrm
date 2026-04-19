@@ -11,6 +11,7 @@ import { bookingsRouter, merchantBookingsRouter } from "./routes/bookings.js";
 import { clientsRouter } from "./routes/clients.js";
 import { clientNotesRouter } from "./routes/client-notes.js";
 import { paymentsRouter } from "./routes/payments.js";
+import { otpRouter } from "./routes/otp.js";
 import { webhooksRouter } from "./routes/webhooks.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { campaignsRouter } from "./routes/campaigns.js";
@@ -70,6 +71,7 @@ app.route("/booking", bookingsRouter);
 //   /booking/:slug/create-payment-intent  → POST  (public)
 app.route("/merchant/payments", paymentsRouter);
 app.route("/booking", paymentsRouter);
+app.route("/booking", otpRouter);
 app.route("/group", groupRouter);
 app.route("/merchant/duties", dutiesRouter);
 app.route("/merchant/staff", staffAuthRouter);

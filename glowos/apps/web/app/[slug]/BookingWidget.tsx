@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { OTPVerificationCard } from './components/OTPVerificationCard';
+import { ReturningCustomerCard } from './components/ReturningCustomerCard';
 
 declare global {
   interface Window {
@@ -276,6 +278,13 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   // First-timer check
   const [isFirstTimer, setIsFirstTimer] = useState<boolean | null>(null);
 
+  // Phone lookup / returning-customer + login OTP flow
+  const [lookupResult, setLookupResult] = useState<{ matched: boolean; masked_name?: string } | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [registerMode, setRegisterMode] = useState(false);
+  const [showLoginOtp, setShowLoginOtp] = useState(false);
+  const [skippedFirstTimerOtp, setSkippedFirstTimerOtp] = useState(false);
+
   // Package state
   const [availablePackages, setAvailablePackages] = useState<Array<{ id: string; name: string; description: string | null; totalSessions: number; priceSgd: string; includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>; validityDays: number }>>([]);
   const [clientActivePackages, setClientActivePackages] = useState<Array<{ id: string; packageName: string; sessionsTotal: number; sessionsUsed: number; remaining: number; expiresAt: string; pendingSessions: Array<{ id: string; sessionNumber: number; serviceId: string; status: string }> }>>([]);
@@ -296,6 +305,20 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   );
 
   const days = next30Days();
+
+  // ── Derived: first-timer OTP gating ─────────────────────────────────────────
+  const firstTimerIsBetter =
+    !!selectedService?.firstTimerDiscountEnabled &&
+    (selectedService?.firstTimerDiscountPct ?? 0) > (selectedService?.discountPct ?? 0);
+
+  const shouldOfferFirstTimerOtp =
+    registerMode &&
+    !authClient &&
+    firstTimerIsBetter &&
+    !!clientName.trim() &&
+    !!clientPhone.trim() &&
+    !verificationToken &&
+    !skippedFirstTimerOtp;
 
   // ── Google Sign-In ──────────────────────────────────────────────────────────
 
@@ -341,6 +364,40 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
         });
     }
   }, [slug]);
+
+  // Clear verification token when phone changes (unless Google-authenticated)
+  useEffect(() => {
+    if (authClient) return; // Google users' token binds to google_id, not phone
+    if (verificationToken === null && !skippedFirstTimerOtp) return; // nothing to reset
+    setVerificationToken(null);
+    setSkippedFirstTimerOtp(false);
+    // Also reset UI-derived signal so the next verify prompt fires cleanly
+    setIsFirstTimer(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientPhone]);
+
+  // Debounced phone lookup for returning-customer detection
+  useEffect(() => {
+    if (authClient) { setLookupResult(null); return; } // Google user, skip lookup
+    const phone = clientPhone.trim();
+    if (phone.length < 6) {
+      setLookupResult(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = (await apiFetch(`/booking/${slug}/lookup-client`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone }),
+        })) as { matched: boolean; masked_name?: string };
+        setLookupResult(res);
+      } catch {
+        setLookupResult(null);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [clientPhone, slug, authClient]);
 
   // Load Google Identity Services script
   useEffect(() => {
@@ -405,6 +462,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
       setClientName(c.name ?? '');
       setClientEmail(c.email ?? '');
       setClientPhone(c.phone ?? '');
+      if (data.verification_token) {
+        setVerificationToken(data.verification_token);
+      }
       // Remember for this session
       if (c.googleId) {
         sessionStorage.setItem(`glowos_google_id_${slug}`, c.googleId);
@@ -566,6 +626,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
           client_email: clientEmail.trim() || undefined,
           client_id: authClient?.id || undefined,
           payment_method: 'cash',
+          verification_token: verificationToken ?? undefined,
         }),
       });
       const bookingId = (res.booking as { id: string }).id;
@@ -1022,15 +1083,65 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 </div>
               )}
 
-              {/* ── Auth choice: Google Sign-In or Guest ─────────────────── */}
-              {!authClient && !isGuest && (
+              {/* ── Returning-customer recognition ────────────────────────── */}
+              {lookupResult?.matched && !registerMode && !verificationToken && !showLoginOtp && (
+                <ReturningCustomerCard
+                  maskedName={lookupResult.masked_name ?? 'there'}
+                  phone={clientPhone}
+                  onConfirm={() => setShowLoginOtp(true)}
+                  onNotMe={() => { setLookupResult(null); setRegisterMode(true); }}
+                />
+              )}
+
+              {/* ── Login OTP card ────────────────────────────────────────── */}
+              {showLoginOtp && (
+                <OTPVerificationCard
+                  slug={slug}
+                  phone={clientPhone}
+                  purpose="login"
+                  title="Verify your number"
+                  subtitle="We'll send a one-time code to continue"
+                  onVerified={(token, client) => {
+                    setVerificationToken(token);
+                    if (client) {
+                      setClientName(client.name ?? '');
+                      setClientEmail(client.email ?? '');
+                    }
+                    setShowLoginOtp(false);
+                    setStep(5); // advance to Review & Confirm
+                  }}
+                />
+              )}
+
+              {/* ── Auth choice: Google Sign-In primary + Register fallback ─ */}
+              {!authClient && !isGuest && !showLoginOtp && (
                 <div className="space-y-4">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600 mb-1">Sign in to save your details for faster booking next time</p>
-                    <p className="text-xs text-gray-400">We&apos;ll remember you on your next visit</p>
+                  {/* Phone input up top so the returning-customer lookup can fire */}
+                  {!lookupResult?.matched && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                        Mobile number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        autoComplete="tel"
+                        className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                        placeholder="+65 9123 4567"
+                      />
+                      <p className="mt-1.5 text-xs text-gray-400">We&apos;ll check if you&apos;ve booked with us before</p>
+                    </div>
+                  )}
+
+                  {/* ── or sign in faster ── */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">or sign in faster</span>
+                    <div className="flex-1 h-px bg-gray-200" />
                   </div>
 
-                  {/* Google Sign-In button container */}
+                  {/* Primary: Continue with Google */}
                   {googleClientId && (
                     <div className="flex justify-center">
                       {authLoading ? (
@@ -1047,19 +1158,12 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     </div>
                   )}
 
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-gray-200" />
-                    <span className="text-xs text-gray-400 font-medium">or</span>
-                    <div className="flex-1 h-px bg-gray-200" />
-                  </div>
-
-                  {/* Continue as Guest */}
+                  {/* Secondary: Register now */}
                   <button
-                    onClick={() => setIsGuest(true)}
-                    className="w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                    onClick={() => { setIsGuest(true); setRegisterMode(true); }}
+                    className="w-full rounded-xl border border-gray-200 py-2.5 text-xs font-medium text-gray-500 hover:border-gray-300 hover:bg-gray-50 transition-colors"
                   >
-                    Continue as Guest
+                    Register now
                   </button>
                 </div>
               )}
@@ -1177,6 +1281,26 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     </div>
                   )}
 
+                  {shouldOfferFirstTimerOtp && (
+                    <OTPVerificationCard
+                      slug={slug}
+                      phone={clientPhone}
+                      email={clientEmail || undefined}
+                      purpose="first_timer_verify"
+                      title={`🎁 Claim ${selectedService?.firstTimerDiscountPct}% first-visit discount`}
+                      subtitle="Verify your phone to unlock"
+                      onVerified={(token) => {
+                        setVerificationToken(token);
+                        setIsFirstTimer(true);
+                      }}
+                      onSkip={() => {
+                        setSkippedFirstTimerOtp(true);
+                        setVerificationToken(null);
+                        setIsFirstTimer(false);
+                      }}
+                    />
+                  )}
+
                   <button
                     onClick={async () => {
                       if (!clientName.trim() || !clientPhone.trim()) {
@@ -1194,7 +1318,11 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                           if (authClient?.googleId) params.set('google_id', authClient.googleId);
                           const ftRes = await apiFetch(`/merchant/services/check-first-timer?${params.toString()}`);
                           setIsFirstTimer((ftRes as { isFirstTimer: boolean }).isFirstTimer);
-                        } catch { /* ignore */ }
+                        } catch (err) {
+                          console.error("[BookingWidget] first-timer check failed", err);
+                          // Default to false — safer than null when deciding whether to offer verification
+                          setIsFirstTimer(false);
+                        }
                       }
 
                       // Check for active packages
@@ -1219,7 +1347,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                               client_name: clientName.trim(),
                               client_email: clientEmail.trim() || undefined,
                               client_phone: clientPhone.trim(),
-                              is_first_timer: isFirstTimer ?? undefined,
+                              verification_token: verificationToken ?? undefined,
                             }),
                           });
                           setClientSecret(res.client_secret as string);
@@ -1252,7 +1380,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                         setStep(5);
                       }
                     }}
-                    disabled={!clientName.trim() || !clientPhone.trim() || confirmLoading}
+                    disabled={shouldOfferFirstTimerOtp || !clientName.trim() || !clientPhone.trim() || confirmLoading}
                     className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {confirmLoading ? 'Setting up payment...' : 'Continue to Review'}

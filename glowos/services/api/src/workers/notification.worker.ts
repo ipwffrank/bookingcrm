@@ -61,6 +61,12 @@ interface LowRatingAlertData {
   booking_id: string;
 }
 
+interface OtpSendData {
+  channel: "whatsapp" | "email";
+  destination: string; // E.164 phone for WhatsApp, email address for email
+  code: string;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -761,6 +767,32 @@ async function handleLowRatingAlert(bookingId: string): Promise<void> {
   console.log("[NotificationWorker] low_rating_alert handled", { bookingId, rating: review.rating });
 }
 
+async function handleOtpSend(data: OtpSendData): Promise<void> {
+  const body = `Your GlowOS verification code: ${data.code}. Valid for 10 minutes.`;
+  if (data.channel === "whatsapp") {
+    const sid = await sendWhatsApp(data.destination, body);
+    if (!sid) {
+      throw new Error(`WhatsApp OTP failed for ${data.destination}`);
+    }
+    console.log("[NotificationWorker] otp_send whatsapp ok", {
+      destination: data.destination,
+      sid,
+    });
+    return;
+  }
+  const ok = await sendEmail({
+    to: data.destination,
+    subject: "Your verification code",
+    html: `<p>Your GlowOS verification code is <strong>${data.code}</strong>.</p><p>It will expire in 10 minutes.</p>`,
+  });
+  if (!ok) {
+    throw new Error(`Email OTP failed for ${data.destination}`);
+  }
+  console.log("[NotificationWorker] otp_send email ok", {
+    destination: data.destination,
+  });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -827,6 +859,10 @@ export function createNotificationWorker(): Worker {
         case "low_rating_alert": {
           const data = job.data as LowRatingAlertData;
           await handleLowRatingAlert(data.booking_id);
+          break;
+        }
+        case "otp_send": {
+          await handleOtpSend(job.data as OtpSendData);
           break;
         }
         default:

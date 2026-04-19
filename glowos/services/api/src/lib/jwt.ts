@@ -79,3 +79,37 @@ export function verifyBookingToken(token: string, bookingId: string): boolean {
     return false;
   }
 }
+
+// ─── Verification tokens (OTP + Google Sign-in identity proof) ──────────────
+
+export type VerificationPurpose = "login" | "first_timer_verify" | "google_verify";
+
+export interface VerificationTokenPayload {
+  phone: string | null;
+  email: string | null;
+  google_id: string | null;
+  purpose: VerificationPurpose;
+  verified_at: number;
+}
+
+const VERIFY_SECRET_SUFFIX = "_verify";
+
+export function generateVerificationToken(
+  payload: VerificationTokenPayload,
+  ttlSeconds: number
+): string {
+  return jwt.sign(payload, config.jwtSecret + VERIFY_SECRET_SUFFIX, {
+    expiresIn: ttlSeconds,
+  });
+}
+
+export function verifyVerificationToken(
+  token: string
+): (VerificationTokenPayload & jwt.JwtPayload) | null {
+  try {
+    return jwt.verify(token, config.jwtSecret + VERIFY_SECRET_SUFFIX) as
+      VerificationTokenPayload & jwt.JwtPayload;
+  } catch {
+    return null;
+  }
+}
