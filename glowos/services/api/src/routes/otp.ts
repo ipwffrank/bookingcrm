@@ -93,36 +93,52 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
     );
   }
 
-  // Rate limits
+  // Rate limits — best-effort. If Redis is unavailable, skip rate limiting
+  // rather than block legitimate users on a transient infra failure.
   const ip =
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
     c.req.header("x-real-ip") ||
     "unknown";
-  const phoneCount = await redis.incr(rateKeyPhone(phone));
-  if (phoneCount === 1) await redis.expire(rateKeyPhone(phone), 900); // 15 min
-  if (phoneCount > 3) {
-    return c.json(
-      { error: "Too Many Requests", message: "Too many codes sent. Wait a few minutes." },
-      429
-    );
-  }
-  const ipCount = await redis.incr(rateKeyIp(ip));
-  if (ipCount === 1) await redis.expire(rateKeyIp(ip), 3600);
-  if (ipCount > 10) {
-    return c.json(
-      { error: "Too Many Requests", message: "Too many codes sent from this network." },
-      429
-    );
+  try {
+    const phoneCount = await redis.incr(rateKeyPhone(phone));
+    if (phoneCount === 1) await redis.expire(rateKeyPhone(phone), 900);
+    if (phoneCount > 3) {
+      return c.json(
+        { error: "Too Many Requests", message: "Too many codes sent. Wait a few minutes." },
+        429
+      );
+    }
+    const ipCount = await redis.incr(rateKeyIp(ip));
+    if (ipCount === 1) await redis.expire(rateKeyIp(ip), 3600);
+    if (ipCount > 10) {
+      return c.json(
+        { error: "Too Many Requests", message: "Too many codes sent from this network." },
+        429
+      );
+    }
+  } catch (err) {
+    console.error("[OTP] rate-limit check failed; skipping", err);
   }
 
-  // Generate + store
+  // Generate + store — load-bearing, must succeed for verification to work
   const code = String(crypto.randomInt(100000, 1000000));
-  await redis.set(
-    otpKey(phone, body.purpose),
-    JSON.stringify({ code, email, channel: body.channel, attempts: 0 }),
-    "EX",
-    600
-  );
+  try {
+    await redis.set(
+      otpKey(phone, body.purpose),
+      JSON.stringify({ code, email, channel: body.channel, attempts: 0 }),
+      "EX",
+      600
+    );
+  } catch (err) {
+    console.error("[OTP] failed to persist code", err);
+    return c.json(
+      {
+        error: "Service Unavailable",
+        message: "Verification is temporarily unavailable. Please try again in a moment.",
+      },
+      503
+    );
+  }
 
   // Dispatch
   if (body.channel === "whatsapp") {
@@ -174,7 +190,19 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
   }
 
   const key = otpKey(phone, body.purpose);
-  const raw = await redis.get(key);
+  let raw: string | null;
+  try {
+    raw = await redis.get(key);
+  } catch (err) {
+    console.error("[OTP] verify: failed to read code", err);
+    return c.json(
+      {
+        error: "Service Unavailable",
+        message: "Verification is temporarily unavailable. Please try again in a moment.",
+      },
+      503
+    );
+  }
   if (!raw) {
     return c.json(
       { error: "Gone", message: "Code expired or not found. Request a new one." },
@@ -190,7 +218,7 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
   };
 
   if (entry.attempts >= 5) {
-    await redis.del(key);
+    try { await redis.del(key); } catch { /* best-effort cleanup */ }
     return c.json(
       { error: "Too Many Requests", message: "Too many attempts. Request a new code." },
       429
@@ -199,12 +227,17 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
 
   if (entry.code !== body.code) {
     entry.attempts += 1;
-    await redis.set(key, JSON.stringify(entry), "KEEPTTL");
+    try {
+      await redis.set(key, JSON.stringify(entry), "KEEPTTL");
+    } catch (err) {
+      console.error("[OTP] verify: failed to update attempts", err);
+      // Don't escalate — user will just see "wrong code" and retry; attempts won't increment
+    }
     return c.json({ error: "Unauthorized", message: "Incorrect code." }, 401);
   }
 
   // Success — delete the key (single-use) and issue the verification token
-  await redis.del(key);
+  try { await redis.del(key); } catch { /* best-effort cleanup */ }
 
   const token = generateVerificationToken(
     {
@@ -270,10 +303,14 @@ otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
     c.req.header("x-real-ip") ||
     "unknown";
   const lookupKey = `lookup:rate:ip:${ip}`;
-  const count = await redis.incr(lookupKey);
-  if (count === 1) await redis.expire(lookupKey, 60);
-  if (count > 10) {
-    return c.json({ error: "Too Many Requests", message: "Slow down." }, 429);
+  try {
+    const count = await redis.incr(lookupKey);
+    if (count === 1) await redis.expire(lookupKey, 60);
+    if (count > 10) {
+      return c.json({ error: "Too Many Requests", message: "Slow down." }, 429);
+    }
+  } catch (err) {
+    console.error("[OTP] lookup-client: rate-limit check failed; skipping", err);
   }
 
   const [client] = await db
