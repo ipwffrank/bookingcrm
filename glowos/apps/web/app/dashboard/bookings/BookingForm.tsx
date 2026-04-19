@@ -12,6 +12,7 @@ import type {
   EditContextResponse,
 } from './types';
 import { ServiceRow } from './ServiceRow';
+import { EditHistoryPanel } from './EditHistoryPanel';
 
 export interface BookingFormProps {
   mode: 'create' | 'edit';
@@ -240,6 +241,7 @@ export function BookingForm(props: BookingFormProps) {
           {mode === 'create' ? 'Add Walk-in Booking' : 'Edit Booking'}
         </h2>
         {lastEditLabel && <p className="text-xs text-gray-500 mb-3">{lastEditLabel}</p>}
+        {mode === 'edit' && props.bookingId && <EditHistoryPanel bookingId={props.bookingId} />}
         {completedBanner && (
           <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
             This booking is completed. Edits will not re-send review requests or recalculate commissions.
