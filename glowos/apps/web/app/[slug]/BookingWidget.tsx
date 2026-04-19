@@ -1205,6 +1205,25 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
               {/* ── Form fields (shown when auth'd or guest) ──────── */}
               {(authClient || isGuest) && (
                 <>
+                  {/* Escape hatch: collapse back to the auth-picker view so the
+                      user can switch to Google Sign-in without refreshing.
+                      Hidden once signed in via Google (authClient set). */}
+                  {!authClient && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsGuest(false);
+                        setRegisterMode(false);
+                        setSkippedFirstTimerOtp(false);
+                        // Preserve clientPhone so the returning-customer lookup
+                        // can re-fire without the user retyping it.
+                      }}
+                      className="text-xs text-gray-500 underline hover:text-gray-700 transition-colors"
+                    >
+                      ← Use Google instead
+                    </button>
+                  )}
+
                   {/* Name */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
