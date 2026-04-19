@@ -114,14 +114,14 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
       );
     }
     const ipCount = await redis.incr(rateKeyIp(ip));
-    if (ipCount === 1) await redis.expire(rateKeyIp(ip), 3600);
-    if (ipCount > 10) {
+    if (ipCount === 1) await redis.expire(rateKeyIp(ip), 60);
+    if (ipCount > 5) {
       const ttl = await redis.ttl(rateKeyIp(ip));
       return c.json(
         {
           error: "Too Many Requests",
           message: "Too many codes sent from this network.",
-          retry_after_seconds: ttl > 0 ? ttl : 3600,
+          retry_after_seconds: ttl > 0 ? ttl : 60,
         },
         429
       );
