@@ -57,6 +57,13 @@
       "when": 1776504469249,
       "tag": "0007_late_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1776615250383,
+      "tag": "0008_merchants_country",
+      "breakpoints": true
     }
   ]
 }

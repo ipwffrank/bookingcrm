@@ -18,6 +18,7 @@ import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
+import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
 import { processRefund } from "../lib/refunds.js";
@@ -82,49 +83,6 @@ const rescheduleSchema = z.object({
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Find a client by phone, or create one if not found.
- * Phone is normalized to E.164; email is trimmed + lowercased.
- * Throws if the phone cannot be normalized (caller must handle with a 400).
- */
-async function findOrCreateClient(
-  rawPhone: string,
-  name?: string,
-  rawEmail?: string,
-  defaultCountry: "SG" | "MY" = "SG"
-): Promise<{ id: string }> {
-  const phone = normalizePhone(rawPhone, defaultCountry);
-  if (!phone) throw new Error("Invalid phone number");
-  const email = normalizeEmail(rawEmail);
-
-  const [existing] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(eq(clients.phone, phone))
-    .limit(1);
-
-  if (existing) {
-    if (name || email) {
-      await db
-        .update(clients)
-        .set({
-          ...(name ? { name } : {}),
-          ...(email ? { email } : {}),
-        })
-        .where(eq(clients.id, existing.id));
-    }
-    return existing;
-  }
-
-  const [created] = await db
-    .insert(clients)
-    .values({ phone, name, email })
-    .returning({ id: clients.id });
-
-  if (!created) throw new Error("Failed to create client");
-  return created;
-}
 
 /**
  * Find or create a client_profile for the given merchant + client pair.
@@ -583,6 +541,17 @@ merchantBookingsRouter.post(
     const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof merchantBookingCreateSchema>;
 
+    // Load merchant (for country → phone normalization default)
+    const [merchant] = await db
+      .select({ country: merchants.country })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+      .limit(1);
+
+    if (!merchant) {
+      return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+    }
+
     // Load service
     const [service] = await db
       .select({
@@ -616,7 +585,12 @@ merchantBookingsRouter.post(
     // Find or create client
     let client: { id: string };
     try {
-      client = await findOrCreateClient(body.client_phone, body.client_name);
+      client = await findOrCreateClient(
+        body.client_phone,
+        body.client_name,
+        undefined,
+        merchant.country
+      );
     } catch {
       return c.json(
         { error: "Bad Request", message: "Invalid phone number" },
@@ -1123,7 +1097,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
 
   // Resolve merchant
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
@@ -1198,7 +1172,8 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       client = await findOrCreateClient(
         body.client_phone,
         body.client_name,
-        body.client_email
+        body.client_email,
+        merchant.country
       );
     } catch {
       return c.json(
@@ -1224,7 +1199,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
   ) {
     const token = verifyVerificationToken(body.verification_token);
     if (token) {
-      const defaultCountry: "SG" | "MY" = "SG";
+      const defaultCountry = merchant.country;
       const normalizedPhone = normalizePhone(body.client_phone, defaultCountry);
       const normalizedEmail = normalizeEmail(body.client_email);
 

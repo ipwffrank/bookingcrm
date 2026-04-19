@@ -68,7 +68,7 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
   const body = c.get("body") as z.infer<typeof sendSchema>;
 
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
@@ -76,9 +76,7 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
     return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
   }
 
-  // `merchants.country` is not yet a column on the schema; default to SG.
-  // When the column is added, select it above and use it here.
-  const defaultCountry: "SG" | "MY" = "SG";
+  const defaultCountry = merchant.country;
   const phone = normalizePhone(body.phone, defaultCountry);
   if (!phone) {
     return c.json({ error: "Bad Request", message: "Invalid phone number" }, 400);
@@ -184,7 +182,7 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
   const body = c.get("body") as z.infer<typeof verifySchema>;
 
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
@@ -192,8 +190,7 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
     return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
   }
 
-  // `merchants.country` is not yet a column on the schema; default to SG.
-  const defaultCountry: "SG" | "MY" = "SG";
+  const defaultCountry = merchant.country;
   const phone = normalizePhone(body.phone, defaultCountry);
   if (!phone) {
     return c.json({ error: "Bad Request", message: "Invalid phone number" }, 400);
@@ -296,14 +293,13 @@ otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
   const body = c.get("body") as z.infer<typeof lookupSchema>;
 
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
   if (!merchant) return c.json({ matched: false });
 
-  // `merchants.country` is not yet a column on the schema; default to SG.
-  const defaultCountry: "SG" | "MY" = "SG";
+  const defaultCountry = merchant.country;
   const phone = normalizePhone(body.phone, defaultCountry);
   if (!phone) return c.json({ matched: false });
 

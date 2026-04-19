@@ -13,6 +13,7 @@ import {
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
+import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { addJob } from "../lib/queue.js";
 import { scheduleReminder } from "../lib/scheduler.js";
@@ -21,50 +22,6 @@ import type { AppVariables } from "../lib/types.js";
 const webhooksRouter = new Hono<{ Variables: AppVariables }>();
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Find a client by phone, or create one if not found.
- * Phone is normalized to E.164; email is trimmed + lowercased.
- * Throws if the phone cannot be normalized (caller must handle).
- * Duplicated from bookings.ts intentionally — webhooks module is self-contained.
- */
-async function findOrCreateClient(
-  rawPhone: string,
-  name?: string,
-  rawEmail?: string,
-  defaultCountry: "SG" | "MY" = "SG"
-): Promise<{ id: string }> {
-  const phone = normalizePhone(rawPhone, defaultCountry);
-  if (!phone) throw new Error("Invalid phone number");
-  const email = normalizeEmail(rawEmail);
-
-  const [existing] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(eq(clients.phone, phone))
-    .limit(1);
-
-  if (existing) {
-    if (name || email) {
-      await db
-        .update(clients)
-        .set({
-          ...(name ? { name } : {}),
-          ...(email ? { email } : {}),
-        })
-        .where(eq(clients.id, existing.id));
-    }
-    return existing;
-  }
-
-  const [created] = await db
-    .insert(clients)
-    .values({ phone, name, email })
-    .returning({ id: clients.id });
-
-  if (!created) throw new Error("Failed to create client");
-  return created;
-}
 
 async function findOrCreateClientProfile(
   merchantId: string,
@@ -183,6 +140,20 @@ webhooksRouter.post("/stripe", async (c) => {
           break;
         }
 
+        // Load merchant country for phone normalization default
+        const [merchant] = await db
+          .select({ country: merchants.country })
+          .from(merchants)
+          .where(eq(merchants.id, merchant_id))
+          .limit(1);
+
+        if (!merchant) {
+          console.warn("[Webhook] Merchant not found", { merchant_id });
+          break;
+        }
+
+        const defaultCountry = merchant.country;
+
         // Resolve customer details — prefer metadata (passed from booking form)
         // over billing_details (often incomplete for card/PayNow/GrabPay).
         let clientPhone = meta.client_phone || "";
@@ -222,7 +193,7 @@ webhooksRouter.post("/stripe", async (c) => {
             // Update phone/name/email if the form provided newer values (normalized).
             const normalizedPhone =
               clientPhone && !clientPhone.startsWith("pi_")
-                ? normalizePhone(clientPhone)
+                ? normalizePhone(clientPhone, defaultCountry)
                 : null;
             const normalizedEmail = normalizeEmail(clientEmail);
             await db
@@ -237,7 +208,12 @@ webhooksRouter.post("/stripe", async (c) => {
             // client_id not found — fall through to phone-based lookup
             if (!clientPhone) clientPhone = `pi_${pi.id}`;
             try {
-              client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+              client = await findOrCreateClient(
+                clientPhone,
+                clientName,
+                clientEmail,
+                defaultCountry
+              );
             } catch {
               console.error("[Webhook] Invalid phone, skipping client creation", {
                 clientPhone,
@@ -250,7 +226,12 @@ webhooksRouter.post("/stripe", async (c) => {
           // No client_id — use phone-based lookup (guest checkout)
           if (!clientPhone) clientPhone = `pi_${pi.id}`;
           try {
-            client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+            client = await findOrCreateClient(
+              clientPhone,
+              clientName,
+              clientEmail,
+              defaultCountry
+            );
           } catch {
             console.error("[Webhook] Invalid phone, skipping client creation", {
               clientPhone,
