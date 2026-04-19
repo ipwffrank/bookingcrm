@@ -451,6 +451,9 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
       setClientName(c.name ?? '');
       setClientEmail(c.email ?? '');
       setClientPhone(c.phone ?? '');
+      if (data.verification_token) {
+        setVerificationToken(data.verification_token);
+      }
       // Remember for this session
       if (c.googleId) {
         sessionStorage.setItem(`glowos_google_id_${slug}`, c.googleId);
@@ -1099,15 +1102,35 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                 />
               )}
 
-              {/* ── Auth choice: Google Sign-In or Guest ─────────────────── */}
-              {!authClient && !isGuest && (
+              {/* ── Auth choice: Google Sign-In primary + Register fallback ─ */}
+              {!authClient && !isGuest && !showLoginOtp && (
                 <div className="space-y-4">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600 mb-1">Sign in to save your details for faster booking next time</p>
-                    <p className="text-xs text-gray-400">We&apos;ll remember you on your next visit</p>
+                  {/* Phone input up top so the returning-customer lookup can fire */}
+                  {!lookupResult?.matched && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                        Mobile number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        autoComplete="tel"
+                        className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                        placeholder="+65 9123 4567"
+                      />
+                      <p className="mt-1.5 text-xs text-gray-400">We&apos;ll check if you&apos;ve booked with us before</p>
+                    </div>
+                  )}
+
+                  {/* ── or sign in faster ── */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">or sign in faster</span>
+                    <div className="flex-1 h-px bg-gray-200" />
                   </div>
 
-                  {/* Google Sign-In button container */}
+                  {/* Primary: Continue with Google */}
                   {googleClientId && (
                     <div className="flex justify-center">
                       {authLoading ? (
@@ -1124,17 +1147,10 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     </div>
                   )}
 
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-gray-200" />
-                    <span className="text-xs text-gray-400 font-medium">or</span>
-                    <div className="flex-1 h-px bg-gray-200" />
-                  </div>
-
-                  {/* Register now */}
+                  {/* Secondary: Register now */}
                   <button
                     onClick={() => { setIsGuest(true); setRegisterMode(true); }}
-                    className="w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                    className="w-full rounded-xl border border-gray-200 py-2.5 text-xs font-medium text-gray-500 hover:border-gray-300 hover:bg-gray-50 transition-colors"
                   >
                     Register now
                   </button>
