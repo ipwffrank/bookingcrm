@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
@@ -273,7 +273,6 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   } | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [isGuest, setIsGuest] = useState(false);
-  const googleBtnRef = useRef<HTMLDivElement>(null);
 
   // First-timer check
   const [isFirstTimer, setIsFirstTimer] = useState<boolean | null>(null);
@@ -411,45 +410,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     document.head.appendChild(script);
   }, [googleClientId]);
 
-  // Render Google button when step 4 is active and user hasn't signed in or chosen guest
-  useEffect(() => {
-    if (step !== 4 || authClient || isGuest || !googleClientId) return;
-    if (!window.google || !googleBtnRef.current) {
-      // Script may not be loaded yet — retry
-      const timer = setTimeout(() => {
-        if (window.google && googleBtnRef.current) {
-          window.google.accounts.id.initialize({
-            client_id: googleClientId,
-            callback: handleGoogleSignIn,
-          });
-          window.google.accounts.id.renderButton(googleBtnRef.current, {
-            theme: 'outline',
-            size: 'large',
-            width: 320,
-            text: 'signin_with',
-            shape: 'pill',
-            logo_alignment: 'center',
-          });
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-    window.google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: handleGoogleSignIn,
-    });
-    window.google.accounts.id.renderButton(googleBtnRef.current, {
-      theme: 'outline',
-      size: 'large',
-      width: 320,
-      text: 'signin_with',
-      shape: 'pill',
-      logo_alignment: 'center',
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, authClient, isGuest, googleClientId]);
-
-  async function handleGoogleSignIn(response: { credential: string }) {
+  const handleGoogleSignIn = useCallback(async (response: { credential: string }) => {
     setAuthLoading(true);
     setConfirmError('');
     try {
@@ -474,7 +435,51 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     } finally {
       setAuthLoading(false);
     }
-  }
+  }, [slug]);
+
+  // Callback ref: re-renders the Google Sign-in button every time the div mounts.
+  // This handles the case where the auth-picker unmounts (e.g., during the login-OTP
+  // card) and remounts — a plain useRef would leave the new div empty.
+  const mountGoogleButton = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || !googleClientId) return;
+      if (!window.google) {
+        // GIS script hasn't loaded yet; retry in a moment
+        setTimeout(() => {
+          if (window.google && node.isConnected) {
+            window.google.accounts.id.initialize({
+              client_id: googleClientId,
+              callback: handleGoogleSignIn,
+            });
+            window.google.accounts.id.renderButton(node, {
+              theme: 'outline',
+              size: 'large',
+              width: 320,
+              text: 'signin_with',
+              shape: 'pill',
+              logo_alignment: 'center',
+            });
+          }
+        }, 500);
+        // Note: no cleanup for this setTimeout because the node could remount
+        // within 500ms; best-effort is fine here.
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleSignIn,
+      });
+      window.google.accounts.id.renderButton(node, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        text: 'signin_with',
+        shape: 'pill',
+        logo_alignment: 'center',
+      });
+    },
+    [googleClientId, handleGoogleSignIn]
+  );
 
   function handleSignOut() {
     setAuthClient(null);
@@ -1157,7 +1162,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                           Signing in...
                         </div>
                       ) : (
-                        <div ref={googleBtnRef} />
+                        <div ref={mountGoogleButton} />
                       )}
                     </div>
                   )}
