@@ -53,14 +53,9 @@ A minimal Next.js page at `glowos/apps/web/app/embed/[slug]/page.tsx`.
 <div className="min-h-screen bg-transparent p-0">
   <BookingWidget merchantSlug={slug} embedded />
   <footer className="py-3 text-center">
-    <a
-      href="https://glowos.co"
-      target="_blank"
-      rel="noopener"
-      className="text-[11px] text-gray-400 hover:text-gray-600"
-    >
-      Powered by GlowOS →
-    </a>
+    <span className="text-[11px] text-gray-400">
+      Powered by GlowOS
+    </span>
   </footer>
 </div>
 ```
@@ -70,8 +65,7 @@ Key properties:
 - **Transparent background** so the merchant's page color shows through the iframe.
 - **No outer page padding**; the widget fills the iframe tightly.
 - **No merchant header** (no logo, address, or description) — the merchant's own website already provides this above the embed.
-- **"Powered by GlowOS →" footer link** — small gray text at the bottom, opens a new tab. Cheap brand exposure; can be toggled off for an enterprise tier later.
-- **`target="_blank"` on the footer link** ensures clicking it does not disrupt the customer's booking flow inside the iframe.
+- **"Powered by GlowOS" footer — static text, no link for v1.** GlowOS does not yet have a public marketing landing page; shipping a link that goes nowhere useful (or to the Vercel URL, which is the same product) is worse than plain text. When a marketing page exists, upgrade the `<span>` to an `<a href="...">` — a one-line change.
 
 ### BookingWidget prop change
 
@@ -180,7 +174,7 @@ Manual checklist (the codebase has no automated test framework):
 - [ ] Paste the iframe snippet into a throwaway HTML file or codepen.io — widget loads inside the iframe; booking completes successfully; no console errors about X-Frame-Options or CSP.
 - [ ] Existing `/{slug}` bookings still tag `booking_source = 'direct_widget'` (no regression).
 - [ ] Admin Settings → Booking Page → "Embed on your website": snippet shows, slug is pre-filled, "Copy" button works, "Preview in new tab" opens `/embed/{slug}` correctly.
-- [ ] Clicking "Powered by GlowOS →" opens `https://glowos.co` in a new tab without disrupting the booking flow.
+- [ ] "Powered by GlowOS" appears as plain text in the footer (no link behavior).
 
 ---
 
