@@ -78,16 +78,6 @@ bookingGroupsRouter.post(
       return c.json({ error: "Bad Request", message: "Invalid phone number" }, 400);
     }
 
-    // Ensure client_profile exists for this merchant (required for analytics)
-    const [profileExisting] = await db
-      .select({ id: clientProfiles.id })
-      .from(clientProfiles)
-      .where(and(eq(clientProfiles.merchantId, merchantId), eq(clientProfiles.clientId, client.id)))
-      .limit(1);
-    if (!profileExisting) {
-      await db.insert(clientProfiles).values({ merchantId, clientId: client.id });
-    }
-
     // Load all service rows referenced
     const serviceIds = Array.from(new Set(body.services.map((s) => s.service_id)));
     const serviceRows = await db
@@ -189,6 +179,16 @@ bookingGroupsRouter.post(
             createdByUserId: userId,
           })
           .returning();
+
+        // Ensure client_profile exists for this merchant (required for analytics)
+        const [profileExisting] = await tx
+          .select({ id: clientProfiles.id })
+          .from(clientProfiles)
+          .where(and(eq(clientProfiles.merchantId, merchantId), eq(clientProfiles.clientId, client.id)))
+          .limit(1);
+        if (!profileExisting) {
+          await tx.insert(clientProfiles).values({ merchantId, clientId: client.id });
+        }
 
         const inserted = [];
         for (const p of plan) {
