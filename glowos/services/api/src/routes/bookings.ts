@@ -17,6 +17,7 @@ import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
+import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { processRefund } from "../lib/refunds.js";
 import { addJob } from "../lib/queue.js";
 import {
@@ -70,12 +71,19 @@ const rescheduleSchema = z.object({
 
 /**
  * Find a client by phone, or create one if not found.
+ * Phone is normalized to E.164; email is trimmed + lowercased.
+ * Throws if the phone cannot be normalized (caller must handle with a 400).
  */
 async function findOrCreateClient(
-  phone: string,
+  rawPhone: string,
   name?: string,
-  email?: string
+  rawEmail?: string,
+  defaultCountry: "SG" | "MY" = "SG"
 ): Promise<{ id: string }> {
+  const phone = normalizePhone(rawPhone, defaultCountry);
+  if (!phone) throw new Error("Invalid phone number");
+  const email = normalizeEmail(rawEmail);
+
   const [existing] = await db
     .select({ id: clients.id })
     .from(clients)
@@ -83,7 +91,6 @@ async function findOrCreateClient(
     .limit(1);
 
   if (existing) {
-    // Update name/email if provided and missing
     if (name || email) {
       await db
         .update(clients)
@@ -593,7 +600,15 @@ merchantBookingsRouter.post(
     const endTime = addMinutes(startTime, totalDuration);
 
     // Find or create client
-    const client = await findOrCreateClient(body.client_phone, body.client_name);
+    let client: { id: string };
+    try {
+      client = await findOrCreateClient(body.client_phone, body.client_name);
+    } catch {
+      return c.json(
+        { error: "Bad Request", message: "Invalid phone number" },
+        400
+      );
+    }
     await findOrCreateClientProfile(merchantId, client.id);
 
     const [booking] = await db
@@ -1148,21 +1163,29 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       return c.json({ error: "Not Found", message: "Client not found" }, 404);
     }
     client = existing;
-    // Update phone/name if changed (Google users may provide phone for first time)
+    const normalizedPhone = body.client_phone ? normalizePhone(body.client_phone) : null;
+    const normalizedEmail = normalizeEmail(body.client_email);
     await db
       .update(clients)
       .set({
-        ...(body.client_phone ? { phone: body.client_phone } : {}),
+        ...(normalizedPhone ? { phone: normalizedPhone } : {}),
         ...(body.client_name ? { name: body.client_name } : {}),
-        ...(body.client_email ? { email: body.client_email } : {}),
+        ...(normalizedEmail ? { email: normalizedEmail } : {}),
       })
       .where(eq(clients.id, client.id));
   } else {
-    client = await findOrCreateClient(
-      body.client_phone,
-      body.client_name,
-      body.client_email
-    );
+    try {
+      client = await findOrCreateClient(
+        body.client_phone,
+        body.client_name,
+        body.client_email
+      );
+    } catch {
+      return c.json(
+        { error: "Bad Request", message: "Invalid phone number" },
+        400
+      );
+    }
   }
 
   // Find or create client profile for this merchant

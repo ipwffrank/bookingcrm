@@ -12,6 +12,7 @@ import {
 } from "@glowos/db";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
+import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { addJob } from "../lib/queue.js";
 import { scheduleReminder } from "../lib/scheduler.js";
@@ -23,13 +24,20 @@ const webhooksRouter = new Hono<{ Variables: AppVariables }>();
 
 /**
  * Find a client by phone, or create one if not found.
+ * Phone is normalized to E.164; email is trimmed + lowercased.
+ * Throws if the phone cannot be normalized (caller must handle).
  * Duplicated from bookings.ts intentionally — webhooks module is self-contained.
  */
 async function findOrCreateClient(
-  phone: string,
+  rawPhone: string,
   name?: string,
-  email?: string
+  rawEmail?: string,
+  defaultCountry: "SG" | "MY" = "SG"
 ): Promise<{ id: string }> {
+  const phone = normalizePhone(rawPhone, defaultCountry);
+  if (!phone) throw new Error("Invalid phone number");
+  const email = normalizeEmail(rawEmail);
+
   const [existing] = await db
     .select({ id: clients.id })
     .from(clients)
@@ -223,12 +231,28 @@ webhooksRouter.post("/stripe", async (c) => {
           } else {
             // client_id not found — fall through to phone-based lookup
             if (!clientPhone) clientPhone = `pi_${pi.id}`;
-            client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+            try {
+              client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+            } catch {
+              console.error("[Webhook] Invalid phone, skipping client creation", {
+                clientPhone,
+                payment_intent_id: pi.id,
+              });
+              break;
+            }
           }
         } else {
           // No client_id — use phone-based lookup (guest checkout)
           if (!clientPhone) clientPhone = `pi_${pi.id}`;
-          client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+          try {
+            client = await findOrCreateClient(clientPhone, clientName, clientEmail);
+          } catch {
+            console.error("[Webhook] Invalid phone, skipping client creation", {
+              clientPhone,
+              payment_intent_id: pi.id,
+            });
+            break;
+          }
         }
 
         await findOrCreateClientProfile(merchant_id, client.id);
