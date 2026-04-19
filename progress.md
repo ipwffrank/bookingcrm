@@ -1,5 +1,45 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 19 April 2026 (Session 11)**
+**Last updated: 20 April 2026 (Session 12)**
+
+---
+
+## What's Completed (Session 12 — 20 April 2026)
+
+### Embed booking widget ✅
+Merchants can now drop an `<iframe>` snippet into their own websites (Wix / Squarespace / WordPress / Shopify) to host the booking widget inline — closing the biggest distribution gap from the Session 10 roadmap.
+
+- New public route `/embed/[slug]` — reuses the existing `BookingWidget` component with an `embedded` prop that tightens layout and overrides `booking_source` to `embedded_widget`. No merchant header, transparent background, plain "Powered by GlowOS" footer.
+- Next.js middleware allows iframe embedding on `/embed/*` only (`Content-Security-Policy: frame-ancestors *`). Admin and direct-booking routes retain default framing protection.
+- `public/robots.txt` disallows crawling of `/embed/*` so embedded views don't compete with `/{slug}` in search results. Page also emits `<meta name="robots" content="noindex, nofollow">` as belt-and-braces.
+- Missing-slug handling renders a small inline "Booking is temporarily unavailable." instead of the full 404 page (so a mistyped slug doesn't break the merchant's surrounding page layout).
+- `embedded_widget` added to the `booking_source` enum in both `createPaymentIntentSchema` and `confirmSchema`. `/booking/:slug/confirm` now accepts the field and defaults to `direct_widget` when omitted — fully backwards compatible.
+- Admin Settings → Booking Page tab gets an "Embed on your website" section with the iframe snippet (slug pre-filled), a Copy button with 2-second "Copied!" confirmation, a Preview in new tab link, and a short tip about site-builder compatibility.
+
+Design doc: [docs/superpowers/specs/2026-04-19-embed-booking-widget-design.md](docs/superpowers/specs/2026-04-19-embed-booking-widget-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-19-embed-booking-widget.md](docs/superpowers/plans/2026-04-19-embed-booking-widget.md)
+
+### Commits (Session 12 so far)
+| Hash | Description |
+|---|---|
+| `1d160ec` | feat(api): add embedded_widget to payment intent booking_source enum |
+| `40df590` | feat(api): accept booking_source in /confirm; default direct_widget |
+| `893ebdf` | feat(web): allow framing on /embed/* and disallow crawling |
+| `479396f` | feat(web): /embed/[slug] route — minimal iframe-friendly booking view |
+| `94b1983` | feat(web): BookingWidget embedded prop + booking_source wiring |
+| `0f9610e` | feat(web): 'Embed on your website' section in Booking Page tab |
+| `abcb8d4` | Merge feature/embed-widget |
+
+### Production verification
+- `/embed/abc` returns 200 with `content-security-policy: frame-ancestors *` header
+- `/abc` direct route unchanged (no CSP override — middleware scoped correctly)
+- Third-party iframe test (http://localhost served file) successfully loads the widget, booking completes
+- DB: embed booking correctly tagged `booking_source = 'embedded_widget'`; regression booking via `/abc` correctly tagged `direct_widget`
+- `public/robots.txt` serves static file (no longer shadowed by dynamic `[slug]` route)
+- Noindex meta tag emitted on embed page HTML
+
+### Remaining Session 12 work (in progress)
+- Add `merchants.country` column and remove the 6 hardcoded `"SG"` fallbacks scattered across `services.ts`, `otp.ts`, `payments.ts`, `bookings.ts` — unblocks MY merchants using local-format numbers
+- Dedup `findOrCreateClient` (currently duplicated between `bookings.ts` and `webhooks.ts` with already-drifted normalization logic)
 
 ---
 
