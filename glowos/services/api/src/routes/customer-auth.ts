@@ -5,6 +5,7 @@ import { OAuth2Client } from "google-auth-library";
 import { db, clients, clientProfiles, merchants } from "@glowos/db";
 import { zValidator } from "../middleware/validate.js";
 import { config } from "../lib/config.js";
+import { generateVerificationToken } from "../lib/jwt.js";
 import type { AppVariables } from "../lib/types.js";
 
 const customerAuthRouter = new Hono<{ Variables: AppVariables }>();
@@ -158,6 +159,17 @@ customerAuthRouter.post("/google", zValidator(googleAuthSchema), async (c) => {
   }
 
   // Return client info for the frontend to auto-fill the form
+  const verificationToken = generateVerificationToken(
+    {
+      phone: client.phone?.startsWith("google_") ? null : client.phone,
+      email: client.email,
+      google_id: client.googleId,
+      purpose: "google_verify",
+      verified_at: Math.floor(Date.now() / 1000),
+    },
+    1800 // 30-min TTL for Google sessions
+  );
+
   return c.json({
     client: {
       id: client.id,
@@ -168,6 +180,7 @@ customerAuthRouter.post("/google", zValidator(googleAuthSchema), async (c) => {
       googleId: client.googleId,
     },
     is_returning: !!existingProfile,
+    verification_token: verificationToken,
   });
 });
 
