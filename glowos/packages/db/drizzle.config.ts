@@ -23,6 +23,7 @@ export default {
     "./src/schema/closures.ts",
     "./src/schema/client-notes.ts",
     "./src/schema/packages.ts",
+    "./src/schema/booking-groups.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
