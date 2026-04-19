@@ -219,13 +219,18 @@ webhooksRouter.post("/stripe", async (c) => {
 
           if (existing) {
             client = existing;
-            // Update phone/name/email if the form provided newer values
+            // Update phone/name/email if the form provided newer values (normalized).
+            const normalizedPhone =
+              clientPhone && !clientPhone.startsWith("pi_")
+                ? normalizePhone(clientPhone)
+                : null;
+            const normalizedEmail = normalizeEmail(clientEmail);
             await db
               .update(clients)
               .set({
-                ...(clientPhone && !clientPhone.startsWith("pi_") ? { phone: clientPhone } : {}),
+                ...(normalizedPhone ? { phone: normalizedPhone } : {}),
                 ...(clientName ? { name: clientName } : {}),
-                ...(clientEmail ? { email: clientEmail } : {}),
+                ...(normalizedEmail ? { email: normalizedEmail } : {}),
               })
               .where(eq(clients.id, client.id));
           } else {
