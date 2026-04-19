@@ -53,19 +53,12 @@ Note: `booking_groups` has no `status` column. Status lives on each child bookin
 
 Nullable fk → `booking_groups.id`. NULL for existing bookings and for online bookings created via the public widget. Walk-ins always populate it.
 
-### New table: `booking_package_redemptions`
+### Package redemption: reuse existing `package_sessions`
 
-Links a child booking to the client-package session it consumed. One booking can redeem at most one session (enforced by unique constraint on `booking_id`).
+**Revised during plan-writing:** the existing `package_sessions` table already has `booking_id`, `status` (`pending / booked / completed / missed`), `staff_id`, and `completed_at`. No new `booking_package_redemptions` table is needed. Redemption is implemented by updating the chosen `package_sessions` row:
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid, pk | |
-| `booking_id` | uuid, fk → `bookings.id`, unique | |
-| `client_package_id` | uuid, fk → `client_packages.id` | |
-| `session_id` | uuid, fk → the client-package session row | |
-| `created_at` | timestamp | |
-
-On edit or delete of a booking that consumed a session, the session is re-credited and this row is deleted.
+- On walk-in creation with `use_package`: set `package_sessions.booking_id = bookingId`, `status = "completed"`, `completed_at = now`, `staff_id = ...`, and increment `client_packages.sessions_used` (same semantics as the existing `PUT /merchant/packages/sessions/:id/complete` endpoint).
+- On edit that removes a redeemed service: reset the session (`booking_id = NULL`, `status = "pending"`, `completed_at = NULL`, `staff_id = NULL`, `staff_name = NULL`), decrement `client_packages.sessions_used`, and if the client package's status had flipped to `completed` flip it back to `active`.
 
 ### New table: `booking_edits`
 
@@ -246,7 +239,7 @@ One end-to-end flow:
 
 All changes are additive and ship in a single merged PR, ordered so that each commit is independently deployable and reversible:
 
-1. **Commit 1 — migration.** Adds three tables (`booking_groups`, `booking_package_redemptions`, `booking_edits`) and the nullable `bookings.group_id` column. Zero behavior change on its own.
+1. **Commit 1 — migration.** Adds two tables (`booking_groups`, `booking_edits`) and the nullable `bookings.group_id` column. Zero behavior change on its own.
 2. **Commit 2 — API endpoints.** New endpoints live but unused by any client.
 3. **Commit 3 — frontend.** Dashboard page switches to `BookingForm`; old `WalkInModal` code is removed. This is the commit that changes user-visible behavior.
 
