@@ -97,7 +97,8 @@ export function BookingForm(props: BookingFormProps) {
         else setApiError(err instanceof Error ? err.message : 'Failed to load');
       })
       .finally(() => setLoading(false));
-  }, [mode, props.bookingId, router, services, staffList]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, props.bookingId, router]);
 
   function defaultRow(svc: ServiceOption, st: StaffOption): ServiceRowState {
     const now = new Date();
