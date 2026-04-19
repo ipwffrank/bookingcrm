@@ -42,12 +42,22 @@ export function BookingForm(props: BookingFormProps) {
   const [rows, setRows] = useState<ServiceRowState[]>([]);
   const [completedBanner, setCompletedBanner] = useState(false);
   const [lastEditLabel, setLastEditLabel] = useState<string | null>(null);
+  const [packageTemplates, setPackageTemplates] = useState<Array<{ id: string; name: string; priceSgd: string; isActive: boolean }>>([]);
+  const [sellPackageId, setSellPackageId] = useState<string>('');
+  const [sellOpen, setSellOpen] = useState(false);
 
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
       if (services[0] && staffList[0]) {
         setRows([defaultRow(services[0], staffList[0])]);
       }
+      const token = localStorage.getItem('access_token');
+      apiFetch('/merchant/packages', { headers: { Authorization: `Bearer ${token}` } })
+        .then((data) => {
+          const res = data as { packages: Array<{ id: string; name: string; priceSgd: string; isActive: boolean }> };
+          setPackageTemplates(res.packages.filter((p) => p.isActive));
+        })
+        .catch(() => {}); // silent; feature is optional
       return;
     }
     const token = localStorage.getItem('access_token');
@@ -181,6 +191,7 @@ export function BookingForm(props: BookingFormProps) {
                 ? { client_package_id: r.usePackage.clientPackageId, session_id: r.usePackage.sessionId }
                 : undefined,
             })),
+            sell_package: sellPackageId ? { package_id: sellPackageId } : undefined,
           }),
         });
       } else if (resolvedGroupId) {
@@ -305,6 +316,34 @@ export function BookingForm(props: BookingFormProps) {
               + Add service
             </button>
           </div>
+
+          {mode === 'create' && packageTemplates.length > 0 && (
+            <div className="rounded-lg border border-dashed border-gray-300 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setSellOpen(!sellOpen)}
+                className="text-sm font-medium text-indigo-600"
+              >
+                {sellOpen ? "− Don't sell a package" : '+ Also sell a package'}
+              </button>
+              {sellOpen && (
+                <div className="mt-2">
+                  <select
+                    value={sellPackageId}
+                    onChange={(e) => setSellPackageId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Select package to sell...</option>
+                    {packageTemplates.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (S${p.priceSgd})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
