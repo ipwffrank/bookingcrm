@@ -37,9 +37,53 @@ Implementation plan: [docs/superpowers/plans/2026-04-19-embed-booking-widget.md]
 - `public/robots.txt` serves static file (no longer shadowed by dynamic `[slug]` route)
 - Noindex meta tag emitted on embed page HTML
 
-### Remaining Session 12 work (in progress)
-- Add `merchants.country` column and remove the 6 hardcoded `"SG"` fallbacks scattered across `services.ts`, `otp.ts`, `payments.ts`, `bookings.ts` — unblocks MY merchants using local-format numbers
-- Dedup `findOrCreateClient` (currently duplicated between `bookings.ts` and `webhooks.ts` with already-drifted normalization logic)
+### merchants.country + hardcode removal ✅
+- New `merchants.country varchar(2) not null default 'SG'` column (migration `0009 → 0008`, see files). Existing merchants auto-fill as SG.
+- Replaced all 8 hardcoded `defaultCountry: "SG"` fallbacks across `services.ts`, `otp.ts` (×3 handlers), `payments.ts`, `bookings.ts` (×2), and `webhooks.ts`. Each hardcode now reads `merchant.country` from a SELECT that was updated to include the new column.
+- Admin onboarding of MY merchants now works correctly: local-format numbers like `012 345 6789` parse to `+60123456789` instead of failing. To onboard a MY merchant: `UPDATE merchants SET country='MY' WHERE id='<id>'`.
+- Dedup gap from Session 11 review (I3) addressed: `findOrCreateClient` helper extracted to `services/api/src/lib/findOrCreateClient.ts`. Both `bookings.ts` and `webhooks.ts` now import from the shared module. The previously-drifted-once duplicate is gone.
+
+### First-Timer Discount ROI Analytics ✅
+Answers the business question "is my first-timer discount making me money?" Surfaces as one new section at the bottom of the merchant analytics page.
+
+- New `bookings.first_timer_discount_applied boolean not null default false` column. Flag is set to `true` ONLY when the first-timer price actually wins the comparison (not just when eligibility passes but the regular discount is still cheaper).
+- Flag threading: Stripe payment flow uses payment-intent metadata as the transport channel (discount decision happens sync in `payments.ts`, booking insert happens async in `webhooks.ts` on `payment_intent.succeeded`). Pay-at-appointment flow (`/:slug/confirm`) tags directly at insert.
+- New endpoint `GET /merchant/analytics/first-timer-roi?period=7d|30d|90d|365d|all` returns: `first_timers_count`, `discount_given_sgd`, `mature_first_timers_count`, `returned_count`, `return_rate_pct`, `return_revenue_sgd`, `net_roi_sgd`.
+- Return rate uses a **mature cohort** (≥30 days since first booking) to avoid artificially depressing the conversion metric with recent first-timers who haven't had time to return. Returns `null` (rendered as `—`) when the mature cohort is empty.
+- New dashboard section: "First-Timer Discount Performance" — prominent Net ROI hero (green if ≥0, orange if negative) + 4 stat cards (First-timers, Discount given, Return rate, Revenue from returns). Loading/empty/edge states all handled.
+- Caveat (documented in spec): `service.price_sgd` is read live, so merchants editing a service's base price later will shift historical `discount_given_sgd`. Accepted for v1; price-snapshot-at-booking-time is a future follow-up.
+
+Design doc: [docs/superpowers/specs/2026-04-20-first-timer-roi-analytics-design.md](docs/superpowers/specs/2026-04-20-first-timer-roi-analytics-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-20-first-timer-roi-analytics.md](docs/superpowers/plans/2026-04-20-first-timer-roi-analytics.md)
+
+### Commits (Session 12, E/F/G)
+| Hash | Description |
+|---|---|
+| `9d1b94d` | feat(db): add merchants.country column (SG default) |
+| `981fcbf` | refactor(api): use merchants.country instead of hardcoded SG fallback |
+| `ae7d6cb` | refactor(api): extract findOrCreateClient to shared lib/ helper |
+| `e96dc4b` | Merge feature/country-dedup |
+| `7af3a9c` | feat(db): add bookings.first_timer_discount_applied column to schema |
+| `c46a621` | feat(db): migration for bookings.first_timer_discount_applied column |
+| `d5cfffd` | feat(api): tag Stripe bookings with first_timer_discount_applied (via PI metadata) |
+| `23ae6ba` | feat(api): tag /:slug/confirm bookings with first_timer_discount_applied flag |
+| `da14a37` | feat(api): /first-timer-roi analytics endpoint |
+| `45faa80` | feat(web): First-Timer Discount Performance section in analytics |
+| `518c0ca` | Merge feature/first-timer-roi |
+
+### Production verification (E+F+G)
+- `merchants.country` migration applied (column: boolean, default SG, all 5+ existing merchants populated)
+- `bookings.first_timer_discount_applied` migration applied (column: boolean, default false)
+- `check-first-timer` with reformatted phone + SG merchant still returns `isFirstTimer: false` for Grace (regression passes)
+- `/merchant/analytics/first-timer-roi` returns 401 (registered + auth-protected); 404 baseline from non-existent endpoints confirms the deploy picked up the new route
+- Existing `/abc`, `/embed/abc`, and 11 other analytics endpoints unchanged
+
+### Still outstanding (Session 13+)
+- Client CSV export (H) — admin-side "download all clients" button
+- Online package purchase
+- SMS fallback for failed WhatsApp OTP delivery
+- Price-at-booking-time snapshot (improves analytics accuracy across service price changes)
+- MY-merchant admin UI for flipping `merchants.country` without SQL
 
 ---
 
