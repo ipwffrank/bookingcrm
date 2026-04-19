@@ -72,7 +72,7 @@ servicesRouter.get("/check-first-timer", async (c) => {
   }
 
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
@@ -84,8 +84,7 @@ servicesRouter.get("/check-first-timer", async (c) => {
     );
   }
 
-  // `merchants.country` is not yet a column on the schema; default to SG.
-  const defaultCountry: "SG" | "MY" = "SG";
+  const defaultCountry = merchant.country;
   const normalizedPhone = normalizePhone(phone, defaultCountry);
   const normalizedEmail = normalizeEmail(email);
 

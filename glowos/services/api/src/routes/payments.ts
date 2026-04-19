@@ -289,6 +289,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
       id: merchants.id,
       name: merchants.name,
       stripeAccountId: merchants.stripeAccountId,
+      country: merchants.country,
     })
     .from(merchants)
     .where(eq(merchants.slug, slug))
@@ -360,7 +361,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
   ) {
     const token = verifyVerificationToken(body.verification_token);
     if (token) {
-      const defaultCountry: "SG" | "MY" = "SG";
+      const defaultCountry = merchant.country;
       const normalizedPhone = normalizePhone(body.client_phone, defaultCountry);
       const normalizedEmail = normalizeEmail(body.client_email);
 

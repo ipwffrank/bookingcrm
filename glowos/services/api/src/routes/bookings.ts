@@ -583,6 +583,17 @@ merchantBookingsRouter.post(
     const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof merchantBookingCreateSchema>;
 
+    // Load merchant (for country → phone normalization default)
+    const [merchant] = await db
+      .select({ country: merchants.country })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+      .limit(1);
+
+    if (!merchant) {
+      return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+    }
+
     // Load service
     const [service] = await db
       .select({
@@ -616,7 +627,12 @@ merchantBookingsRouter.post(
     // Find or create client
     let client: { id: string };
     try {
-      client = await findOrCreateClient(body.client_phone, body.client_name);
+      client = await findOrCreateClient(
+        body.client_phone,
+        body.client_name,
+        undefined,
+        merchant.country
+      );
     } catch {
       return c.json(
         { error: "Bad Request", message: "Invalid phone number" },
@@ -1123,7 +1139,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
 
   // Resolve merchant
   const [merchant] = await db
-    .select({ id: merchants.id })
+    .select({ id: merchants.id, country: merchants.country })
     .from(merchants)
     .where(eq(merchants.slug, slug))
     .limit(1);
@@ -1198,7 +1214,8 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       client = await findOrCreateClient(
         body.client_phone,
         body.client_name,
-        body.client_email
+        body.client_email,
+        merchant.country
       );
     } catch {
       return c.json(
@@ -1224,7 +1241,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
   ) {
     const token = verifyVerificationToken(body.verification_token);
     if (token) {
-      const defaultCountry: "SG" | "MY" = "SG";
+      const defaultCountry = merchant.country;
       const normalizedPhone = normalizePhone(body.client_phone, defaultCountry);
       const normalizedEmail = normalizeEmail(body.client_email);
 
