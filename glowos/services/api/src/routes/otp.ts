@@ -85,6 +85,14 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
   }
   const email = body.email ? normalizeEmail(body.email) : null;
 
+  // Validate channel requirements BEFORE burning the rate-limit quota
+  if (body.channel === "email" && !email) {
+    return c.json(
+      { error: "Bad Request", message: "Email required for email channel" },
+      400
+    );
+  }
+
   // Rate limits
   const ip =
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -130,21 +138,16 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
     });
   }
 
-  if (!email) {
-    return c.json(
-      { error: "Bad Request", message: "Email required for email channel" },
-      400
-    );
-  }
+  // At this point, body.channel === "email" and email is guaranteed non-null (validated above)
   await addJob("notifications", "otp_send", {
     channel: "email",
-    destination: email,
+    destination: email!,
     code,
   });
   return c.json({
     sent: true,
     channel: "email",
-    masked_destination: maskEmail(email),
+    masked_destination: maskEmail(email!),
   });
 });
 
