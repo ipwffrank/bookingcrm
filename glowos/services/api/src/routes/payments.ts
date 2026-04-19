@@ -36,6 +36,7 @@ const createPaymentIntentSchema = z.object({
       "instagram",
       "qr_walkin",
       "walkin_manual",
+      "embedded_widget",
     ])
     .default("direct_widget"),
 });
