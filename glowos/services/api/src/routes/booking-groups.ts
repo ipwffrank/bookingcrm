@@ -347,6 +347,16 @@ bookingGroupsRouter.patch(
       return c.json({ error: "Not Found", message: "One or more services not found" }, 404);
     }
 
+    // Verify every staff in the submitted services belongs to this merchant
+    const staffIds = Array.from(new Set(body.services.map((s) => s.staff_id)));
+    const staffRows = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .where(and(inArray(staff.id, staffIds), eq(staff.merchantId, merchantId)));
+    if (staffRows.length !== staffIds.length) {
+      return c.json({ error: "Not Found", message: "One or more staff not found" }, 404);
+    }
+
     // Classify submitted rows
     const currentMap = new Map(currentBookings.map((b) => [b.id, b]));
     const submittedIds = new Set(

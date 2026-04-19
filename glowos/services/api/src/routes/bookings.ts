@@ -948,6 +948,18 @@ merchantBookingsRouter.patch(
       );
     }
 
+    // If staff_id is changing, verify the new staff belongs to this merchant
+    if (body.staff_id && body.staff_id !== existing.staffId) {
+      const [staffMember] = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(and(eq(staff.id, body.staff_id), eq(staff.merchantId, merchantId)))
+        .limit(1);
+      if (!staffMember) {
+        return c.json({ error: "Not Found", message: "Staff member not found" }, 404);
+      }
+    }
+
     // Resolve service (for duration) if service_id is changing
     let durationMinutes = existing.durationMinutes;
     let newEndTime = existing.endTime;
