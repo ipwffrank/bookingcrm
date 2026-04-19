@@ -11,6 +11,7 @@ import type {
   ActivePackage,
   EditContextResponse,
 } from './types';
+import { ServiceRow } from './ServiceRow';
 
 export interface BookingFormProps {
   mode: 'create' | 'edit';
@@ -96,6 +97,50 @@ export function BookingForm(props: BookingFormProps) {
     };
   }
 
+  const totalPrice = rows.reduce((s, r) => s + Number(r.priceSgd || 0), 0);
+
+  function addServiceRow() {
+    const prev = rows[rows.length - 1];
+    const defaultSvc = services[0];
+    const defaultStaff = staffList[0];
+    if (!defaultSvc || !defaultStaff) return;
+    const anchor = prev
+      ? new Date(
+          new Date(prev.startTime).getTime() +
+            (services.find((s) => s.id === prev.serviceId)?.durationMinutes ?? 30) *
+              60_000
+        ).toISOString()
+      : new Date().toISOString();
+    setRows([
+      ...rows,
+      {
+        serviceId: defaultSvc.id,
+        staffId: defaultStaff.id,
+        startTime: anchor,
+        priceSgd: defaultSvc.priceSgd,
+        priceTouched: false,
+      },
+    ]);
+  }
+
+  async function maybeLookupClient() {
+    if (mode !== 'create' || clientPhone.trim().length < 6) return;
+    const token = localStorage.getItem('access_token');
+    try {
+      const res = (await apiFetch(
+        `/merchant/clients/lookup?phone=${encodeURIComponent(clientPhone)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )) as {
+        client: { id: string; name: string | null } | null;
+        activePackages: ActivePackage[];
+      };
+      if (res.client && !clientName) setClientName(res.client.name ?? '');
+      setActivePackages(res.activePackages ?? []);
+    } catch {
+      // silent — lookup is opportunistic
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // Wired in Task 19
@@ -129,6 +174,90 @@ export function BookingForm(props: BookingFormProps) {
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
+              <input
+                type="text"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Jane Doe"
+                disabled={mode === 'edit'}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <input
+                type="tel"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
+                onBlur={() => void maybeLookupClient()}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                placeholder="+65 9123 4567"
+                disabled={mode === 'edit'}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Services</label>
+            <div className="space-y-2">
+              {rows.map((row, i) => (
+                <ServiceRow
+                  key={row.bookingId ?? `new-${i}`}
+                  row={row}
+                  services={services}
+                  staff={staffList}
+                  activePackages={activePackages}
+                  canRemove={rows.length > 1}
+                  onChange={(patch) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
+                  onRemove={() => setRows(rows.filter((_, j) => j !== i))}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={addServiceRow}
+              className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+            >
+              + Add service
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="paynow">PayNow</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <div className="w-full rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm">
+                <span className="text-gray-500">Total: </span>
+                <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
+              placeholder="Any special requests..."
+            />
+          </div>
+
           <div className="flex gap-3 pt-2">
             <button
               type="button"
