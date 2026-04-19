@@ -1,5 +1,34 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 20 April 2026 (Session 12)**
+**Last updated: 20 April 2026 (Session 13)**
+
+---
+
+## What's Completed (Session 13 — 20 April 2026)
+
+### Walk-in group bookings, packages, and editable bookings ✅
+Replaced the single-service walk-in modal with a shared `BookingForm` that supports multiple services per visit with a single payment, in-modal package sell + redeem, and general-purpose edit for any booking status except `cancelled` — including `completed`, so staff can fix data-entry mistakes after the fact. Every field-level change writes to a `booking_edits` audit log.
+
+- **Data model (additive):** new `booking_groups` table (parent that owns the payment + total for a walk-in), new `booking_edits` audit-log table, nullable `bookings.group_id` column. Reused the existing `package_sessions.booking_id` + `status` lifecycle for redemptions instead of introducing a separate junction table. Migration `0010_brave_bloodstorm.sql`.
+- **API (merchant-scoped, Hono + Zod):**
+  - `POST /merchant/bookings/group` — create a walk-in group with N services, optional `use_package` per row, optional `sell_package` for upsell. Services without `start_time` pack back-to-back. Transactional.
+  - `GET /merchant/bookings/:id/edit-context` — single call returns booking + group + siblings + client's active packages + services + staff + last edit.
+  - `PATCH /merchant/bookings/group/:groupId` — full group edit: diffs submitted services against current child bookings, inserts/updates/deletes, recomputes total, audits every field change, credits/debits package sessions on redemption toggle.
+  - `PATCH /merchant/bookings/:id` — general single-booking edit for pre-existing and online bookings. Same audit + conflict-check behaviour, narrower surface.
+  - `GET /merchant/bookings/:id/edits` — audit trail, returns both booking-level and group-level edits.
+  - `GET /merchant/clients/lookup?phone=X` — used by the create modal to autofill name and surface active-package info after phone blur.
+- **Frontend:** new `app/dashboard/bookings/{BookingForm,ServiceRow,EditHistoryPanel,types}` component tree. Dashboard's old inline `WalkInModal` deleted; `page.tsx` now uses `BookingForm` for create and adds a per-card **Edit** button. Calendar page double-click on a slot opens the same form in edit mode. A completed-booking banner warns staff that edits won't re-send review requests or recalculate commissions. A "View history" panel inside the modal expands the audit trail on demand.
+- **Key rules locked in:** commission is frozen at the moment a booking is completed (edits never touch `commission_rate`/`commission_sgd`); review-request and no-show re-engagement jobs do NOT re-fire on edits to completed bookings; cancelled bookings cannot be edited (409); staff ownership is validated on every PATCH, including the new group endpoint; all edits run inside a DB transaction and audit rows roll back with the edit on failure.
+- **Verified live:** POST group (1 service, 2 services back-to-back), GET edit-context, PATCH single, GET edits, plus a full browser walk-through of create, edit-confirmed, edit-completed, remove-a-sibling-from-group, calendar double-click, and view-history.
+- **Known minor items (not blocking):** (1) POST group doesn't do a staff-conflict check (by design in the plan — only PATCH does); (2) `durationMinutes` appears as an asymmetric field in one audit-diff snapshot (cosmetic audit-log noise); (3) Neon's `drizzle.__drizzle_migrations` tracking table is empty — migration 0010 was applied via a direct `pg` script and future `drizzle-kit migrate` runs will need a backfill before they work.
+
+Design doc: [docs/superpowers/specs/2026-04-20-walkin-group-booking-and-edit-design.md](docs/superpowers/specs/2026-04-20-walkin-group-booking-and-edit-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-20-walkin-group-booking-and-edit.md](docs/superpowers/plans/2026-04-20-walkin-group-booking-and-edit.md)
+Merge commit: `b2530e6` on `main` (30 feature commits + 7 post-review fixes).
+
+### Next up (Session 14 — 21 April 2026)
+- Backfill `drizzle.__drizzle_migrations` on Neon so `pnpm db:migrate` becomes usable again (it currently errors because tracking is empty but migrations 0000–0010 are all applied).
+- Decide whether POST group should gain a staff-conflict check (symmetric with PATCH).
+- Optional: fix the `durationMinutes` audit-log asymmetry.
 
 ---
 
