@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { OTPVerificationCard } from './components/OTPVerificationCard';
+import { ReturningCustomerCard } from './components/ReturningCustomerCard';
 
 declare global {
   interface Window {
@@ -276,6 +278,12 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   // First-timer check
   const [isFirstTimer, setIsFirstTimer] = useState<boolean | null>(null);
 
+  // Phone lookup / returning-customer + login OTP flow
+  const [lookupResult, setLookupResult] = useState<{ matched: boolean; masked_name?: string } | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [registerMode, setRegisterMode] = useState(false);
+  const [showLoginOtp, setShowLoginOtp] = useState(false);
+
   // Package state
   const [availablePackages, setAvailablePackages] = useState<Array<{ id: string; name: string; description: string | null; totalSessions: number; priceSgd: string; includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>; validityDays: number }>>([]);
   const [clientActivePackages, setClientActivePackages] = useState<Array<{ id: string; packageName: string; sessionsTotal: number; sessionsUsed: number; remaining: number; expiresAt: string; pendingSessions: Array<{ id: string; sessionNumber: number; serviceId: string; status: string }> }>>([]);
@@ -341,6 +349,29 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
         });
     }
   }, [slug]);
+
+  // Debounced phone lookup for returning-customer detection
+  useEffect(() => {
+    if (authClient) { setLookupResult(null); return; } // Google user, skip lookup
+    const phone = clientPhone.trim();
+    if (phone.length < 6) {
+      setLookupResult(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = (await apiFetch(`/booking/${slug}/lookup-client`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone }),
+        })) as { matched: boolean; masked_name?: string };
+        setLookupResult(res);
+      } catch {
+        setLookupResult(null);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [clientPhone, slug, authClient]);
 
   // Load Google Identity Services script
   useEffect(() => {
@@ -1020,6 +1051,36 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                   <span className="text-lg">⏰</span>
                   <span>Slot held for <strong>{padTwo(Math.floor(countdown / 60))}:{padTwo(countdown % 60)}</strong> — complete your booking before it expires</span>
                 </div>
+              )}
+
+              {/* ── Returning-customer recognition ────────────────────────── */}
+              {lookupResult?.matched && !registerMode && !verificationToken && !showLoginOtp && (
+                <ReturningCustomerCard
+                  maskedName={lookupResult.masked_name ?? 'there'}
+                  phone={clientPhone}
+                  onConfirm={() => setShowLoginOtp(true)}
+                  onNotMe={() => { setLookupResult(null); setRegisterMode(true); }}
+                />
+              )}
+
+              {/* ── Login OTP card ────────────────────────────────────────── */}
+              {showLoginOtp && (
+                <OTPVerificationCard
+                  slug={slug}
+                  phone={clientPhone}
+                  purpose="login"
+                  title="Verify your number"
+                  subtitle="We'll send a one-time code to continue"
+                  onVerified={(token, client) => {
+                    setVerificationToken(token);
+                    if (client) {
+                      setClientName(client.name ?? '');
+                      setClientEmail(client.email ?? '');
+                    }
+                    setShowLoginOtp(false);
+                    setStep(5); // advance to Review & Confirm
+                  }}
+                />
               )}
 
               {/* ── Auth choice: Google Sign-In or Guest ─────────────────── */}
