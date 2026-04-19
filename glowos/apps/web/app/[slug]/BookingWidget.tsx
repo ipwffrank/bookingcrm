@@ -1347,7 +1347,6 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                               client_name: clientName.trim(),
                               client_email: clientEmail.trim() || undefined,
                               client_phone: clientPhone.trim(),
-                              is_first_timer: isFirstTimer ?? undefined,
                               verification_token: verificationToken ?? undefined,
                             }),
                           });

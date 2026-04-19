@@ -27,7 +27,6 @@ const createPaymentIntentSchema = z.object({
   client_email: z.string().email().optional(),
   client_phone: z.string().optional(),
   client_id: z.string().uuid().optional(),
-  is_first_timer: z.boolean().optional(),
   verification_token: z.string().optional(),
   booking_source: z
     .enum([
