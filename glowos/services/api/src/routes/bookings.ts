@@ -1218,22 +1218,33 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       const normalizedEmail = normalizeEmail(body.client_email);
 
       let identityMatches = false;
-      if (token.purpose === "google_verify" && body.client_id && token.google_id) {
-        const [existing] = await db
-          .select({ googleId: clients.googleId })
-          .from(clients)
-          .where(eq(clients.id, body.client_id))
-          .limit(1);
-        if (existing?.googleId && existing.googleId === token.google_id) {
-          identityMatches = true;
+      switch (token.purpose) {
+        case "google_verify": {
+          if (body.client_id && token.google_id) {
+            const [existing] = await db
+              .select({ googleId: clients.googleId })
+              .from(clients)
+              .where(eq(clients.id, body.client_id))
+              .limit(1);
+            if (existing?.googleId && existing.googleId === token.google_id) {
+              identityMatches = true;
+            }
+          }
+          break;
         }
-      } else if (
-        token.purpose === "first_timer_verify" &&
-        token.phone &&
-        normalizedPhone &&
-        token.phone === normalizedPhone
-      ) {
-        identityMatches = true;
+        case "first_timer_verify": {
+          if (token.phone && normalizedPhone && token.phone === normalizedPhone) {
+            identityMatches = true;
+          }
+          break;
+        }
+        default: {
+          // Any other purpose (e.g., "login") is explicitly rejected for discount eligibility.
+          console.warn("[first-timer] rejected token with unsupported purpose", {
+            purpose: token.purpose,
+          });
+          break;
+        }
       }
 
       if (identityMatches) {
