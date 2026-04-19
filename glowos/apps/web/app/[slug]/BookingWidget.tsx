@@ -317,7 +317,8 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     !!clientName.trim() &&
     !!clientPhone.trim() &&
     !verificationToken &&
-    !skippedFirstTimerOtp;
+    !skippedFirstTimerOtp &&
+    isFirstTimer !== false; // returning customer: skip OTP (regular price applies)
 
   // ── Google Sign-In ──────────────────────────────────────────────────────────
 
@@ -397,6 +398,34 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
     }, 500);
     return () => clearTimeout(t);
   }, [clientPhone, slug, authClient]);
+
+  // Proactively check if the user's phone/email matches an existing customer at
+  // this merchant. If so, the backend will deny the first-timer discount, so we
+  // hide the OTP card to avoid a bait-and-switch at checkout.
+  useEffect(() => {
+    if (authClient) return; // Google users: check runs via their own flow
+    if (!registerMode) return;
+    if (!firstTimerIsBetter) return; // No point offering OTP anyway
+
+    const phone = clientPhone.trim();
+    const email = clientEmail.trim();
+    if (!phone && !email) return;
+
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ slug });
+        if (phone) params.set('phone', phone);
+        if (email) params.set('email', email);
+        const res = (await apiFetch(
+          `/merchant/services/check-first-timer?${params.toString()}`
+        )) as { isFirstTimer: boolean };
+        setIsFirstTimer(res.isFirstTimer);
+      } catch {
+        // Leave isFirstTimer as-is; the OTP card stays visible if it was.
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [clientPhone, clientEmail, registerMode, firstTimerIsBetter, slug, authClient]);
 
   // Load Google Identity Services script
   useEffect(() => {
@@ -1332,6 +1361,15 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                         setSkippedFirstTimerOtp(false);
                       }}
                     />
+                  )}
+
+                  {!authClient && registerMode && firstTimerIsBetter && isFirstTimer === false && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-gray-700">
+                      <div className="font-medium">👋 Welcome back!</div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        We recognize this phone/email from a previous booking. Regular pricing applies — the first-visit discount is for new customers only.
+                      </div>
+                    </div>
                   )}
 
                   <button
