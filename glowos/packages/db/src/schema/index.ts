@@ -15,3 +15,4 @@ export * from "./staff-duties.js";
 export * from "./closures.js";
 export * from "./client-notes.js";
 export * from "./packages.js";
+export * from "./booking-groups.js";
