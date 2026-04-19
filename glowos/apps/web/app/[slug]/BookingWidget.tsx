@@ -1194,7 +1194,11 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                           if (authClient?.googleId) params.set('google_id', authClient.googleId);
                           const ftRes = await apiFetch(`/merchant/services/check-first-timer?${params.toString()}`);
                           setIsFirstTimer((ftRes as { isFirstTimer: boolean }).isFirstTimer);
-                        } catch { /* ignore */ }
+                        } catch (err) {
+                          console.error("[BookingWidget] first-timer check failed", err);
+                          // Default to false — safer than null when deciding whether to offer verification
+                          setIsFirstTimer(false);
+                        }
                       }
 
                       // Check for active packages
