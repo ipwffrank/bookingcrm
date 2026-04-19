@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, gt, sql } from "drizzle-orm";
 import { db, bookings, clients, clientProfiles, services, staff, reviews } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
@@ -548,6 +548,101 @@ analyticsRouter.get("/review-trend", requireMerchant, async (c) => {
       avgRating: parseFloat(Number(r.avgRating).toFixed(1)),
       count: Number(r.count),
     })),
+  });
+});
+
+// ─── GET /merchant/analytics/first-timer-roi ──────────────────────────────
+
+analyticsRouter.get("/first-timer-roi", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+
+  let days: number;
+  if (periodParam === "7d") days = 7;
+  else if (periodParam === "30d") days = 30;
+  else if (periodParam === "90d") days = 90;
+  else if (periodParam === "365d") days = 365;
+  else if (periodParam === "all") days = 36500;
+  else return c.json({ error: "Bad Request", message: "invalid period" }, 400);
+
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  // 1. First-timer bookings in period (with join to services for base price)
+  const firstTimerRows = await db
+    .select({
+      bookingId: bookings.id,
+      clientId: bookings.clientId,
+      startTime: bookings.startTime,
+      priceSgd: bookings.priceSgd,
+      serviceBasePrice: services.priceSgd,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.firstTimerDiscountApplied, true),
+        eq(bookings.status, "completed"),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end)
+      )
+    );
+
+  const firstTimersCount = firstTimerRows.length;
+
+  // 2. Total discount given — sum(base_price - paid_price) across first-timer bookings
+  const discountGiven = firstTimerRows.reduce((sum, r) => {
+    const base = parseFloat(r.serviceBasePrice);
+    const paid = parseFloat(r.priceSgd);
+    return sum + Math.max(0, base - paid);
+  }, 0);
+
+  // 3. Mature cohort — first-timers whose first booking was ≥ 30d ago
+  const matureRows = firstTimerRows.filter((r) => r.startTime < thirtyDaysAgo);
+  const matureFirstTimersCount = matureRows.length;
+
+  // 4. For each mature first-timer, count return visits and return revenue
+  let returnedCount = 0;
+  let returnRevenue = 0;
+  for (const r of matureRows) {
+    const laterBookings = await db
+      .select({ priceSgd: bookings.priceSgd })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          eq(bookings.clientId, r.clientId),
+          eq(bookings.status, "completed"),
+          gt(bookings.startTime, r.startTime)
+        )
+      );
+    if (laterBookings.length > 0) {
+      returnedCount += 1;
+      returnRevenue += laterBookings.reduce(
+        (s, b) => s + parseFloat(b.priceSgd),
+        0
+      );
+    }
+  }
+
+  const returnRatePct =
+    matureFirstTimersCount === 0
+      ? null
+      : Math.round((returnedCount / matureFirstTimersCount) * 100);
+
+  const netRoi = returnRevenue - discountGiven;
+
+  return c.json({
+    period: periodParam,
+    first_timers_count: firstTimersCount,
+    discount_given_sgd: discountGiven.toFixed(2),
+    mature_first_timers_count: matureFirstTimersCount,
+    returned_count: returnedCount,
+    return_rate_pct: returnRatePct,
+    return_revenue_sgd: returnRevenue.toFixed(2),
+    net_roi_sgd: netRoi.toFixed(2),
   });
 });
 

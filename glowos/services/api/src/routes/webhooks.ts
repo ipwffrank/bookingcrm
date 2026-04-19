@@ -97,9 +97,11 @@ webhooksRouter.post("/stripe", async (c) => {
           client_email?: string;
           client_phone?: string;
           client_id?: string;
+          first_timer_discount_applied?: string;
         };
 
         const { merchant_id, lease_id, service_id, booking_source } = meta;
+        const firstTimerDiscountApplied = meta?.first_timer_discount_applied === "true";
 
         if (!merchant_id || !lease_id || !service_id) {
           console.warn("[Webhook] payment_intent.succeeded missing required metadata, skipping", {
@@ -279,6 +281,7 @@ webhooksRouter.post("/stripe", async (c) => {
             merchantPayoutSgd: merchantPayoutSgd.toFixed(2),
             stripePaymentIntentId: pi.id,
             stripeChargeId: chargeId,
+            firstTimerDiscountApplied,
           })
           .returning();
 

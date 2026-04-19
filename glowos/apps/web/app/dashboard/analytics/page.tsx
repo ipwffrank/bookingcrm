@@ -100,6 +100,17 @@ interface ReviewDistributionData { period: string; distribution: ReviewDistribut
 interface ReviewTrendRow { week: string; avgRating: number; count: number; }
 interface ReviewTrendData { period: string; trend: ReviewTrendRow[]; }
 
+interface FirstTimerROIData {
+  period: string;
+  first_timers_count: number;
+  discount_given_sgd: string;
+  mature_first_timers_count: number;
+  returned_count: number;
+  return_rate_pct: number | null;
+  return_revenue_sgd: string;
+  net_roi_sgd: string;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(amount: number): string {
@@ -856,6 +867,104 @@ function RatingTrend({ data }: { data: ReviewTrendData | null }) {
   );
 }
 
+// ─── First-Timer Discount Performance ────────────────────────────────────────
+
+function FirstTimerROI({
+  data,
+  loading,
+}: {
+  data: FirstTimerROIData | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">
+          First-Timer Discount Performance
+        </h2>
+        <SkeletonCard />
+      </div>
+    );
+  }
+
+  if (!data || data.first_timers_count === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">
+          First-Timer Discount Performance
+        </h2>
+        <p className="text-sm text-gray-500">
+          No first-timer discounts granted in this period.
+        </p>
+      </div>
+    );
+  }
+
+  const net = parseFloat(data.net_roi_sgd);
+  const netPositive = net >= 0;
+  const netLabel = `${netPositive ? '+' : '−'}SGD ${Math.abs(net).toFixed(2)}`;
+  const netColor = netPositive ? 'text-green-600' : 'text-orange-600';
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">
+        First-Timer Discount Performance
+      </h2>
+
+      {/* Net ROI hero */}
+      <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 mb-4">
+        <div className="text-xs text-gray-500 mb-1">Net ROI</div>
+        <div
+          className={`text-3xl font-bold ${netColor}`}
+          aria-label={`Net return on investment: ${netPositive ? 'positive' : 'negative'} ${Math.abs(net).toFixed(2)} Singapore dollars.`}
+        >
+          {netLabel}
+        </div>
+        <div className="text-xs text-gray-400 mt-1">
+          return revenue − discount given
+        </div>
+      </div>
+
+      {/* 4 stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 mb-1">First-timers</div>
+          <div className="text-xl font-semibold text-gray-900">
+            {data.first_timers_count}
+          </div>
+        </div>
+        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 mb-1">Discount given</div>
+          <div className="text-xl font-semibold text-gray-900">
+            SGD {parseFloat(data.discount_given_sgd).toFixed(2)}
+          </div>
+        </div>
+        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+          <div
+            className="text-xs text-gray-500 mb-1"
+            title={
+              data.return_rate_pct === null
+                ? 'Need at least one first-timer from 30+ days ago.'
+                : undefined
+            }
+          >
+            Return rate (30d+)
+          </div>
+          <div className="text-xl font-semibold text-gray-900">
+            {data.return_rate_pct === null ? '—' : `${data.return_rate_pct}%`}
+          </div>
+        </div>
+        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 mb-1">Revenue from returns</div>
+          <div className="text-xl font-semibold text-gray-900">
+            SGD {parseFloat(data.return_revenue_sgd).toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Period Selector ───────────────────────────────────────────────────────────
 
 function PeriodSelector({
@@ -907,6 +1016,7 @@ export default function AnalyticsPage() {
   const [revDowData, setRevDowData]             = useState<RevByDowData | null>(null);
   const [reviewDistribution, setReviewDistribution] = useState<ReviewDistributionData | null>(null);
   const [reviewTrend, setReviewTrend]           = useState<ReviewTrendData | null>(null);
+  const [firstTimerROIData, setFirstTimerROIData] = useState<FirstTimerROIData | null>(null);
 
   const [loadingSummary, setLoadingSummary]     = useState(true);
   const [loadingRevenue, setLoadingRevenue]     = useState(true);
@@ -917,6 +1027,7 @@ export default function AnalyticsPage() {
   const [loadingPeak, setLoadingPeak]           = useState(true);
   const [loadingRetention, setLoadingRetention] = useState(true);
   const [loadingRevDow, setLoadingRevDow]       = useState(true);
+  const [firstTimerROILoading, setFirstTimerROILoading] = useState(true);
 
   const [error, setError] = useState('');
 
@@ -939,6 +1050,7 @@ export default function AnalyticsPage() {
       setLoadingPeak(true);
       setLoadingRetention(true);
       setLoadingRevDow(true);
+      setFirstTimerROILoading(true);
       setError('');
 
       const handleError = (err: unknown) => {
@@ -1027,6 +1139,16 @@ export default function AnalyticsPage() {
           setReviewTrend(data);
         } catch (e) { handleError(e); }
       })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/first-timer-roi?period=${p}`, { headers }) as FirstTimerROIData;
+          setFirstTimerROIData(data);
+        } catch (e) {
+          setFirstTimerROIData(null);
+          handleError(e);
+        } finally { setFirstTimerROILoading(false); }
+      })();
     },
     [router]
   );
@@ -1110,6 +1232,11 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <RatingDistribution data={reviewDistribution} />
         <RatingTrend data={reviewTrend} />
+      </div>
+
+      {/* First-Timer Discount Performance */}
+      <div className="mb-6">
+        <FirstTimerROI data={firstTimerROIData} loading={firstTimerROILoading} />
       </div>
     </>
   );

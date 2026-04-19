@@ -41,6 +41,9 @@ export const bookings = pgTable(
     paymentStatus: varchar("payment_status", { length: 20 }).notNull().default("pending"),
     paymentMethod: varchar("payment_method", { length: 50 }),
     bookingSource: varchar("booking_source", { length: 50 }).notNull(),
+    firstTimerDiscountApplied: boolean("first_timer_discount_applied")
+      .notNull()
+      .default(false),
     commissionRate: numeric("commission_rate", { precision: 5, scale: 4 }).notNull().default("0"),
     commissionSgd: numeric("commission_sgd", { precision: 10, scale: 2 }).notNull().default("0"),
     merchantPayoutSgd: numeric("merchant_payout_sgd", { precision: 10, scale: 2 }),

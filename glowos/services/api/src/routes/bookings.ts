@@ -1189,6 +1189,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
   // Compute final price (regular discount always applies; first-timer requires verification)
   const basePrice = parseFloat(String(service.priceSgd));
   let computedPrice = basePrice;
+  let firstTimerDiscountApplied = false;
   if (service.discountPct) {
     computedPrice = basePrice * (1 - service.discountPct / 100);
   }
@@ -1242,7 +1243,10 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
         });
         if (eligible) {
           const ftPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
-          if (ftPrice < computedPrice) computedPrice = ftPrice;
+          if (ftPrice < computedPrice) {
+            computedPrice = ftPrice;
+            firstTimerDiscountApplied = true;
+          }
         }
       }
     }
@@ -1267,6 +1271,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       bookingSource: body.booking_source ?? "direct_widget",
       commissionRate: "0",
       commissionSgd: "0",
+      firstTimerDiscountApplied,
     })
     .returning();
 

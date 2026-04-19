@@ -353,6 +353,8 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     priceSgd = basePrice * (1 - service.discountPct / 100);
   }
 
+  let firstTimerDiscountApplied = false;
+
   // Server-side first-timer: default-deny unless a valid verification token matches.
   if (
     service.firstTimerDiscountEnabled &&
@@ -406,6 +408,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
           const firstTimerPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
           if (firstTimerPrice < priceSgd) {
             priceSgd = firstTimerPrice;
+            firstTimerDiscountApplied = true;
           }
         }
       }
@@ -481,6 +484,7 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
       client_email: body.client_email ?? "",
       client_phone: body.client_phone ?? "",
       client_id: body.client_id ?? "",
+      first_timer_discount_applied: firstTimerDiscountApplied ? "true" : "false",
     },
   });
 
