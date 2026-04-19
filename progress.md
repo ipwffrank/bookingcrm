@@ -1,5 +1,5 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 19 April 2026 (Session 10)**
+**Last updated: 19 April 2026 (Session 11)**
 
 ---
 
@@ -21,6 +21,98 @@
 - **Twilio:** ipwffrank@gmail.com — ✅ fully configured (sandbox joined, credentials in local .env + Railway, sandbox keyword: east-written)
 - **Stripe:** ✅ Test mode configured (sk_test_..., webhook endpoint registered on platform account)
 - **GitHub:** ipwffrank/bookingcrm
+
+---
+
+## What's Completed (Session 11 — 19 April 2026)
+
+### First-Timer Discount Verification ✅
+Closed an abuse vector where returning customers could claim the "first-visit" discount by reformatting their phone or changing email. Discount is now default-deny: requires proof of identity via Google Sign-in or phone OTP, plus a server-side DB check.
+
+**New backend endpoints (all mounted under `/booking/:slug/`):**
+- `POST /lookup-client` — phone-first debounced recognition, merchant-scoped, returns masked name ("Gr***")
+- `POST /otp/send` — issues a 6-digit code via WhatsApp (primary) or email (fallback); 3-send/15-min/phone + 10-send/hour/IP rate limits
+- `POST /otp/verify` — validates code, issues signed JWT (`verification_token`) with 10-min TTL; max 5 attempts per code
+
+**Identity proof / JWT system:**
+- Three purposes: `login`, `first_timer_verify` (OTP), `google_verify` (from `/customer-auth/google`, 30-min TTL)
+- Payment-intent and `/booking/:slug/confirm` handlers now require a valid token matching the booking's normalized phone (or google_id) before granting the first-timer discount
+- Explicit purpose whitelist — only `google_verify` + googleId match or `first_timer_verify` + phone match grants eligibility; any other purpose logged and rejected
+- Regular `discountPct` continues to apply to everyone with no verification required
+
+**Normalization:**
+- New `normalizePhone` (E.164 via libphonenumber-js) + `normalizeEmail` (trim + lowercase) helpers in `services/api/src/lib/normalize.ts`
+- Applied at: `findOrCreateClient` (bookings.ts + webhooks.ts), `check-first-timer`, `create-payment-intent`, `/booking/:slug/confirm`, `lookup-client`, `otp/send`, `otp/verify`
+- One-time backfill script at `services/api/scripts/normalize-client-contact.ts` — ran against production, 19 clients total / 8 normalized / 0 collisions
+
+**Frontend rebuild (Step 4 of booking widget):**
+- Phone-first input with 500ms debounced lookup → "Welcome back, Gr***" card when a returning client is found
+- Login OTP flow: passwordless return-visit log-in with auto-fill, jumps to Step 5 on success
+- Google Sign-in promoted to primary CTA; "Register now" (renamed from "Continue as guest") as secondary
+- First-timer OTP card appears conditionally — only when `firstTimerDiscountPct > discountPct` (no friction for users who wouldn't benefit)
+- `verification_token` stored in widget state and forwarded to both `/create-payment-intent` and `/confirm`; cleared automatically when the user edits their phone after verifying (prevents silent server-side rejection at checkout)
+- Silent `catch {}` on the advisory first-timer check removed — errors now log and default `isFirstTimer` to `false`
+
+**New components:** `OTPVerificationCard.tsx` (reusable for login + first-timer paths, email-fallback link), `ReturningCustomerCard.tsx` (masked-name recognition card)
+
+**Server-side first-timer helper:** `services/api/src/lib/firstTimerCheck.ts` — single source of truth, used by `check-first-timer`, payment intent, and `/confirm`
+
+**Rollout hardening (post-review fixes):**
+- `lookup-client` scoped to merchant via `clientProfiles` join — prevents cross-tenant name leaks
+- `check-first-timer` returns 404 when merchant not found (was silently returning `isFirstTimer: true`)
+- Rate-limit counter increments moved AFTER channel validation so malformed requests don't burn legitimate users' quotas
+- Redis cold-start resilience: all direct `redis.incr`/`.set`/`.get`/`.del` calls in OTP endpoints wrapped in try/catch matching the existing `getCache`/`setCache` defensive pattern — rate-limit failures skip gracefully, OTP storage/read failures return 503 with a user-visible "temporarily unavailable" message instead of a generic 500
+- Removed dead `is_first_timer: boolean` flag from payment-intent schema + widget POST body (replaced by `verification_token`)
+
+**Verification:**
+- Backfill: ran cleanly against production — 19 total / 8 updated / 0 collisions
+- End-to-end smoke test: 16/16 PASS on production including normalization, tenant scoping, default-deny, rate limits, error codes, cold-start resilience
+- Manual QA of Step 4 UI: Google path, Register-now path with and without first-timer discount, returning-customer recognition, phone-edit token invalidation
+
+**Known gaps (deferred follow-ups, non-blocking):**
+- `merchants.country` column doesn't exist in schema; all handlers default to `"SG"` for libphonenumber-js — MY merchants with local-format numbers (no `+60` prefix) would fail to normalize. Add column + migration when MY merchants are onboarded.
+- `findOrCreateClient` still duplicated between `bookings.ts` and `webhooks.ts` — extract to shared helper
+- `check-first-timer` mounted at `/merchant/services/...` despite being public — move to `/booking/:slug/...` for consistency
+- Observability: `discount_applied` log could include `merchant_id`, `service_id`, and identity-match outcome for better "pipeline failure" diagnostics
+
+### Commits (Session 11)
+| Hash | Description |
+|---|---|
+| `ee34898` | chore: add libphonenumber-js for phone normalization |
+| `b9e034c` | feat(api): normalizePhone/normalizeEmail helpers |
+| `2274241` | feat(api): verification token JWT helpers |
+| `83b4995` | feat(api): isFirstTimerAtMerchant authoritative helper |
+| `407f67a` | feat(api): normalize phone/email in findOrCreateClient |
+| `f3221c1` | fix(api): normalize phone/email in webhook meta.client_id update branch |
+| `c114f6d` | feat(worker): otp_send job handler (whatsapp + email) |
+| `239f60b` | feat(api): otp/send endpoint with WhatsApp/email dispatch |
+| `bf562af` | feat(api): otp/verify endpoint issues verification JWT |
+| `90f6f42` | feat(api): mount otpRouter under /booking |
+| `af99a0c` | feat(api): lookup-client endpoint for returning-customer recognition |
+| `48157ef` | feat(api): customer-auth/google issues verification_token (google_verify) |
+| `cb7aac4` | fix(api): check-first-timer normalizes phone/email before dedupe |
+| `f4a0bcb` | feat(api): payment intent default-denies first-timer without verification |
+| `138b554` | feat(api): /booking/:slug/confirm default-denies first-timer without verification |
+| `12d09ce` | chore(db): backfill script to normalize clients.phone/email |
+| `1e02777` | fix(web): first-timer check failure logs + defaults to false |
+| `80cc077` | feat(web): OTPVerificationCard component |
+| `5762673` | feat(web): ReturningCustomerCard component |
+| `50f1fa0` | feat(web): returning-customer recognition + login OTP in Step 4 |
+| `62ba578` | feat(web): Register-now flow with conditional first-timer OTP |
+| `6215365` | feat(web): Google Sign-in primary CTA + store verification_token |
+| `363ebfe` | fix(api): explicit purpose whitelist for first-timer discount eligibility |
+| `6a74d1c` | fix(api): scope lookup-client to merchant to prevent cross-tenant name leak |
+| `846de4c` | fix(web): clear verificationToken when phone changes |
+| `5429dcc` | refactor: remove dead is_first_timer field (replaced by verification_token) |
+| `ca9b024` | fix(api): validate OTP channel requirements before burning rate-limit quota |
+| `070639f` | fix(api): check-first-timer returns 404 when merchant not found |
+| `7cc9372` | Merge feature/first-timer-verification |
+| `2296a8b` | chore: smoke-test script for first-timer verification endpoints |
+| `24bcb91` | fix(api): handle Redis unavailability gracefully in OTP endpoints |
+
+### Design + Plan docs
+- Spec: [docs/superpowers/specs/2026-04-19-first-timer-verification-design.md](docs/superpowers/specs/2026-04-19-first-timer-verification-design.md)
+- Implementation plan: [docs/superpowers/plans/2026-04-19-first-timer-verification.md](docs/superpowers/plans/2026-04-19-first-timer-verification.md)
 
 ---
 
