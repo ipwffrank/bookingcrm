@@ -1454,7 +1454,11 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     disabled={shouldOfferFirstTimerOtp || !clientName.trim() || !clientPhone.trim() || confirmLoading}
                     className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {confirmLoading ? 'Setting up payment...' : 'Continue to Review'}
+                    {confirmLoading
+                      ? 'Setting up payment...'
+                      : paymentMethod === 'card'
+                      ? 'Continue to Payment'
+                      : 'Continue to Review'}
                   </button>
                 </>
               )}
