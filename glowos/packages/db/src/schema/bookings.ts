@@ -30,6 +30,7 @@ export const bookings = pgTable(
     staffId: uuid("staff_id")
       .notNull()
       .references(() => staff.id, { onDelete: "restrict" }),
+    groupId: uuid("group_id"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),
     endTime: timestamp("end_time", { withTimezone: true }).notNull(),
     durationMinutes: integer("duration_minutes").notNull(),
@@ -76,6 +77,7 @@ export const bookings = pgTable(
       table.staffId,
       table.startTime
     ),
+    groupIdx: index("bookings_group_idx").on(table.groupId),
   })
 );
 

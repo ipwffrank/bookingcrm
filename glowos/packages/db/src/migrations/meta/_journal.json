@@ -71,6 +71,13 @@
       "when": 1776618367764,
       "tag": "0009_bookings_first_timer_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1776618739435,
+      "tag": "0010_brave_bloodstorm",
+      "breakpoints": true
     }
   ]
 }

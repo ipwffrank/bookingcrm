@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, sql, or } from "drizzle-orm";
 import { z } from "zod";
 import { addMinutes, addSeconds, parseISO, startOfDay, endOfDay } from "date-fns";
 import {
@@ -12,6 +12,10 @@ import {
   slotLeases,
   clients,
   clientProfiles,
+  bookingGroups,
+  bookingEdits,
+  clientPackages,
+  packageSessions,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -22,6 +26,8 @@ import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
 import { processRefund } from "../lib/refunds.js";
+import { findStaffConflict } from "../lib/booking-conflicts.js";
+import { writeAuditDiff } from "../lib/booking-edits.js";
 import { addJob } from "../lib/queue.js";
 import {
   scheduleReminder,
@@ -80,6 +86,16 @@ const merchantBookingCreateSchema = z.object({
 const rescheduleSchema = z.object({
   start_time: z.string().datetime({ message: "start_time must be an ISO datetime string" }),
   end_time: z.string().datetime({ message: "end_time must be an ISO datetime string" }).optional(),
+});
+
+const patchBookingSchema = z.object({
+  service_id: z.string().uuid().optional(),
+  staff_id: z.string().uuid().optional(),
+  start_time: z.string().datetime().optional(),
+  end_time: z.string().datetime().optional(),
+  payment_method: z.string().optional(),
+  price_sgd: z.number().nonnegative().optional(),
+  client_notes: z.string().nullable().optional(),
 });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -531,6 +547,114 @@ merchantBookingsRouter.get("/:id", requireMerchant, async (c) => {
   return c.json({ booking: row.booking, service: row.service, staff: row.staffMember, client: row.client });
 });
 
+// ─── Protected: GET /merchant/bookings/:id/edit-context ───────────────────────
+
+merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const bookingId = c.req.param("id")!;
+
+  const [row] = await db
+    .select({
+      booking: bookings,
+      group: bookingGroups,
+    })
+    .from(bookings)
+    .leftJoin(bookingGroups, eq(bookings.groupId, bookingGroups.id))
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!row) {
+    return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+  }
+
+  const siblingBookings = row.group
+    ? await db
+        .select({ booking: bookings, service: services, staff })
+        .from(bookings)
+        .innerJoin(services, eq(bookings.serviceId, services.id))
+        .innerJoin(staff, eq(bookings.staffId, staff.id))
+        .where(eq(bookings.groupId, row.group.id))
+    : [{ booking: row.booking }];
+
+  // Active packages for this client
+  const activePackages = await db
+    .select({
+      id: clientPackages.id,
+      packageName: clientPackages.packageName,
+      sessionsTotal: clientPackages.sessionsTotal,
+      sessionsUsed: clientPackages.sessionsUsed,
+      expiresAt: clientPackages.expiresAt,
+    })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.clientId, row.booking.clientId),
+        eq(clientPackages.merchantId, merchantId),
+        eq(clientPackages.status, "active")
+      )
+    );
+
+  const pkgIds = activePackages.map((p) => p.id);
+  const pendingSessions = pkgIds.length
+    ? await db
+        .select({
+          id: packageSessions.id,
+          clientPackageId: packageSessions.clientPackageId,
+          serviceId: packageSessions.serviceId,
+          sessionNumber: packageSessions.sessionNumber,
+        })
+        .from(packageSessions)
+        .where(
+          and(
+            inArray(packageSessions.clientPackageId, pkgIds),
+            eq(packageSessions.status, "pending")
+          )
+        )
+    : [];
+
+  const allServices = await db
+    .select({ id: services.id, name: services.name, priceSgd: services.priceSgd, durationMinutes: services.durationMinutes, bufferMinutes: services.bufferMinutes })
+    .from(services)
+    .where(and(eq(services.merchantId, merchantId), eq(services.isActive, true)));
+
+  const allStaff = await db
+    .select({ id: staff.id, name: staff.name })
+    .from(staff)
+    .where(eq(staff.merchantId, merchantId));
+
+  // Last edit + full client info
+  const [lastEdit] = await db
+    .select()
+    .from(bookingEdits)
+    .where(
+      row.group
+        ? eq(bookingEdits.bookingGroupId, row.group.id)
+        : eq(bookingEdits.bookingId, bookingId)
+    )
+    .orderBy(sql`${bookingEdits.createdAt} DESC`)
+    .limit(1);
+
+  const [clientRow] = await db
+    .select({ id: clients.id, name: clients.name, phone: clients.phone })
+    .from(clients)
+    .where(eq(clients.id, row.booking.clientId))
+    .limit(1);
+
+  return c.json({
+    booking: row.booking,
+    group: row.group,
+    client: clientRow,
+    siblingBookings,
+    activePackages: activePackages.map((p) => ({
+      ...p,
+      pendingSessions: pendingSessions.filter((s) => s.clientPackageId === p.id),
+    })),
+    services: allServices,
+    staff: allStaff,
+    lastEdit: lastEdit ?? null,
+  });
+});
+
 // ─── Protected: POST /merchant/bookings ───────────────────────────────────────
 
 merchantBookingsRouter.post(
@@ -795,6 +919,166 @@ merchantBookingsRouter.patch(
     return c.json({ booking: updated });
   }
 );
+
+// ─── Protected: PATCH /merchant/bookings/:id (general edit) ────────────────────
+
+merchantBookingsRouter.patch(
+  "/:id",
+  requireMerchant,
+  zValidator(patchBookingSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const userId = c.get("userId")!;
+    const userRole = c.get("userRole") as "owner" | "manager" | "staff";
+    const bookingId = c.req.param("id")!;
+    const body = c.get("body") as z.infer<typeof patchBookingSchema>;
+
+    const [existing] = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+    if (!existing) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+    if (existing.status === "cancelled") {
+      return c.json(
+        { error: "Conflict", message: "Cannot edit a cancelled booking" },
+        409
+      );
+    }
+
+    // If staff_id is changing, verify the new staff belongs to this merchant
+    if (body.staff_id && body.staff_id !== existing.staffId) {
+      const [staffMember] = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(and(eq(staff.id, body.staff_id), eq(staff.merchantId, merchantId)))
+        .limit(1);
+      if (!staffMember) {
+        return c.json({ error: "Not Found", message: "Staff member not found" }, 404);
+      }
+    }
+
+    // Resolve service (for duration) if service_id is changing
+    let durationMinutes = existing.durationMinutes;
+    let newEndTime = existing.endTime;
+    let effectivePrice = existing.priceSgd;
+    if (body.service_id && body.service_id !== existing.serviceId) {
+      const [svc] = await db
+        .select({
+          priceSgd: services.priceSgd,
+          durationMinutes: services.durationMinutes,
+          bufferMinutes: services.bufferMinutes,
+        })
+        .from(services)
+        .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchantId)))
+        .limit(1);
+      if (!svc) {
+        return c.json({ error: "Not Found", message: "Service not found" }, 404);
+      }
+      durationMinutes = svc.durationMinutes;
+      const baseStart = body.start_time ? parseISO(body.start_time) : existing.startTime;
+      newEndTime = addMinutes(baseStart, svc.durationMinutes + svc.bufferMinutes);
+      effectivePrice = svc.priceSgd;
+    }
+    if (body.price_sgd !== undefined) effectivePrice = body.price_sgd.toFixed(2);
+
+    const newStart = body.start_time ? parseISO(body.start_time) : existing.startTime;
+    if (body.end_time) newEndTime = parseISO(body.end_time);
+    const newStaffId = body.staff_id ?? existing.staffId;
+
+    const staffOrTimeChanged =
+      newStaffId !== existing.staffId ||
+      newStart.getTime() !== existing.startTime.getTime() ||
+      newEndTime.getTime() !== existing.endTime.getTime();
+    if (staffOrTimeChanged) {
+      const conflict = await findStaffConflict({
+        merchantId,
+        staffId: newStaffId,
+        startTime: newStart,
+        endTime: newEndTime,
+        excludeBookingIds: [bookingId],
+      });
+      if (conflict) {
+        return c.json(
+          { error: "Conflict", message: "Staff double-booked", ...conflict },
+          409
+        );
+      }
+    }
+
+    // Commission fields are intentionally left untouched (locked at completion
+    // per spec). No review-request or no-show job is queued here either —
+    // those fire once at completion, not on subsequent edits.
+    await db.transaction(async (tx) => {
+      const newValues = {
+        serviceId: body.service_id ?? existing.serviceId,
+        staffId: newStaffId,
+        startTime: newStart,
+        endTime: newEndTime,
+        durationMinutes,
+        priceSgd: effectivePrice,
+        paymentMethod: body.payment_method ?? existing.paymentMethod,
+        clientNotes: body.client_notes === undefined ? existing.clientNotes : body.client_notes,
+      };
+
+      await writeAuditDiff(
+        { userId, userRole, bookingId },
+        {
+          serviceId: existing.serviceId,
+          staffId: existing.staffId,
+          startTime: existing.startTime,
+          endTime: existing.endTime,
+          priceSgd: existing.priceSgd,
+          paymentMethod: existing.paymentMethod,
+          clientNotes: existing.clientNotes,
+        },
+        newValues,
+        tx
+      );
+
+      await tx
+        .update(bookings)
+        .set({ ...newValues, updatedAt: new Date() })
+        .where(eq(bookings.id, bookingId));
+    });
+
+    await invalidateAvailabilityCacheByMerchantId(merchantId);
+    return c.json({ success: true });
+  }
+);
+
+// ─── Protected: GET /merchant/bookings/:id/edits (audit trail) ────────────────
+
+merchantBookingsRouter.get("/:id/edits", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const bookingId = c.req.param("id")!;
+
+  const [existing] = await db
+    .select({ id: bookings.id, groupId: bookings.groupId })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+  if (!existing) {
+    return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+  }
+
+  const rows = await db
+    .select()
+    .from(bookingEdits)
+    .where(
+      existing.groupId
+        ? or(
+            eq(bookingEdits.bookingId, bookingId),
+            eq(bookingEdits.bookingGroupId, existing.groupId)
+          )!
+        : eq(bookingEdits.bookingId, bookingId)
+    )
+    .orderBy(sql`${bookingEdits.createdAt} DESC`);
+
+  return c.json({ edits: rows });
+});
 
 // ─── GET /booking/:slug/staff ──────────────────────────────────────────────────
 // Public — returns visible staff with profile fields for the booking widget

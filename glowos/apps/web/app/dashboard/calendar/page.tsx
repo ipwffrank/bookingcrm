@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
+import { BookingForm } from '../bookings/BookingForm';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -98,6 +99,7 @@ export default function CalendarPage() {
   const [viewMode,   setViewMode]   = useState<'day' | 'week' | 'month'>('day');
   const [closureTitle, setClosureTitle] = useState<string | null>(null);
   const [fcRange, setFcRange] = useState<{ start: string; end: string } | null>(null);
+  const [editBookingId, setEditBookingId] = useState<string | null>(null);
   const [allClosures, setAllClosures] = useState<Array<{ id: string; date: string; title: string; isFullDay: boolean; startTime: string | null; endTime: string | null }>>([]);
 
   // Modals
@@ -1026,6 +1028,7 @@ export default function CalendarPage() {
                         }}
                         onMouseDown={isDraggable ? e => startBookingDrag(e, b, 'move') : undefined}
                         onClick={e => { e.stopPropagation(); openBooking(b); }}
+                        onDoubleClick={() => setEditBookingId(b.id)}
                       >
                         {/* Quick action buttons — stop propagation so mousedown drag doesn't trigger */}
                         <div
@@ -1581,6 +1584,18 @@ export default function CalendarPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {editBookingId && (
+        <BookingForm
+          mode="edit"
+          bookingId={editBookingId}
+          onClose={() => setEditBookingId(null)}
+          onSave={() => {
+            setEditBookingId(null);
+            void load();
+          }}
+        />
       )}
     </div>
   );
