@@ -1,11 +1,13 @@
 import { Hono } from "hono";
-import { and, eq, asc, or } from "drizzle-orm";
+import { and, eq, asc } from "drizzle-orm";
 import { z } from "zod";
-import { db, services, consultOutcomes, bookings, merchants, clients } from "@glowos/db";
+import { db, services, consultOutcomes, bookings, merchants } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import type { AppVariables } from "../lib/types.js";
+import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
+import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 
 const servicesRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -65,9 +67,10 @@ servicesRouter.get("/check-first-timer", async (c) => {
   const googleId = c.req.query("google_id");
   const slug = c.req.query("slug");
 
-  if (!slug) return c.json({ error: "Bad Request", message: "slug is required" }, 400);
+  if (!slug) {
+    return c.json({ error: "Bad Request", message: "slug is required" }, 400);
+  }
 
-  // Find merchant
   const [merchant] = await db
     .select({ id: merchants.id })
     .from(merchants)
@@ -76,36 +79,19 @@ servicesRouter.get("/check-first-timer", async (c) => {
 
   if (!merchant) return c.json({ isFirstTimer: true });
 
-  // Check if client exists by phone, email, or google_id
-  const conditions = [];
-  if (phone) conditions.push(eq(clients.phone, phone));
-  if (email) conditions.push(eq(clients.email, email));
-  if (googleId) conditions.push(eq(clients.googleId, googleId));
+  // `merchants.country` is not yet a column on the schema; default to SG.
+  const defaultCountry: "SG" | "MY" = "SG";
+  const normalizedPhone = normalizePhone(phone, defaultCountry);
+  const normalizedEmail = normalizeEmail(email);
 
-  if (conditions.length === 0) return c.json({ isFirstTimer: true });
+  const isFirstTimer = await isFirstTimerAtMerchant({
+    merchantId: merchant.id,
+    normalizedPhone,
+    normalizedEmail,
+    googleId: googleId ?? null,
+  });
 
-  const [existing] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(or(...conditions))
-    .limit(1);
-
-  if (!existing) return c.json({ isFirstTimer: true });
-
-  // Check if they have any completed bookings with this merchant
-  const [booking] = await db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.clientId, existing.id),
-        eq(bookings.merchantId, merchant.id),
-        eq(bookings.status, "completed")
-      )
-    )
-    .limit(1);
-
-  return c.json({ isFirstTimer: !booking });
+  return c.json({ isFirstTimer });
 });
 
 // ─── POST /merchant/services ───────────────────────────────────────────────────
