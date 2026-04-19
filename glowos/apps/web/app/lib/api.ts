@@ -124,13 +124,18 @@ export async function apiFetch(path: string, options?: RequestInit) {
 
   // ── Handle 401: attempt token refresh and retry once ──────────────────────
   if (res.status === 401 && typeof window !== 'undefined') {
-    // Don't attempt refresh for auth endpoints themselves
-    const isAuthEndpoint =
+    // Public endpoints never require merchant auth — a 401 here means the
+    // request itself was rejected (e.g., wrong OTP code), not that the
+    // merchant session expired. Skip the refresh/redirect dance for these.
+    const isPublicEndpoint =
       path === '/auth/login' ||
       path === '/auth/signup' ||
-      path === '/auth/refresh-token';
+      path === '/auth/refresh-token' ||
+      path.startsWith('/booking/') ||
+      path.startsWith('/customer-auth/') ||
+      path.startsWith('/review/');
 
-    if (!isAuthEndpoint) {
+    if (!isPublicEndpoint) {
       const refreshed = await refreshTokenWithLock();
 
       if (refreshed) {
