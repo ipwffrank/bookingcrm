@@ -7,6 +7,9 @@ import { zValidator } from "../middleware/validate.js";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
 import { processRefund } from "../lib/refunds.js";
+import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
+import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
+import { verifyVerificationToken } from "../lib/jwt.js";
 import type { AppVariables } from "../lib/types.js";
 
 const paymentsRouter = new Hono<{ Variables: AppVariables }>();
@@ -25,6 +28,7 @@ const createPaymentIntentSchema = z.object({
   client_phone: z.string().optional(),
   client_id: z.string().uuid().optional(),
   is_first_timer: z.boolean().optional(),
+  verification_token: z.string().optional(),
   booking_source: z
     .enum([
       "google_reserve",
@@ -348,13 +352,66 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     priceSgd = basePrice * (1 - service.discountPct / 100);
   }
 
-  // Check first-timer discount if applicable
-  if (service.firstTimerDiscountEnabled && service.firstTimerDiscountPct && body.is_first_timer) {
-    const firstTimerPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
-    if (firstTimerPrice < priceSgd) {
-      priceSgd = firstTimerPrice;
+  // Server-side first-timer: default-deny unless a valid verification token matches.
+  if (
+    service.firstTimerDiscountEnabled &&
+    service.firstTimerDiscountPct &&
+    body.verification_token
+  ) {
+    const token = verifyVerificationToken(body.verification_token);
+    if (token) {
+      const defaultCountry: "SG" | "MY" = "SG";
+      const normalizedPhone = normalizePhone(body.client_phone, defaultCountry);
+      const normalizedEmail = normalizeEmail(body.client_email);
+
+      let identityMatches = false;
+      if (
+        token.purpose === "google_verify" &&
+        body.client_id &&
+        token.google_id
+      ) {
+        const [existing] = await db
+          .select({ googleId: clients.googleId })
+          .from(clients)
+          .where(eq(clients.id, body.client_id))
+          .limit(1);
+        if (existing?.googleId && existing.googleId === token.google_id) {
+          identityMatches = true;
+        }
+      } else if (
+        token.purpose === "first_timer_verify" &&
+        token.phone &&
+        normalizedPhone &&
+        token.phone === normalizedPhone
+      ) {
+        identityMatches = true;
+      }
+
+      if (identityMatches) {
+        const eligible = await isFirstTimerAtMerchant({
+          merchantId: merchant.id,
+          normalizedPhone,
+          normalizedEmail,
+          googleId: token.google_id ?? null,
+        });
+        if (eligible) {
+          const firstTimerPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
+          if (firstTimerPrice < priceSgd) {
+            priceSgd = firstTimerPrice;
+          }
+        }
+      }
     }
   }
+
+  // Observability: log the discount decision for this payment intent
+  console.log("[Payments] discount_applied", {
+    phone: normalizePhone(body.client_phone ?? null) ?? null,
+    path: body.verification_token ? "token" : "none",
+    regular_pct: service.discountPct ?? 0,
+    first_timer_pct: service.firstTimerDiscountPct ?? 0,
+    final_price: priceSgd,
+  });
 
   const amountCents = Math.round(priceSgd * 100);
   const commissionRate = getCommissionRate(body.booking_source);
