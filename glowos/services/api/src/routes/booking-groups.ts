@@ -387,6 +387,51 @@ bookingGroupsRouter.patch(
       }
     }
 
+    // Validate newly-redeemed package sessions (for toKeep rows where use_package is
+    // newly set, and for all toInsert rows with use_package). Must be pending and
+    // belong to the right client_package.
+    const newRedemptions: Array<{ bookingId?: string; sessionId: string; clientPackageId: string }> = [];
+    for (const s of toKeep) {
+      if (!s.use_package) continue;
+      // Only validate if this redemption is NEW (existing didn't already have a session)
+      const existing = currentMap.get(s.booking_id!)!;
+      const [sessCurrent] = await db
+        .select({ id: packageSessions.id })
+        .from(packageSessions)
+        .where(eq(packageSessions.bookingId, existing.id))
+        .limit(1);
+      if (sessCurrent) continue; // not a new redemption
+      newRedemptions.push({
+        bookingId: existing.id,
+        sessionId: s.use_package.session_id,
+        clientPackageId: s.use_package.client_package_id,
+      });
+    }
+    for (const s of toInsert) {
+      if (!s.use_package) continue;
+      newRedemptions.push({
+        sessionId: s.use_package.session_id,
+        clientPackageId: s.use_package.client_package_id,
+      });
+    }
+    for (const r of newRedemptions) {
+      const [sess] = await db
+        .select({
+          id: packageSessions.id,
+          status: packageSessions.status,
+          clientPackageId: packageSessions.clientPackageId,
+        })
+        .from(packageSessions)
+        .where(eq(packageSessions.id, r.sessionId))
+        .limit(1);
+      if (!sess || sess.clientPackageId !== r.clientPackageId) {
+        return c.json({ error: "Not Found", message: "Package session not found" }, 404);
+      }
+      if (sess.status !== "pending") {
+        return c.json({ error: "Conflict", message: "Package session is no longer available" }, 409);
+      }
+    }
+
     // Commission fields (`commissionRate`, `commissionSgd`) are intentionally
     // never touched in this handler — per spec, commission is locked at the
     // time the booking was originally completed.
