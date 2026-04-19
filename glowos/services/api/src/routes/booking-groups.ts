@@ -595,7 +595,7 @@ bookingGroupsRouter.patch(
         },
         {
           paymentMethod: body.payment_method ?? group.paymentMethod,
-          notes: body.notes ?? group.notes,
+          notes: body.notes === undefined ? group.notes : body.notes,
           totalPriceSgd: newTotal,
         },
         tx
