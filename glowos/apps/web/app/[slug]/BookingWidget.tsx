@@ -283,6 +283,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [verificationToken, setVerificationToken] = useState<string | null>(null);
   const [registerMode, setRegisterMode] = useState(false);
   const [showLoginOtp, setShowLoginOtp] = useState(false);
+  const [skippedFirstTimerOtp, setSkippedFirstTimerOtp] = useState(false);
 
   // Package state
   const [availablePackages, setAvailablePackages] = useState<Array<{ id: string; name: string; description: string | null; totalSessions: number; priceSgd: string; includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>; validityDays: number }>>([]);
@@ -304,6 +305,20 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   );
 
   const days = next30Days();
+
+  // ── Derived: first-timer OTP gating ─────────────────────────────────────────
+  const firstTimerIsBetter =
+    !!selectedService?.firstTimerDiscountEnabled &&
+    (selectedService?.firstTimerDiscountPct ?? 0) > (selectedService?.discountPct ?? 0);
+
+  const shouldOfferFirstTimerOtp =
+    registerMode &&
+    !authClient &&
+    firstTimerIsBetter &&
+    !!clientName.trim() &&
+    !!clientPhone.trim() &&
+    !verificationToken &&
+    !skippedFirstTimerOtp;
 
   // ── Google Sign-In ──────────────────────────────────────────────────────────
 
@@ -597,6 +612,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
           client_email: clientEmail.trim() || undefined,
           client_id: authClient?.id || undefined,
           payment_method: 'cash',
+          verification_token: verificationToken ?? undefined,
         }),
       });
       const bookingId = (res.booking as { id: string }).id;
@@ -1115,12 +1131,12 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     <div className="flex-1 h-px bg-gray-200" />
                   </div>
 
-                  {/* Continue as Guest */}
+                  {/* Register now */}
                   <button
-                    onClick={() => setIsGuest(true)}
+                    onClick={() => { setIsGuest(true); setRegisterMode(true); }}
                     className="w-full rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
                   >
-                    Continue as Guest
+                    Register now
                   </button>
                 </div>
               )}
@@ -1238,6 +1254,26 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     </div>
                   )}
 
+                  {shouldOfferFirstTimerOtp && (
+                    <OTPVerificationCard
+                      slug={slug}
+                      phone={clientPhone}
+                      email={clientEmail || undefined}
+                      purpose="first_timer_verify"
+                      title={`🎁 Claim ${selectedService?.firstTimerDiscountPct}% first-visit discount`}
+                      subtitle="Verify your phone to unlock"
+                      onVerified={(token) => {
+                        setVerificationToken(token);
+                        setIsFirstTimer(true);
+                      }}
+                      onSkip={() => {
+                        setSkippedFirstTimerOtp(true);
+                        setVerificationToken(null);
+                        setIsFirstTimer(false);
+                      }}
+                    />
+                  )}
+
                   <button
                     onClick={async () => {
                       if (!clientName.trim() || !clientPhone.trim()) {
@@ -1285,6 +1321,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                               client_email: clientEmail.trim() || undefined,
                               client_phone: clientPhone.trim(),
                               is_first_timer: isFirstTimer ?? undefined,
+                              verification_token: verificationToken ?? undefined,
                             }),
                           });
                           setClientSecret(res.client_secret as string);
@@ -1317,7 +1354,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                         setStep(5);
                       }
                     }}
-                    disabled={!clientName.trim() || !clientPhone.trim() || confirmLoading}
+                    disabled={shouldOfferFirstTimerOtp || !clientName.trim() || !clientPhone.trim() || confirmLoading}
                     className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {confirmLoading ? 'Setting up payment...' : 'Continue to Review'}
