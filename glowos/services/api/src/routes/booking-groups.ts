@@ -20,6 +20,7 @@ import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { findStaffConflict } from "../lib/booking-conflicts.js";
 import { writeAuditDiff } from "../lib/booking-edits.js";
+import { incrementPackageSessionsUsed, decrementPackageSessionsUsed } from "../lib/package-helpers.js";
 import { normalizePhone } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import type { AppVariables } from "../lib/types.js";
@@ -222,10 +223,7 @@ bookingGroupsRouter.post(
                 staffId: p.staffId,
               })
               .where(eq(packageSessions.id, p.usePackage.sessionId));
-            await tx
-              .update(clientPackages)
-              .set({ sessionsUsed: sql`${clientPackages.sessionsUsed} + 1` })
-              .where(eq(clientPackages.id, p.usePackage.clientPackageId));
+            await incrementPackageSessionsUsed(tx, p.usePackage.clientPackageId);
           }
         }
 
@@ -455,13 +453,7 @@ bookingGroupsRouter.patch(
               staffName: null,
             })
             .where(eq(packageSessions.id, sess.id));
-          await tx
-            .update(clientPackages)
-            .set({
-              sessionsUsed: sql`${clientPackages.sessionsUsed} - 1`,
-              status: "active",
-            })
-            .where(eq(clientPackages.id, sess.clientPackageId));
+          await decrementPackageSessionsUsed(tx, sess.clientPackageId);
         }
         await writeAuditDiff(
           { userId, userRole, bookingId: b.id, bookingGroupId: groupId },
@@ -526,13 +518,7 @@ bookingGroupsRouter.patch(
               staffName: null,
             })
             .where(eq(packageSessions.id, sessCurrent.id));
-          await tx
-            .update(clientPackages)
-            .set({
-              sessionsUsed: sql`${clientPackages.sessionsUsed} - 1`,
-              status: "active",
-            })
-            .where(eq(clientPackages.id, sessCurrent.clientPackageId));
+          await decrementPackageSessionsUsed(tx, sessCurrent.clientPackageId);
         } else if (!sessCurrent && wantsPkg && s.use_package) {
           await tx
             .update(packageSessions)
@@ -543,10 +529,7 @@ bookingGroupsRouter.patch(
               staffId: s.staff_id,
             })
             .where(eq(packageSessions.id, s.use_package.session_id));
-          await tx
-            .update(clientPackages)
-            .set({ sessionsUsed: sql`${clientPackages.sessionsUsed} + 1` })
-            .where(eq(clientPackages.id, s.use_package.client_package_id));
+          await incrementPackageSessionsUsed(tx, s.use_package.client_package_id);
         }
       }
 
@@ -592,10 +575,7 @@ bookingGroupsRouter.patch(
               staffId: s.staff_id,
             })
             .where(eq(packageSessions.id, s.use_package.session_id));
-          await tx
-            .update(clientPackages)
-            .set({ sessionsUsed: sql`${clientPackages.sessionsUsed} + 1` })
-            .where(eq(clientPackages.id, s.use_package.client_package_id));
+          await incrementPackageSessionsUsed(tx, s.use_package.client_package_id);
         }
       }
 
