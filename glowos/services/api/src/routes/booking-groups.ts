@@ -411,7 +411,8 @@ bookingGroupsRouter.patch(
         await writeAuditDiff(
           { userId, userRole, bookingId: b.id, bookingGroupId: groupId },
           { deleted: false },
-          { deleted: true }
+          { deleted: true },
+          tx
         );
         await tx.delete(bookings).where(eq(bookings.id, b.id));
       }
@@ -443,7 +444,8 @@ bookingGroupsRouter.patch(
             endTime: existing.endTime,
             priceSgd: existing.priceSgd,
           },
-          newValues
+          newValues,
+          tx
         );
 
         await tx
@@ -522,7 +524,8 @@ bookingGroupsRouter.patch(
         await writeAuditDiff(
           { userId, userRole, bookingId: b.id, bookingGroupId: groupId },
           { exists: false },
-          { exists: true, serviceId: s.service_id, staffId: s.staff_id }
+          { exists: true, serviceId: s.service_id, staffId: s.staff_id },
+          tx
         );
         if (s.use_package) {
           await tx
@@ -559,7 +562,8 @@ bookingGroupsRouter.patch(
           paymentMethod: body.payment_method ?? group.paymentMethod,
           notes: body.notes ?? group.notes,
           totalPriceSgd: newTotal,
-        }
+        },
+        tx
       );
 
       await tx

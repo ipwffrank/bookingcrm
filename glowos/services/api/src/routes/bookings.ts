@@ -1022,7 +1022,8 @@ merchantBookingsRouter.patch(
           paymentMethod: existing.paymentMethod,
           clientNotes: existing.clientNotes,
         },
-        newValues
+        newValues,
+        tx
       );
 
       await tx
