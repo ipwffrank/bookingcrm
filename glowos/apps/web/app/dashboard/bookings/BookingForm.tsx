@@ -143,7 +143,84 @@ export function BookingForm(props: BookingFormProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Wired in Task 19
+    setApiError('');
+    if (!clientName.trim() || !clientPhone.trim()) {
+      setApiError('Client name and phone are required');
+      return;
+    }
+    if (rows.length === 0) {
+      setApiError('At least one service is required');
+      return;
+    }
+    if (rows.some((r) => !r.serviceId || !r.staffId || !r.startTime)) {
+      setApiError('Each service needs a service, staff, and start time');
+      return;
+    }
+
+    const token = localStorage.getItem('access_token');
+    setSaving(true);
+    try {
+      if (mode === 'create') {
+        await apiFetch('/merchant/bookings/group', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            client_name: clientName,
+            client_phone: clientPhone,
+            payment_method: paymentMethod,
+            notes: notes || undefined,
+            services: rows.map((r) => ({
+              service_id: r.serviceId,
+              staff_id: r.staffId,
+              start_time: r.startTime,
+              price_sgd: r.priceTouched ? Number(r.priceSgd) : undefined,
+              use_package: r.usePackage
+                ? { client_package_id: r.usePackage.clientPackageId, session_id: r.usePackage.sessionId }
+                : undefined,
+            })),
+          }),
+        });
+      } else if (props.groupId) {
+        await apiFetch(`/merchant/bookings/group/${props.groupId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            payment_method: paymentMethod,
+            notes: notes || null,
+            services: rows.map((r) => ({
+              booking_id: r.bookingId,
+              service_id: r.serviceId,
+              staff_id: r.staffId,
+              start_time: r.startTime,
+              price_sgd: Number(r.priceSgd),
+              use_package: r.usePackage
+                ? { client_package_id: r.usePackage.clientPackageId, session_id: r.usePackage.sessionId }
+                : undefined,
+            })),
+          }),
+        });
+      } else if (props.bookingId) {
+        const r = rows[0];
+        await apiFetch(`/merchant/bookings/${props.bookingId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            service_id: r.serviceId,
+            staff_id: r.staffId,
+            start_time: r.startTime,
+            price_sgd: Number(r.priceSgd),
+            payment_method: paymentMethod,
+            client_notes: notes || null,
+          }),
+        });
+      }
+      onSave();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) router.push('/login');
+      else setApiError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
