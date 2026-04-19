@@ -18,6 +18,8 @@ import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
+import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
+import { verifyVerificationToken } from "../lib/jwt.js";
 import { processRefund } from "../lib/refunds.js";
 import { addJob } from "../lib/queue.js";
 import {
@@ -50,6 +52,7 @@ const confirmSchema = z.object({
   client_email: z.string().email().optional(),
   client_id: z.string().uuid().optional(),
   payment_method: z.string().optional(),
+  verification_token: z.string().optional(),
 });
 
 const merchantBookingCreateSchema = z.object({
@@ -1139,9 +1142,15 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
     );
   }
 
-  // Load service for price
+  // Load service with full discount fields
   const [service] = await db
-    .select({ priceSgd: services.priceSgd, durationMinutes: services.durationMinutes })
+    .select({
+      priceSgd: services.priceSgd,
+      durationMinutes: services.durationMinutes,
+      discountPct: services.discountPct,
+      firstTimerDiscountPct: services.firstTimerDiscountPct,
+      firstTimerDiscountEnabled: services.firstTimerDiscountEnabled,
+    })
     .from(services)
     .where(eq(services.id, lease.serviceId))
     .limit(1);
@@ -1191,6 +1200,59 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
   // Find or create client profile for this merchant
   await findOrCreateClientProfile(merchant.id, client.id);
 
+  // Compute final price (regular discount always applies; first-timer requires verification)
+  const basePrice = parseFloat(String(service.priceSgd));
+  let computedPrice = basePrice;
+  if (service.discountPct) {
+    computedPrice = basePrice * (1 - service.discountPct / 100);
+  }
+  if (
+    service.firstTimerDiscountEnabled &&
+    service.firstTimerDiscountPct &&
+    body.verification_token
+  ) {
+    const token = verifyVerificationToken(body.verification_token);
+    if (token) {
+      const defaultCountry: "SG" | "MY" = "SG";
+      const normalizedPhone = normalizePhone(body.client_phone, defaultCountry);
+      const normalizedEmail = normalizeEmail(body.client_email);
+
+      let identityMatches = false;
+      if (token.purpose === "google_verify" && body.client_id && token.google_id) {
+        const [existing] = await db
+          .select({ googleId: clients.googleId })
+          .from(clients)
+          .where(eq(clients.id, body.client_id))
+          .limit(1);
+        if (existing?.googleId && existing.googleId === token.google_id) {
+          identityMatches = true;
+        }
+      } else if (
+        token.purpose === "first_timer_verify" &&
+        token.phone &&
+        normalizedPhone &&
+        token.phone === normalizedPhone
+      ) {
+        identityMatches = true;
+      }
+
+      if (identityMatches) {
+        const eligible = await isFirstTimerAtMerchant({
+          merchantId: merchant.id,
+          normalizedPhone,
+          normalizedEmail,
+          googleId: token.google_id ?? null,
+        });
+        if (eligible) {
+          const ftPrice = basePrice * (1 - service.firstTimerDiscountPct / 100);
+          if (ftPrice < computedPrice) computedPrice = ftPrice;
+        }
+      }
+    }
+  }
+
+  const priceSgdFinal = computedPrice.toFixed(2);
+
   // Create booking
   const [booking] = await db
     .insert(bookings)
@@ -1203,7 +1265,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       endTime: lease.endTime,
       durationMinutes: service.durationMinutes,
       status: "confirmed",
-      priceSgd: service.priceSgd,
+      priceSgd: priceSgdFinal,
       paymentMethod: body.payment_method,
       bookingSource: "direct_widget",
       commissionRate: "0",
