@@ -22,6 +22,10 @@ export const merchants = pgTable("merchants", {
   logoUrl: text("logo_url"),
   coverPhotoUrl: text("cover_photo_url"),
   timezone: varchar("timezone", { length: 50 }).notNull().default("Asia/Singapore"),
+  country: varchar("country", { length: 2 })
+    .notNull()
+    .default("SG")
+    .$type<"SG" | "MY">(),
   gbpPlaceId: varchar("gbp_place_id", { length: 255 }),
   stripeAccountId: varchar("stripe_account_id", { length: 255 }),
   hitpayMerchantId: varchar("hitpay_merchant_id", { length: 255 }),
