@@ -148,4 +148,99 @@ otpRouter.post("/:slug/otp/send", zValidator(sendSchema), async (c) => {
   });
 });
 
+// ─── POST /booking/:slug/otp/verify ───────────────────────────────────────────
+
+otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = c.get("body") as z.infer<typeof verifySchema>;
+
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  // `merchants.country` is not yet a column on the schema; default to SG.
+  const defaultCountry: "SG" | "MY" = "SG";
+  const phone = normalizePhone(body.phone, defaultCountry);
+  if (!phone) {
+    return c.json({ error: "Bad Request", message: "Invalid phone number" }, 400);
+  }
+
+  const key = otpKey(phone, body.purpose);
+  const raw = await redis.get(key);
+  if (!raw) {
+    return c.json(
+      { error: "Gone", message: "Code expired or not found. Request a new one." },
+      410
+    );
+  }
+
+  const entry = JSON.parse(raw) as {
+    code: string;
+    email: string | null;
+    channel: string;
+    attempts: number;
+  };
+
+  if (entry.attempts >= 5) {
+    await redis.del(key);
+    return c.json(
+      { error: "Too Many Requests", message: "Too many attempts. Request a new code." },
+      429
+    );
+  }
+
+  if (entry.code !== body.code) {
+    entry.attempts += 1;
+    await redis.set(key, JSON.stringify(entry), "KEEPTTL");
+    return c.json({ error: "Unauthorized", message: "Incorrect code." }, 401);
+  }
+
+  // Success — delete the key (single-use) and issue the verification token
+  await redis.del(key);
+
+  const token = generateVerificationToken(
+    {
+      phone,
+      email: entry.email,
+      google_id: null,
+      purpose: body.purpose,
+      verified_at: Math.floor(Date.now() / 1000),
+    },
+    600 // 10 min TTL
+  );
+
+  // For login purpose, also return client info so the frontend can auto-fill
+  if (body.purpose === "login") {
+    const [client] = await db
+      .select({
+        id: clients.id,
+        name: clients.name,
+        email: clients.email,
+        googleId: clients.googleId,
+      })
+      .from(clients)
+      .where(eq(clients.phone, phone))
+      .limit(1);
+    return c.json({
+      verified: true,
+      verification_token: token,
+      client: client
+        ? {
+            id: client.id,
+            name: client.name,
+            email: client.email,
+            google_id: client.googleId,
+          }
+        : null,
+    });
+  }
+
+  return c.json({ verified: true, verification_token: token });
+});
+
 export { otpRouter };
