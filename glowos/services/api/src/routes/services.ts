@@ -77,7 +77,12 @@ servicesRouter.get("/check-first-timer", async (c) => {
     .where(eq(merchants.slug, slug))
     .limit(1);
 
-  if (!merchant) return c.json({ isFirstTimer: true });
+  if (!merchant) {
+    return c.json(
+      { error: "Not Found", message: "Merchant not found" },
+      404
+    );
+  }
 
   // `merchants.country` is not yet a column on the schema; default to SG.
   const defaultCountry: "SG" | "MY" = "SG";
