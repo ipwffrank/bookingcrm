@@ -53,6 +53,17 @@ const confirmSchema = z.object({
   client_id: z.string().uuid().optional(),
   payment_method: z.string().optional(),
   verification_token: z.string().optional(),
+  booking_source: z
+    .enum([
+      "google_reserve",
+      "google_gbp_link",
+      "direct_widget",
+      "instagram",
+      "qr_walkin",
+      "walkin_manual",
+      "embedded_widget",
+    ])
+    .optional(),
 });
 
 const merchantBookingCreateSchema = z.object({
@@ -1278,7 +1289,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       status: "confirmed",
       priceSgd: priceSgdFinal,
       paymentMethod: body.payment_method,
-      bookingSource: "direct_widget",
+      bookingSource: body.booking_source ?? "direct_widget",
       commissionRate: "0",
       commissionSgd: "0",
     })
