@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { and, eq, ilike, or, desc, sql } from "drizzle-orm";
+import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, clients, clientProfiles, bookings, services, staff } from "@glowos/db";
+import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
+import { normalizePhone } from "../lib/normalize.js";
 
 const clientsRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -124,6 +125,63 @@ clientsRouter.get("/", requireMerchant, async (c) => {
   return c.json({
     clients: enrichedRows,
     pagination: { limit, offset, count: enrichedRows.length, total },
+  });
+});
+
+// ─── GET /merchant/clients/lookup ────────────────────────────────────────────
+// Look up a client by phone number and return active packages
+
+clientsRouter.get("/lookup", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const rawPhone = c.req.query("phone") ?? "";
+  const phone = normalizePhone(rawPhone, "SG");
+  if (!phone) return c.json({ client: null, activePackages: [] });
+
+  const [client] = await db
+    .select({ id: clients.id, name: clients.name, phone: clients.phone })
+    .from(clients)
+    .where(eq(clients.phone, phone))
+    .limit(1);
+  if (!client) return c.json({ client: null, activePackages: [] });
+
+  const active = await db
+    .select()
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.clientId, client.id),
+        eq(clientPackages.merchantId, merchantId),
+        eq(clientPackages.status, "active")
+      )
+    );
+  const pkgIds = active.map((p) => p.id);
+  const sessions = pkgIds.length
+    ? await db
+        .select({
+          id: packageSessions.id,
+          clientPackageId: packageSessions.clientPackageId,
+          serviceId: packageSessions.serviceId,
+          sessionNumber: packageSessions.sessionNumber,
+        })
+        .from(packageSessions)
+        .where(
+          and(
+            inArray(packageSessions.clientPackageId, pkgIds),
+            eq(packageSessions.status, "pending")
+          )
+        )
+    : [];
+
+  return c.json({
+    client,
+    activePackages: active.map((p) => ({
+      id: p.id,
+      packageName: p.packageName,
+      sessionsTotal: p.sessionsTotal,
+      sessionsUsed: p.sessionsUsed,
+      expiresAt: p.expiresAt,
+      pendingSessions: sessions.filter((s) => s.clientPackageId === p.id),
+    })),
   });
 });
 
