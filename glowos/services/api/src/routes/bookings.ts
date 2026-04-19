@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { addMinutes, addSeconds, parseISO, startOfDay, endOfDay } from "date-fns";
 import {
@@ -12,6 +12,10 @@ import {
   slotLeases,
   clients,
   clientProfiles,
+  bookingGroups,
+  bookingEdits,
+  clientPackages,
+  packageSessions,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -529,6 +533,114 @@ merchantBookingsRouter.get("/:id", requireMerchant, async (c) => {
   }
 
   return c.json({ booking: row.booking, service: row.service, staff: row.staffMember, client: row.client });
+});
+
+// ─── Protected: GET /merchant/bookings/:id/edit-context ───────────────────────
+
+merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const bookingId = c.req.param("id")!;
+
+  const [row] = await db
+    .select({
+      booking: bookings,
+      group: bookingGroups,
+    })
+    .from(bookings)
+    .leftJoin(bookingGroups, eq(bookings.groupId, bookingGroups.id))
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!row) {
+    return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+  }
+
+  const siblingBookings = row.group
+    ? await db
+        .select({ booking: bookings, service: services, staff })
+        .from(bookings)
+        .innerJoin(services, eq(bookings.serviceId, services.id))
+        .innerJoin(staff, eq(bookings.staffId, staff.id))
+        .where(eq(bookings.groupId, row.group.id))
+    : [{ booking: row.booking }];
+
+  // Active packages for this client
+  const activePackages = await db
+    .select({
+      id: clientPackages.id,
+      packageName: clientPackages.packageName,
+      sessionsTotal: clientPackages.sessionsTotal,
+      sessionsUsed: clientPackages.sessionsUsed,
+      expiresAt: clientPackages.expiresAt,
+    })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.clientId, row.booking.clientId),
+        eq(clientPackages.merchantId, merchantId),
+        eq(clientPackages.status, "active")
+      )
+    );
+
+  const pkgIds = activePackages.map((p) => p.id);
+  const pendingSessions = pkgIds.length
+    ? await db
+        .select({
+          id: packageSessions.id,
+          clientPackageId: packageSessions.clientPackageId,
+          serviceId: packageSessions.serviceId,
+          sessionNumber: packageSessions.sessionNumber,
+        })
+        .from(packageSessions)
+        .where(
+          and(
+            inArray(packageSessions.clientPackageId, pkgIds),
+            eq(packageSessions.status, "pending")
+          )
+        )
+    : [];
+
+  const allServices = await db
+    .select({ id: services.id, name: services.name, priceSgd: services.priceSgd, durationMinutes: services.durationMinutes, bufferMinutes: services.bufferMinutes })
+    .from(services)
+    .where(and(eq(services.merchantId, merchantId), eq(services.isActive, true)));
+
+  const allStaff = await db
+    .select({ id: staff.id, name: staff.name })
+    .from(staff)
+    .where(eq(staff.merchantId, merchantId));
+
+  // Last edit + full client info
+  const [lastEdit] = await db
+    .select()
+    .from(bookingEdits)
+    .where(
+      row.group
+        ? eq(bookingEdits.bookingGroupId, row.group.id)
+        : eq(bookingEdits.bookingId, bookingId)
+    )
+    .orderBy(sql`${bookingEdits.createdAt} DESC`)
+    .limit(1);
+
+  const [clientRow] = await db
+    .select({ id: clients.id, name: clients.name, phone: clients.phone })
+    .from(clients)
+    .where(eq(clients.id, row.booking.clientId))
+    .limit(1);
+
+  return c.json({
+    booking: row.booking,
+    group: row.group,
+    client: clientRow,
+    siblingBookings,
+    activePackages: activePackages.map((p) => ({
+      ...p,
+      pendingSessions: pendingSessions.filter((s) => s.clientPackageId === p.id),
+    })),
+    services: allServices,
+    staff: allStaff,
+    lastEdit: lastEdit ?? null,
+  });
 });
 
 // ─── Protected: POST /merchant/bookings ───────────────────────────────────────
