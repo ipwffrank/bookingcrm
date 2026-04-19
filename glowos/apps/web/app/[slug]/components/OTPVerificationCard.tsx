@@ -24,6 +24,7 @@ interface Props {
   subtitle?: string;
   onVerified: (token: string, client?: VerifiedClient) => void;
   onSkip?: () => void;
+  onSwitchToGoogle?: () => void;
 }
 
 export function OTPVerificationCard({
@@ -35,6 +36,7 @@ export function OTPVerificationCard({
   subtitle,
   onVerified,
   onSkip,
+  onSwitchToGoogle,
 }: Props) {
   const [stage, setStage] = useState<'send' | 'enter'>('send');
   const [maskedDestination, setMaskedDestination] = useState<string>('');
@@ -145,6 +147,15 @@ export function OTPVerificationCard({
               {secondsLeft > 0 ? `Try again in ${formatMMSS(secondsLeft)}` : 'Use email instead'}
             </button>
           )}
+          {onSwitchToGoogle && (
+            <button
+              type="button"
+              onClick={onSwitchToGoogle}
+              className="w-full text-xs text-gray-500 underline"
+            >
+              Use Google instead
+            </button>
+          )}
           {onSkip && (
             <button type="button" onClick={onSkip} className="w-full text-xs text-gray-500 underline">
               Skip discount and continue
@@ -180,6 +191,15 @@ export function OTPVerificationCard({
           >
             Didn&apos;t receive it? Send again
           </button>
+          {onSwitchToGoogle && (
+            <button
+              type="button"
+              onClick={onSwitchToGoogle}
+              className="w-full text-xs text-gray-500 underline"
+            >
+              Use Google instead
+            </button>
+          )}
           {onSkip && (
             <button type="button" onClick={onSkip} className="w-full text-xs text-gray-500 underline">
               Skip discount and continue

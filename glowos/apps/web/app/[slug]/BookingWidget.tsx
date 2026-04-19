@@ -1110,6 +1110,10 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     setShowLoginOtp(false);
                     setStep(5); // advance to Review & Confirm
                   }}
+                  onSwitchToGoogle={() => {
+                    setShowLoginOtp(false);
+                    setLookupResult(null);
+                  }}
                 />
               )}
 
@@ -1316,6 +1320,11 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                         setSkippedFirstTimerOtp(true);
                         setVerificationToken(null);
                         setIsFirstTimer(false);
+                      }}
+                      onSwitchToGoogle={() => {
+                        setIsGuest(false);
+                        setRegisterMode(false);
+                        setSkippedFirstTimerOtp(false);
                       }}
                     />
                   )}
