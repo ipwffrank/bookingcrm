@@ -64,6 +64,13 @@
       "when": 1776615250383,
       "tag": "0008_merchants_country",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1776618367764,
+      "tag": "0009_bookings_first_timer_flag",
+      "breakpoints": true
     }
   ]
 }
