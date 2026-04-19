@@ -243,4 +243,47 @@ otpRouter.post("/:slug/otp/verify", zValidator(verifySchema), async (c) => {
   return c.json({ verified: true, verification_token: token });
 });
 
+// ─── POST /booking/:slug/lookup-client ────────────────────────────────────────
+
+otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = c.get("body") as z.infer<typeof lookupSchema>;
+
+  const [merchant] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+  if (!merchant) return c.json({ matched: false });
+
+  // `merchants.country` is not yet a column on the schema; default to SG.
+  const defaultCountry: "SG" | "MY" = "SG";
+  const phone = normalizePhone(body.phone, defaultCountry);
+  if (!phone) return c.json({ matched: false });
+
+  // Rate limit: 10 lookups/min per IP (prevents phone-number enumeration)
+  const ip =
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    c.req.header("x-real-ip") ||
+    "unknown";
+  const lookupKey = `lookup:rate:ip:${ip}`;
+  const count = await redis.incr(lookupKey);
+  if (count === 1) await redis.expire(lookupKey, 60);
+  if (count > 10) {
+    return c.json({ error: "Too Many Requests", message: "Slow down." }, 429);
+  }
+
+  const [client] = await db
+    .select({ name: clients.name })
+    .from(clients)
+    .where(eq(clients.phone, phone))
+    .limit(1);
+
+  if (!client || !client.name) return c.json({ matched: false });
+
+  const masked =
+    client.name.length >= 2 ? client.name.slice(0, 2) + "***" : "***";
+  return c.json({ matched: true, masked_name: masked });
+});
+
 export { otpRouter };
