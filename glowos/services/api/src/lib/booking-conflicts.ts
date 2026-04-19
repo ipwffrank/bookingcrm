@@ -1,4 +1,4 @@
-import { and, eq, ne, or, lt, gt, inArray } from "drizzle-orm";
+import { and, eq, lt, gt, inArray, notInArray } from "drizzle-orm";
 import { db, bookings } from "@glowos/db";
 
 export type Conflict = {
@@ -28,11 +28,7 @@ export async function findStaffConflict(params: {
     gt(bookings.endTime, params.startTime),
   ];
   if (params.excludeBookingIds.length > 0) {
-    conds.push(
-      or(
-        ...params.excludeBookingIds.map((id) => ne(bookings.id, id))
-      )!
-    );
+    conds.push(notInArray(bookings.id, params.excludeBookingIds));
   }
   const [hit] = await db
     .select({
