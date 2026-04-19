@@ -1036,6 +1036,37 @@ merchantBookingsRouter.patch(
   }
 );
 
+// ─── Protected: GET /merchant/bookings/:id/edits (audit trail) ────────────────
+
+merchantBookingsRouter.get("/:id/edits", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const bookingId = c.req.param("id")!;
+
+  const [existing] = await db
+    .select({ id: bookings.id, groupId: bookings.groupId })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+  if (!existing) {
+    return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+  }
+
+  const rows = await db
+    .select()
+    .from(bookingEdits)
+    .where(
+      existing.groupId
+        ? or(
+            eq(bookingEdits.bookingId, bookingId),
+            eq(bookingEdits.bookingGroupId, existing.groupId)
+          )!
+        : eq(bookingEdits.bookingId, bookingId)
+    )
+    .orderBy(sql`${bookingEdits.createdAt} DESC`);
+
+  return c.json({ edits: rows });
+});
+
 // ─── GET /booking/:slug/staff ──────────────────────────────────────────────────
 // Public — returns visible staff with profile fields for the booking widget
 
