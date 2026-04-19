@@ -87,6 +87,7 @@ interface BookingWidgetProps {
   services: Service[];
   staff: StaffMember[];
   slug: string;
+  embedded?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -227,7 +228,13 @@ function StripePaymentForm({
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 
-export default function BookingWidget({ merchant, services, staff, slug }: BookingWidgetProps) {
+export default function BookingWidget({
+  merchant,
+  services,
+  staff,
+  slug,
+  embedded = false,
+}: BookingWidgetProps) {
   const router = useRouter();
 
   // Wizard state
@@ -302,6 +309,8 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>(
     merchant.paymentEnabled ? 'card' : 'cash'
   );
+
+  const bookingSource = embedded ? 'embedded_widget' : 'direct_widget';
 
   const days = next30Days();
 
@@ -661,6 +670,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
           client_id: authClient?.id || undefined,
           payment_method: 'cash',
           verification_token: verificationToken ?? undefined,
+          booking_source: bookingSource,
         }),
       });
       const bookingId = (res.booking as { id: string }).id;
@@ -1421,6 +1431,7 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                               client_email: clientEmail.trim() || undefined,
                               client_phone: clientPhone.trim(),
                               verification_token: verificationToken ?? undefined,
+                              booking_source: bookingSource,
                             }),
                           });
                           setClientSecret(res.client_secret as string);

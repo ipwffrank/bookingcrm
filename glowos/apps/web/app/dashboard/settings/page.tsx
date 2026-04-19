@@ -779,6 +779,15 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
 function BookingPageTab({ merchant }: { merchant: Merchant }) {
   const bookingUrl = `https://glowos-nine.vercel.app/${merchant.slug}`;
   const [copied, setCopied] = useState(false);
+  const [embedCopied, setEmbedCopied] = useState(false);
+
+  const baseUrl =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : 'https://glowos-nine.vercel.app';
+  const embedSnippet = merchant?.slug
+    ? `<iframe\n  src="${baseUrl}/embed/${merchant.slug}"\n  width="100%"\n  height="900"\n  style="border:0; max-width: 720px;"\n></iframe>`
+    : '';
 
   function handleCopy() {
     void navigator.clipboard.writeText(bookingUrl).then(() => {
@@ -861,6 +870,50 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Embed on your website */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">Embed on your website</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          Paste this into your website&apos;s custom HTML block to show the booking
+          widget inline.
+        </p>
+        <pre className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-xs text-gray-800 overflow-x-auto whitespace-pre">
+{embedSnippet}
+        </pre>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(embedSnippet).then(() => {
+                setEmbedCopied(true);
+                setTimeout(() => setEmbedCopied(false), 2000);
+              });
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              embedCopied
+                ? 'bg-green-100 text-green-700 border border-green-200'
+                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {embedCopied ? 'Copied!' : 'Copy'}
+          </button>
+          {merchant?.slug && (
+            <a
+              href={`${baseUrl}/embed/${merchant.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              Preview in new tab →
+            </a>
+          )}
+        </div>
+        <p className="mt-3 text-xs text-gray-400">
+          Works with Wix, Squarespace, WordPress, Shopify, and most site builders.
+          Adjust the height if your customers need more room.
+        </p>
       </div>
     </div>
   );
