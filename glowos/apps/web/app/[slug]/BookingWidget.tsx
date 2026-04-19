@@ -1145,8 +1145,10 @@ export default function BookingWidget({ merchant, services, staff, slug }: Booki
                     setStep(5); // advance to Review & Confirm
                   }}
                   onSwitchToGoogle={() => {
+                    // Only close the OTP card. Keep lookupResult so the
+                    // Welcome-back card re-appears and the user can retry
+                    // the phone path OR tap Google — their choice.
                     setShowLoginOtp(false);
-                    setLookupResult(null);
                   }}
                 />
               )}
