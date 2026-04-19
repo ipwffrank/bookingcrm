@@ -1,9 +1,9 @@
 // glowos/services/api/src/routes/otp.ts
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
-import { db, merchants, clients } from "@glowos/db";
+import { db, merchants, clients, clientProfiles } from "@glowos/db";
 import { redis } from "../lib/redis.js";
 import { addJob } from "../lib/queue.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
@@ -276,7 +276,8 @@ otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
   const [client] = await db
     .select({ name: clients.name })
     .from(clients)
-    .where(eq(clients.phone, phone))
+    .innerJoin(clientProfiles, eq(clientProfiles.clientId, clients.id))
+    .where(and(eq(clients.phone, phone), eq(clientProfiles.merchantId, merchant.id)))
     .limit(1);
 
   if (!client || !client.name) return c.json({ matched: false });
