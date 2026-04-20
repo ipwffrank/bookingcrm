@@ -251,6 +251,7 @@ export function BookingForm(props: BookingFormProps) {
               use_package: r.usePackage
                 ? { client_package_id: r.usePackage.clientPackageId, session_id: r.usePackage.sessionId }
                 : undefined,
+              use_new_package: r.useNewPackage ? true : undefined,
             })),
             sell_package: sellPackageId ? { package_id: sellPackageId } : undefined,
           }),
@@ -458,8 +459,27 @@ export function BookingForm(props: BookingFormProps) {
             </div>
             <div className="flex items-end">
               <div className="w-full rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm">
-                <span className="text-gray-500">Total: </span>
-                <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+                {sellPackageTemplate ? (
+                  <>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Services:</span>
+                      <span>S${totalPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Package:</span>
+                      <span>S${Number(sellPackageTemplate.priceSgd).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 mt-1 pt-1">
+                      <span>Total:</span>
+                      <span>S${(totalPrice + Number(sellPackageTemplate.priceSgd)).toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-gray-500">Total: </span>
+                    <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
