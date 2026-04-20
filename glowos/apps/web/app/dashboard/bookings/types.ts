@@ -36,6 +36,14 @@ export interface ActivePackage {
   pendingSessions: PendingPackageSession[];
 }
 
+export interface DayBooking {
+  id: string;
+  staffId: string;
+  startTime: string;
+  endTime: string;
+  status: BookingStatus;
+}
+
 export interface ServiceRowState {
   /** UUID from the backend; absent for new rows added during edit */
   bookingId?: string;

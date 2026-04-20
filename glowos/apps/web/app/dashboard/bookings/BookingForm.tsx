@@ -10,6 +10,7 @@ import type {
   ServiceRowState,
   ActivePackage,
   EditContextResponse,
+  DayBooking,
 } from './types';
 import { ServiceRow } from './ServiceRow';
 import { EditHistoryPanel } from './EditHistoryPanel';
@@ -40,6 +41,7 @@ export function BookingForm(props: BookingFormProps) {
   const [staffList, setStaffList] = useState<StaffOption[]>(props.staffList ?? []);
   const [activePackages, setActivePackages] = useState<ActivePackage[]>([]);
   const [rows, setRows] = useState<ServiceRowState[]>([]);
+  const [dayBookings, setDayBookings] = useState<DayBooking[]>([]);
   const [completedBanner, setCompletedBanner] = useState(false);
   const [lastEditLabel, setLastEditLabel] = useState<string | null>(null);
   const [packageTemplates, setPackageTemplates] = useState<Array<{ id: string; name: string; priceSgd: string; isActive: boolean }>>([]);
@@ -113,6 +115,38 @@ export function BookingForm(props: BookingFormProps) {
 
   const totalPrice = rows.reduce((s, r) => s + Number(r.priceSgd || 0), 0);
   const scheduleOverlaps = findScheduleOverlaps(rows, services);
+  const focusDate = rows[0]?.startTime ? isoDateOnly(rows[0].startTime) : null;
+  const ownBookingIds = new Set(
+    rows.map((r) => r.bookingId).filter((id): id is string => Boolean(id))
+  );
+
+  useEffect(() => {
+    if (!focusDate) return;
+    const token = localStorage.getItem('access_token');
+    let cancelled = false;
+    apiFetch(`/merchant/bookings?date=${focusDate}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((data) => {
+        if (cancelled) return;
+        const rows = (data as { bookings: Array<{ booking: DayBooking; staffMember: { id: string } }> }).bookings ?? [];
+        setDayBookings(
+          rows.map((r) => ({
+            id: r.booking.id,
+            staffId: r.staffMember.id,
+            startTime: r.booking.startTime,
+            endTime: r.booking.endTime,
+            status: r.booking.status,
+          }))
+        );
+      })
+      .catch(() => {
+        /* non-critical — availability hints just won't render */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [focusDate]);
 
   function addServiceRow() {
     const prev = rows[rows.length - 1];
@@ -302,6 +336,8 @@ export function BookingForm(props: BookingFormProps) {
                   services={services}
                   staff={staffList}
                   activePackages={activePackages}
+                  dayBookings={dayBookings}
+                  ownBookingIds={ownBookingIds}
                   canRemove={rows.length > 1}
                   onChange={(patch) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
                   onRemove={() => setRows(rows.filter((_, j) => j !== i))}
@@ -458,4 +494,9 @@ function fmtTime(ms: number): string {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+function isoDateOnly(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

@@ -1,12 +1,20 @@
 'use client';
 
-import type { ServiceOption, StaffOption, ServiceRowState, ActivePackage } from './types';
+import type {
+  ServiceOption,
+  StaffOption,
+  ServiceRowState,
+  ActivePackage,
+  DayBooking,
+} from './types';
 
 export interface ServiceRowProps {
   row: ServiceRowState;
   services: ServiceOption[];
   staff: StaffOption[];
   activePackages: ActivePackage[];
+  dayBookings: DayBooking[];
+  ownBookingIds: Set<string>;
   canRemove: boolean;
   onChange: (patch: Partial<ServiceRowState>) => void;
   onRemove: () => void;
@@ -18,6 +26,8 @@ export function ServiceRow({
   services,
   staff,
   activePackages,
+  dayBookings,
+  ownBookingIds,
   canRemove,
   onChange,
   onRemove,
@@ -28,6 +38,31 @@ export function ServiceRow({
       .filter((s) => s.serviceId === row.serviceId)
       .map((s) => ({ pkg, session: s }))
   );
+
+  const svc = services.find((s) => s.id === row.serviceId);
+  const rowStart = row.startTime ? new Date(row.startTime).getTime() : NaN;
+  const rowEnd =
+    svc && !Number.isNaN(rowStart)
+      ? rowStart + (svc.durationMinutes + svc.bufferMinutes) * 60_000
+      : NaN;
+
+  function busyUntilFor(staffId: string): number | null {
+    if (Number.isNaN(rowStart) || Number.isNaN(rowEnd)) return null;
+    let latestEnd: number | null = null;
+    for (const b of dayBookings) {
+      if (ownBookingIds.has(b.id)) continue;
+      if (b.staffId !== staffId) continue;
+      if (b.status === 'cancelled' || b.status === 'no_show') continue;
+      const bStart = new Date(b.startTime).getTime();
+      const bEnd = new Date(b.endTime).getTime();
+      if (rowStart < bEnd && bStart < rowEnd) {
+        if (latestEnd === null || bEnd > latestEnd) latestEnd = bEnd;
+      }
+    }
+    return latestEnd;
+  }
+
+  const selectedBusyUntil = busyUntilFor(row.staffId);
 
   function handleServiceChange(newServiceId: string) {
     const svc = services.find((s) => s.id === newServiceId);
@@ -78,9 +113,16 @@ export function ServiceRow({
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
         >
           <option value="">Select staff...</option>
-          {staff.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
+          {staff.map((s) => {
+            const busyUntil = busyUntilFor(s.id);
+            return (
+              <option key={s.id} value={s.id}>
+                {busyUntil
+                  ? `⚠ ${s.name} — busy until ${fmtTime(busyUntil)}`
+                  : s.name}
+              </option>
+            );
+          })}
         </select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -99,6 +141,11 @@ export function ServiceRow({
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
         />
       </div>
+      {selectedBusyUntil !== null && (
+        <p className="text-xs text-amber-700">
+          ⚠ Selected staff is busy until {fmtTime(selectedBusyUntil)}.
+        </p>
+      )}
       <div className="flex items-center justify-between">
         {eligiblePackages.length > 0 ? (
           <button
@@ -134,4 +181,12 @@ function toLocalInput(iso: string) {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fmtTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-SG', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
