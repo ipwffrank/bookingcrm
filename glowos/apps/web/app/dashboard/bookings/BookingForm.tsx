@@ -44,7 +44,15 @@ export function BookingForm(props: BookingFormProps) {
   const [dayBookings, setDayBookings] = useState<DayBooking[]>([]);
   const [completedBanner, setCompletedBanner] = useState(false);
   const [lastEditLabel, setLastEditLabel] = useState<string | null>(null);
-  const [packageTemplates, setPackageTemplates] = useState<Array<{ id: string; name: string; priceSgd: string; isActive: boolean }>>([]);
+  const [packageTemplates, setPackageTemplates] = useState<
+    Array<{
+      id: string;
+      name: string;
+      priceSgd: string;
+      isActive: boolean;
+      includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
+    }>
+  >([]);
   const [sellPackageId, setSellPackageId] = useState<string>('');
   const [sellOpen, setSellOpen] = useState(false);
 
@@ -56,7 +64,15 @@ export function BookingForm(props: BookingFormProps) {
       const token = localStorage.getItem('access_token');
       apiFetch('/merchant/packages', { headers: { Authorization: `Bearer ${token}` } })
         .then((data) => {
-          const res = data as { packages: Array<{ id: string; name: string; priceSgd: string; isActive: boolean }> };
+          const res = data as {
+            packages: Array<{
+              id: string;
+              name: string;
+              priceSgd: string;
+              isActive: boolean;
+              includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
+            }>;
+          };
           setPackageTemplates(res.packages.filter((p) => p.isActive));
         })
         .catch(() => {}); // silent; feature is optional
@@ -119,6 +135,9 @@ export function BookingForm(props: BookingFormProps) {
   const ownBookingIds = new Set(
     rows.map((r) => r.bookingId).filter((id): id is string => Boolean(id))
   );
+  const sellPackageTemplate = sellPackageId
+    ? packageTemplates.find((p) => p.id === sellPackageId) ?? null
+    : null;
 
   useEffect(() => {
     if (!focusDate) return;
