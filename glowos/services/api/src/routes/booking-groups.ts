@@ -217,14 +217,16 @@ bookingGroupsRouter.post(
           .values({
             merchantId,
             clientId: client.id,
-            totalPriceSgd: totalPrice,
+            // Preliminary — we'll UPDATE this at the end of the tx.
+            totalPriceSgd: "0",
+            packagePriceSgd: "0",
             paymentMethod: body.payment_method,
             notes: body.notes ?? null,
             createdByUserId: userId,
           })
           .returning();
 
-        // Ensure client_profile exists for this merchant (required for analytics)
+        // Ensure client_profile exists for this merchant
         const [profileExisting] = await tx
           .select({ id: clientProfiles.id })
           .from(clientProfiles)
@@ -234,44 +236,11 @@ bookingGroupsRouter.post(
           await tx.insert(clientProfiles).values({ merchantId, clientId: client.id });
         }
 
-        const inserted = [];
-        for (const p of plan) {
-          const [b] = await tx
-            .insert(bookings)
-            .values({
-              merchantId,
-              clientId: client.id,
-              serviceId: p.serviceId,
-              staffId: p.staffId,
-              startTime: p.startTime,
-              endTime: p.endTime,
-              durationMinutes: p.durationMinutes,
-              status: "confirmed",
-              priceSgd: p.priceSgd,
-              paymentMethod: body.payment_method,
-              bookingSource: "walkin_manual",
-              commissionRate: "0",
-              commissionSgd: "0",
-              groupId: group.id,
-            })
-            .returning();
-          inserted.push(b);
-
-          if (p.usePackage) {
-            await tx
-              .update(packageSessions)
-              .set({
-                status: "completed",
-                completedAt: new Date(),
-                bookingId: b.id,
-                staffId: p.staffId,
-              })
-              .where(eq(packageSessions.id, p.usePackage.sessionId));
-            await incrementPackageSessionsUsed(tx, p.usePackage.clientPackageId);
-          }
-        }
-
-        let soldPackage = null;
+        // Sell package FIRST (before bookings) so new-package redemptions can
+        // reference the sessions. Empty pool if no package is being sold.
+        let soldPackage: typeof clientPackages.$inferSelect | null = null;
+        let soldPackagePrice = 0;
+        const soldPool = new Map<string, string[]>(); // serviceId -> [sessionId, ...]
         if (body.sell_package) {
           const [pkg] = await tx
             .select()
@@ -292,6 +261,7 @@ bookingGroupsRouter.post(
             body.sell_package.price_sgd !== undefined
               ? body.sell_package.price_sgd.toFixed(2)
               : pkg.priceSgd;
+          soldPackagePrice = Number(pricePaid);
           const [clientPkg] = await tx
             .insert(clientPackages)
             .values({
@@ -318,13 +288,106 @@ bookingGroupsRouter.post(
               });
             }
           }
+          let insertedSessions: Array<{ id: string; serviceId: string }> = [];
           if (sessionValues.length > 0) {
-            await tx.insert(packageSessions).values(sessionValues);
+            insertedSessions = await tx
+              .insert(packageSessions)
+              .values(sessionValues)
+              .returning({ id: packageSessions.id, serviceId: packageSessions.serviceId });
+          }
+          for (const s of insertedSessions) {
+            if (!soldPool.has(s.serviceId)) soldPool.set(s.serviceId, []);
+            soldPool.get(s.serviceId)!.push(s.id);
           }
           soldPackage = clientPkg;
         }
 
-        return { group, bookings: inserted, soldPackage };
+        const inserted = [];
+        for (let i = 0; i < plan.length; i++) {
+          const p = plan[i];
+          const row = body.services[i]; // same length, same order as `plan`
+          let redeemSessionId: string | undefined;
+          let redeemClientPackageId: string | undefined;
+          if (row.use_new_package) {
+            const pool = soldPool.get(row.service_id);
+            if (!pool || pool.length === 0) {
+              throw new Error("new_package_capacity_exceeded");
+            }
+            redeemSessionId = pool.shift()!;
+            redeemClientPackageId = soldPackage!.id;
+          } else if (row.use_package) {
+            redeemSessionId = row.use_package.session_id;
+            redeemClientPackageId = row.use_package.client_package_id;
+          }
+
+          const effectivePrice = redeemSessionId ? "0.00" : p.priceSgd;
+
+          const [b] = await tx
+            .insert(bookings)
+            .values({
+              merchantId,
+              clientId: client.id,
+              serviceId: p.serviceId,
+              staffId: p.staffId,
+              startTime: p.startTime,
+              endTime: p.endTime,
+              durationMinutes: p.durationMinutes,
+              status: "confirmed",
+              priceSgd: effectivePrice,
+              paymentMethod: body.payment_method,
+              bookingSource: "walkin_manual",
+              commissionRate: "0",
+              commissionSgd: "0",
+              groupId: group.id,
+            })
+            .returning();
+          inserted.push(b);
+
+          if (redeemSessionId && redeemClientPackageId) {
+            await tx
+              .update(packageSessions)
+              .set({
+                status: "completed",
+                completedAt: new Date(),
+                bookingId: b.id,
+                staffId: p.staffId,
+              })
+              .where(eq(packageSessions.id, redeemSessionId));
+            await incrementPackageSessionsUsed(tx, redeemClientPackageId);
+          }
+        }
+
+        // Compute and persist correct totals
+        const bookingsTotal = inserted.reduce((s, b) => s + Number(b.priceSgd), 0);
+        const grandTotal = (bookingsTotal + soldPackagePrice).toFixed(2);
+        const packageTotal = soldPackagePrice.toFixed(2);
+        await tx
+          .update(bookingGroups)
+          .set({ totalPriceSgd: grandTotal, packagePriceSgd: packageTotal })
+          .where(eq(bookingGroups.id, group.id));
+
+        // Re-fetch sold-package sessions so the response reflects final statuses
+        let soldPackageResp: unknown = null;
+        if (soldPackage) {
+          const sessions = await tx
+            .select({
+              id: packageSessions.id,
+              serviceId: packageSessions.serviceId,
+              sessionNumber: packageSessions.sessionNumber,
+              status: packageSessions.status,
+              bookingId: packageSessions.bookingId,
+            })
+            .from(packageSessions)
+            .where(eq(packageSessions.clientPackageId, soldPackage.id))
+            .orderBy(packageSessions.sessionNumber);
+          soldPackageResp = { ...soldPackage, sessions };
+        }
+
+        return {
+          group: { ...group, totalPriceSgd: grandTotal, packagePriceSgd: packageTotal },
+          bookings: inserted,
+          soldPackage: soldPackageResp,
+        };
       });
     } catch (err) {
       if (err instanceof Error && err.message === "sell_package_not_found") {
