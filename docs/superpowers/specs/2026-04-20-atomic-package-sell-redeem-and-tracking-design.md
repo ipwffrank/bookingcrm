@@ -48,8 +48,11 @@ timeline. Data already exists to render both — only the UI is missing.
 **Out of scope:**
 
 - PATCH `/merchant/bookings/group/:groupId` — editing a group will **not**
-  support adding a package sale retroactively. Staff who need that today
-  continue to void and recreate.
+  support adding/modifying a package sale retroactively. Staff who need
+  that today continue to void and recreate. PATCH will get one
+  correctness change: its `totalPriceSgd` recompute must now include the
+  already-stored `packagePriceSgd`, or it would clobber the package
+  component of a group that was sold+redeemed atomically.
 - Merchant analytics page changes.
 - Export / CSV.
 - Price-snapshot-at-purchase (already captured on
@@ -60,7 +63,7 @@ timeline. Data already exists to render both — only the UI is missing.
 
 ## Data Model
 
-No new tables. No migrations.
+One new nullable column. No new tables.
 
 Existing tables used:
 
@@ -72,10 +75,22 @@ Existing tables used:
 - `package_sessions` (each session has `status`, `bookingId`, `staffId`,
   `completedAt` — already the audit record we need)
 
+**New column:** `booking_groups.package_price_sgd numeric(10,2) not null
+default 0`. Stores the package-revenue component of the group. Needed
+because PATCH group recomputes `total_price_sgd` from child booking rows
+and would otherwise clobber the package component on the first edit.
+
 **Semantic change:** `booking_groups.totalPriceSgd` is now defined as
-*sum of child booking prices + sold package price paid* (if any), not just
-sum of booking prices. No backfill needed — no atomic buy+redeem existed
-before, so historical totals remain correct under both definitions.
+*sum of child booking prices + `packagePriceSgd`* — i.e., the grand
+total actually collected from the client. POST sets
+`packagePriceSgd = soldPackagePrice || 0` and
+`totalPriceSgd = bookingsSum + packagePriceSgd`. PATCH recomputes
+`totalPriceSgd = bookingsSum + packagePriceSgd` (using the already-stored
+`packagePriceSgd`, which PATCH does not modify).
+
+No backfill needed. All historical rows get `packagePriceSgd = 0`, which
+is correct — no atomic buy+redeem existed before, so historical
+`totalPriceSgd` values equal `bookingsSum + 0`.
 
 ## API
 
@@ -128,7 +143,9 @@ const serviceItemSchema = z.object({
    - Else — regular booking at `priceSgd`.
 5. Compute `groupTotal = sum(bookingPrices) + soldPackagePrice`. Since
    `booking_groups` is inserted before prices are known, issue an UPDATE
-   at the end of the transaction to set `totalPriceSgd`.
+   at the end of the transaction to set both `totalPriceSgd` (grand
+   total) and `packagePriceSgd` (package component; 0 if no package
+   sold).
 
 Any sessions left in the pool at end of loop remain `pending` — that is
 the common case ("bought 10, used 1 today, 9 remaining").
@@ -272,11 +289,14 @@ stays where it is — this is an audit view, not an edit view).
 
 ## Migration / Rollout
 
-- No DB migration.
+- One DB migration: add `booking_groups.package_price_sgd numeric(10,2)
+  not null default 0`. Safe on existing rows — default fills them
+  correctly.
 - No feature flag — behavior is additive (`use_new_package` is new field,
   old clients ignore it; total semantics change only when a package is
   sold in the same request, which is impossible today).
-- Deploy API and web together.
+- Deploy API and web together. API ships first (migration included);
+  web catches up on the next release.
 
 ## Open Questions
 
