@@ -393,6 +393,12 @@ bookingGroupsRouter.post(
       if (err instanceof Error && err.message === "sell_package_not_found") {
         return c.json({ error: "Not Found", message: "Package template not found" }, 404);
       }
+      if (err instanceof Error && err.message === "new_package_capacity_exceeded") {
+        return c.json(
+          { error: "Bad Request", message: "More rows flagged use_new_package than the package allows for that service" },
+          400
+        );
+      }
       throw err;
     }
 
