@@ -206,8 +206,6 @@ bookingGroupsRouter.post(
       }
     }
 
-    const totalPrice = plan.reduce((s, p) => s + Number(p.priceSgd), 0).toFixed(2);
-
     // Transactional write
     let result;
     try {
