@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { eq, and, gte, lte, gt, sql } from "drizzle-orm";
-import { db, bookings, clients, clientProfiles, services, staff, reviews } from "@glowos/db";
+import { eq, and, gte, lte, gt, sql, inArray } from "drizzle-orm";
+import { db, bookings, clients, clientProfiles, services, staff, reviews, clientPackages } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -643,6 +643,87 @@ analyticsRouter.get("/first-timer-roi", requireMerchant, async (c) => {
     return_rate_pct: returnRatePct,
     return_revenue_sgd: returnRevenue.toFixed(2),
     net_roi_sgd: netRoi.toFixed(2),
+  });
+});
+
+// ─── GET /merchant/analytics/today-revenue ────────────────────────────────────
+
+analyticsRouter.get("/today-revenue", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  // Completed + in-progress: sum(priceSgd) where startTime is today
+  const completedRows = await db
+    .select({ price: bookings.priceSgd })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        inArray(bookings.status, ["completed", "in_progress"]),
+        gte(bookings.startTime, startOfToday),
+        lte(bookings.startTime, endOfToday)
+      )
+    );
+  const completedRevenue = completedRows.reduce((s, r) => s + Number(r.price), 0);
+
+  // Cancelled: sum(price - refund) where cancelledAt is today
+  const cancelledRows = await db
+    .select({ price: bookings.priceSgd, refund: bookings.refundAmountSgd })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.status, "cancelled"),
+        gte(bookings.cancelledAt, startOfToday),
+        lte(bookings.cancelledAt, endOfToday)
+      )
+    );
+  const cancelledRetained = cancelledRows.reduce(
+    (s, r) => s + (Number(r.price) - Number(r.refund)),
+    0
+  );
+
+  // No-shows: sum(price - refund) where noShowAt is today
+  const noShowRows = await db
+    .select({ price: bookings.priceSgd, refund: bookings.refundAmountSgd })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.status, "no_show"),
+        gte(bookings.noShowAt, startOfToday),
+        lte(bookings.noShowAt, endOfToday)
+      )
+    );
+  const noShowRetained = noShowRows.reduce(
+    (s, r) => s + (Number(r.price) - Number(r.refund)),
+    0
+  );
+
+  // Packages: sum(pricePaidSgd) where purchasedAt is today
+  const packageRows = await db
+    .select({ price: clientPackages.pricePaidSgd })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.merchantId, merchantId),
+        gte(clientPackages.purchasedAt, startOfToday),
+        lte(clientPackages.purchasedAt, endOfToday)
+      )
+    );
+  const packageRevenue = packageRows.reduce((s, r) => s + Number(r.price), 0);
+
+  const total = completedRevenue + cancelledRetained + noShowRetained + packageRevenue;
+
+  return c.json({
+    completedRevenue: completedRevenue.toFixed(2),
+    cancelledRetained: cancelledRetained.toFixed(2),
+    noShowRetained: noShowRetained.toFixed(2),
+    packageRevenue: packageRevenue.toFixed(2),
+    total: total.toFixed(2),
   });
 });
 
