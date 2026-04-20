@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../../../lib/api';
@@ -129,6 +129,40 @@ export default function ClientProfilePage() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+
+  type ActivityEvent =
+    | { type: 'purchase'; when: string; packageName: string; pricePaid: string }
+    | {
+        type: 'redemption';
+        when: string;
+        serviceName: string | null;
+        staffName: string | null;
+        bookingId: string | null;
+      };
+
+  const activityEvents: ActivityEvent[] = useMemo(() => {
+    const events: ActivityEvent[] = [];
+    for (const pkg of clientPackagesData) {
+      events.push({
+        type: 'purchase',
+        when: pkg.purchasedAt,
+        packageName: pkg.packageName,
+        pricePaid: pkg.pricePaidSgd,
+      });
+      for (const s of pkg.sessions ?? []) {
+        if (s.status === 'completed' && s.completedAt) {
+          events.push({
+            type: 'redemption',
+            when: s.completedAt,
+            serviceName: s.serviceName ?? null,
+            staffName: s.staffName ?? null,
+            bookingId: s.bookingId ?? null,
+          });
+        }
+      }
+    }
+    return events.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
+  }, [clientPackagesData]);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -403,6 +437,31 @@ export default function ClientProfilePage() {
         )}
       </div>
 
+      {/* ── Package Activity ── */}
+      {activityEvents.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Package Activity</h2>
+          <ul className="space-y-1.5">
+            {activityEvents.map((e, i) => (
+              <li key={i} className="text-xs text-gray-700 flex items-start gap-2">
+                <span>{e.type === 'purchase' ? '📦' : '✅'}</span>
+                <span className="flex-1">
+                  {new Date(e.when).toLocaleDateString('en-SG', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}{' '}
+                  —{' '}
+                  {e.type === 'purchase'
+                    ? `Bought ${e.packageName} · S$${e.pricePaid}`
+                    : `Redeemed session${e.serviceName ? ` · ${e.serviceName}` : ''}${e.staffName ? ` · ${e.staffName}` : ''}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Package Progress ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h2 className="text-sm font-semibold text-gray-900 mb-4">Packages</h2>
@@ -431,16 +490,23 @@ export default function ClientProfilePage() {
                 <div className="space-y-1.5">
                   {pkg.sessions?.map((s: any) => (
                     <div key={s.id} className="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                           s.status === 'completed' ? 'bg-green-400' :
                           s.status === 'booked' ? 'bg-blue-400' :
                           'bg-gray-300'
                         }`} />
-                        <span className="text-gray-700">Session {s.sessionNumber}</span>
+                        <span className="text-gray-700 truncate">
+                          Session {s.sessionNumber}
+                          {s.serviceName ? ` · ${s.serviceName}` : ''}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 capitalize">{s.status}{s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}</span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-gray-400 capitalize">
+                          {s.status}
+                          {s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}
+                          {s.staffName ? ` · ${s.staffName}` : ''}
+                        </span>
                         {(s.status === 'pending' || s.status === 'booked') && (
                           <button
                             onClick={async () => {

@@ -27,19 +27,24 @@ import type { AppVariables } from "../lib/types.js";
 
 export const bookingGroupsRouter = new Hono<{ Variables: AppVariables }>();
 
-const serviceItemSchema = z.object({
-  booking_id: z.string().uuid().optional(),
-  service_id: z.string().uuid(),
-  staff_id: z.string().uuid(),
-  start_time: z.string().datetime().optional(),
-  price_sgd: z.number().nonnegative().optional(),
-  use_package: z
-    .object({
-      client_package_id: z.string().uuid(),
-      session_id: z.string().uuid(),
-    })
-    .optional(),
-});
+const serviceItemSchema = z
+  .object({
+    booking_id: z.string().uuid().optional(),
+    service_id: z.string().uuid(),
+    staff_id: z.string().uuid(),
+    start_time: z.string().datetime().optional(),
+    price_sgd: z.number().nonnegative().optional(),
+    use_package: z
+      .object({
+        client_package_id: z.string().uuid(),
+        session_id: z.string().uuid(),
+      })
+      .optional(),
+    use_new_package: z.boolean().optional(),
+  })
+  .refine((v) => !(v.use_package && v.use_new_package), {
+    message: "cannot combine use_package and use_new_package on one row",
+  });
 
 const patchGroupSchema = z.object({
   payment_method: z.enum(["cash", "card", "paynow", "other"]).optional(),
@@ -139,6 +144,45 @@ bookingGroupsRouter.post(
       });
     }
 
+    // Validate use_new_package rows: require sell_package in same request,
+    // and require the row's service to be included in the sold package.
+    if (body.services.some((s) => s.use_new_package)) {
+      if (!body.sell_package) {
+        return c.json(
+          { error: "Bad Request", message: "use_new_package requires sell_package in same request" },
+          400
+        );
+      }
+      // Load the package template once to validate includedServices
+      const [soldTemplate] = await db
+        .select({ includedServices: servicePackages.includedServices })
+        .from(servicePackages)
+        .where(
+          and(
+            eq(servicePackages.id, body.sell_package.package_id),
+            eq(servicePackages.merchantId, merchantId)
+          )
+        )
+        .limit(1);
+      if (!soldTemplate) {
+        return c.json({ error: "Not Found", message: "Package template not found" }, 404);
+      }
+      const includedServiceIds = new Set(
+        soldTemplate.includedServices.map((s) => s.serviceId)
+      );
+      for (const s of body.services) {
+        if (s.use_new_package && !includedServiceIds.has(s.service_id)) {
+          return c.json(
+            {
+              error: "Bad Request",
+              message: `Service ${s.service_id} is not included in the sold package`,
+            },
+            400
+          );
+        }
+      }
+    }
+
     // Validate package sessions (must be pending, belong to this client)
     for (const p of plan) {
       if (!p.usePackage) continue;
@@ -162,8 +206,6 @@ bookingGroupsRouter.post(
       }
     }
 
-    const totalPrice = plan.reduce((s, p) => s + Number(p.priceSgd), 0).toFixed(2);
-
     // Transactional write
     let result;
     try {
@@ -173,14 +215,16 @@ bookingGroupsRouter.post(
           .values({
             merchantId,
             clientId: client.id,
-            totalPriceSgd: totalPrice,
+            // Preliminary — we'll UPDATE this at the end of the tx.
+            totalPriceSgd: "0",
+            packagePriceSgd: "0",
             paymentMethod: body.payment_method,
             notes: body.notes ?? null,
             createdByUserId: userId,
           })
           .returning();
 
-        // Ensure client_profile exists for this merchant (required for analytics)
+        // Ensure client_profile exists for this merchant
         const [profileExisting] = await tx
           .select({ id: clientProfiles.id })
           .from(clientProfiles)
@@ -190,44 +234,11 @@ bookingGroupsRouter.post(
           await tx.insert(clientProfiles).values({ merchantId, clientId: client.id });
         }
 
-        const inserted = [];
-        for (const p of plan) {
-          const [b] = await tx
-            .insert(bookings)
-            .values({
-              merchantId,
-              clientId: client.id,
-              serviceId: p.serviceId,
-              staffId: p.staffId,
-              startTime: p.startTime,
-              endTime: p.endTime,
-              durationMinutes: p.durationMinutes,
-              status: "confirmed",
-              priceSgd: p.priceSgd,
-              paymentMethod: body.payment_method,
-              bookingSource: "walkin_manual",
-              commissionRate: "0",
-              commissionSgd: "0",
-              groupId: group.id,
-            })
-            .returning();
-          inserted.push(b);
-
-          if (p.usePackage) {
-            await tx
-              .update(packageSessions)
-              .set({
-                status: "completed",
-                completedAt: new Date(),
-                bookingId: b.id,
-                staffId: p.staffId,
-              })
-              .where(eq(packageSessions.id, p.usePackage.sessionId));
-            await incrementPackageSessionsUsed(tx, p.usePackage.clientPackageId);
-          }
-        }
-
-        let soldPackage = null;
+        // Sell package FIRST (before bookings) so new-package redemptions can
+        // reference the sessions. Empty pool if no package is being sold.
+        let soldPackage: typeof clientPackages.$inferSelect | null = null;
+        let soldPackagePrice = 0;
+        const soldPool = new Map<string, string[]>(); // serviceId -> [sessionId, ...]
         if (body.sell_package) {
           const [pkg] = await tx
             .select()
@@ -248,6 +259,7 @@ bookingGroupsRouter.post(
             body.sell_package.price_sgd !== undefined
               ? body.sell_package.price_sgd.toFixed(2)
               : pkg.priceSgd;
+          soldPackagePrice = Number(pricePaid);
           const [clientPkg] = await tx
             .insert(clientPackages)
             .values({
@@ -274,17 +286,116 @@ bookingGroupsRouter.post(
               });
             }
           }
+          let insertedSessions: Array<{ id: string; serviceId: string }> = [];
           if (sessionValues.length > 0) {
-            await tx.insert(packageSessions).values(sessionValues);
+            insertedSessions = await tx
+              .insert(packageSessions)
+              .values(sessionValues)
+              .returning({ id: packageSessions.id, serviceId: packageSessions.serviceId });
+          }
+          for (const s of insertedSessions) {
+            if (!soldPool.has(s.serviceId)) soldPool.set(s.serviceId, []);
+            soldPool.get(s.serviceId)!.push(s.id);
           }
           soldPackage = clientPkg;
         }
 
-        return { group, bookings: inserted, soldPackage };
+        const inserted = [];
+        for (let i = 0; i < plan.length; i++) {
+          const p = plan[i];
+          const row = body.services[i]; // same length, same order as `plan`
+          let redeemSessionId: string | undefined;
+          let redeemClientPackageId: string | undefined;
+          if (row.use_new_package) {
+            const pool = soldPool.get(row.service_id);
+            if (!pool || pool.length === 0) {
+              throw new Error("new_package_capacity_exceeded");
+            }
+            redeemSessionId = pool.shift()!;
+            redeemClientPackageId = soldPackage!.id;
+          } else if (row.use_package) {
+            redeemSessionId = row.use_package.session_id;
+            redeemClientPackageId = row.use_package.client_package_id;
+          }
+
+          const effectivePrice = redeemSessionId ? "0.00" : p.priceSgd;
+
+          const [b] = await tx
+            .insert(bookings)
+            .values({
+              merchantId,
+              clientId: client.id,
+              serviceId: p.serviceId,
+              staffId: p.staffId,
+              startTime: p.startTime,
+              endTime: p.endTime,
+              durationMinutes: p.durationMinutes,
+              status: "confirmed",
+              priceSgd: effectivePrice,
+              paymentMethod: body.payment_method,
+              bookingSource: "walkin_manual",
+              commissionRate: "0",
+              commissionSgd: "0",
+              groupId: group.id,
+            })
+            .returning();
+          inserted.push(b);
+
+          if (redeemSessionId && redeemClientPackageId) {
+            await tx
+              .update(packageSessions)
+              .set({
+                status: "completed",
+                completedAt: new Date(),
+                bookingId: b.id,
+                staffId: p.staffId,
+              })
+              .where(eq(packageSessions.id, redeemSessionId));
+            await incrementPackageSessionsUsed(tx, redeemClientPackageId);
+          }
+        }
+
+        // Compute and persist correct totals
+        const bookingsTotal = inserted.reduce((s, b) => s + Number(b.priceSgd), 0);
+        const grandTotal = (bookingsTotal + soldPackagePrice).toFixed(2);
+        const packageTotal = soldPackagePrice.toFixed(2);
+        await tx
+          .update(bookingGroups)
+          .set({ totalPriceSgd: grandTotal, packagePriceSgd: packageTotal })
+          .where(eq(bookingGroups.id, group.id));
+
+        // Re-fetch sold-package sessions so the response reflects final statuses
+        let soldPackageResp: unknown = null;
+        if (soldPackage) {
+          const sessions = await tx
+            .select({
+              id: packageSessions.id,
+              serviceId: packageSessions.serviceId,
+              sessionNumber: packageSessions.sessionNumber,
+              status: packageSessions.status,
+              bookingId: packageSessions.bookingId,
+            })
+            .from(packageSessions)
+            .where(eq(packageSessions.clientPackageId, soldPackage.id))
+            .orderBy(packageSessions.sessionNumber);
+          soldPackageResp = { ...soldPackage, sessions };
+        }
+
+        return {
+          group: { ...group, totalPriceSgd: grandTotal, packagePriceSgd: packageTotal },
+          bookings: inserted,
+          soldPackage: soldPackageResp,
+        };
       });
     } catch (err) {
       if (err instanceof Error && err.message === "sell_package_not_found") {
         return c.json({ error: "Not Found", message: "Package template not found" }, 404);
+      }
+      if (err instanceof Error && err.message === "new_package_capacity_exceeded") {
+        return c.json(
+          { error: "Bad Request", message: "More rows flagged use_new_package than the package allows for that service" },
+          400
+        );
       }
       throw err;
     }
@@ -584,7 +695,9 @@ bookingGroupsRouter.patch(
         .select({ price: bookings.priceSgd })
         .from(bookings)
         .where(eq(bookings.groupId, groupId));
-      const newTotal = remaining.reduce((s, r) => s + Number(r.price), 0).toFixed(2);
+      const bookingsSum = remaining.reduce((s, r) => s + Number(r.price), 0);
+      // Use the already-stored packagePriceSgd — PATCH never modifies it.
+      const newTotal = (bookingsSum + Number(group.packagePriceSgd)).toFixed(2);
 
       await writeAuditDiff(
         { userId, userRole, bookingGroupId: groupId },

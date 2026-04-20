@@ -53,6 +53,7 @@ export interface ServiceRowState {
   priceSgd: string;
   priceTouched: boolean; // true if user edited the price directly
   usePackage?: { clientPackageId: string; sessionId: string };
+  useNewPackage?: boolean;
 }
 
 export interface EditContextResponse {
@@ -89,4 +90,11 @@ export interface EditContextResponse {
     editedByUserId: string;
     fieldName: string;
   } | null;
+}
+
+export interface SoldPackageTemplate {
+  id: string;
+  name: string;
+  priceSgd: string;
+  includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
 }

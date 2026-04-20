@@ -44,7 +44,15 @@ export function BookingForm(props: BookingFormProps) {
   const [dayBookings, setDayBookings] = useState<DayBooking[]>([]);
   const [completedBanner, setCompletedBanner] = useState(false);
   const [lastEditLabel, setLastEditLabel] = useState<string | null>(null);
-  const [packageTemplates, setPackageTemplates] = useState<Array<{ id: string; name: string; priceSgd: string; isActive: boolean }>>([]);
+  const [packageTemplates, setPackageTemplates] = useState<
+    Array<{
+      id: string;
+      name: string;
+      priceSgd: string;
+      isActive: boolean;
+      includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
+    }>
+  >([]);
   const [sellPackageId, setSellPackageId] = useState<string>('');
   const [sellOpen, setSellOpen] = useState(false);
 
@@ -56,7 +64,15 @@ export function BookingForm(props: BookingFormProps) {
       const token = localStorage.getItem('access_token');
       apiFetch('/merchant/packages', { headers: { Authorization: `Bearer ${token}` } })
         .then((data) => {
-          const res = data as { packages: Array<{ id: string; name: string; priceSgd: string; isActive: boolean }> };
+          const res = data as {
+            packages: Array<{
+              id: string;
+              name: string;
+              priceSgd: string;
+              isActive: boolean;
+              includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
+            }>;
+          };
           setPackageTemplates(res.packages.filter((p) => p.isActive));
         })
         .catch(() => {}); // silent; feature is optional
@@ -119,6 +135,32 @@ export function BookingForm(props: BookingFormProps) {
   const ownBookingIds = new Set(
     rows.map((r) => r.bookingId).filter((id): id is string => Boolean(id))
   );
+  const sellPackageTemplate = sellPackageId
+    ? packageTemplates.find((p) => p.id === sellPackageId) ?? null
+    : null;
+
+  function newPackageUsedFor(serviceId: string, excludeIndex: number): number {
+    return rows.reduce(
+      (count, r, j) =>
+        count + (j !== excludeIndex && r.useNewPackage && r.serviceId === serviceId ? 1 : 0),
+      0
+    );
+  }
+
+  function clearNewPackageRedemptions() {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (!r.useNewPackage) return r;
+        const svc = services.find((s) => s.id === r.serviceId);
+        return {
+          ...r,
+          useNewPackage: false,
+          priceSgd: svc?.priceSgd ?? r.priceSgd,
+          priceTouched: false,
+        };
+      })
+    );
+  }
 
   useEffect(() => {
     if (!focusDate) return;
@@ -224,6 +266,7 @@ export function BookingForm(props: BookingFormProps) {
               use_package: r.usePackage
                 ? { client_package_id: r.usePackage.clientPackageId, session_id: r.usePackage.sessionId }
                 : undefined,
+              use_new_package: r.useNewPackage ? true : undefined,
             })),
             sell_package: sellPackageId ? { package_id: sellPackageId } : undefined,
           }),
@@ -328,6 +371,26 @@ export function BookingForm(props: BookingFormProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Services</label>
+            {sellPackageTemplate && (
+              <div className="mb-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+                <p className="font-semibold mb-1">
+                  Selling {sellPackageTemplate.name} (S${sellPackageTemplate.priceSgd}):
+                </p>
+                <ul className="space-y-0.5">
+                  {sellPackageTemplate.includedServices.map((s) => {
+                    const used = rows.filter(
+                      (r) => r.useNewPackage && r.serviceId === s.serviceId
+                    ).length;
+                    const remaining = s.quantity - used;
+                    return (
+                      <li key={s.serviceId}>
+                        · {s.serviceName} — {used} of {s.quantity} to redeem today, {remaining} remaining
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             <div className="space-y-2">
               {rows.map((row, i) => (
                 <ServiceRow
@@ -339,6 +402,8 @@ export function BookingForm(props: BookingFormProps) {
                   dayBookings={dayBookings}
                   ownBookingIds={ownBookingIds}
                   canRemove={rows.length > 1}
+                  sellPackageTemplate={mode === 'create' ? sellPackageTemplate : null}
+                  newPackageUsedForService={newPackageUsedFor(row.serviceId, i)}
                   onChange={(patch) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
                   onRemove={() => setRows(rows.filter((_, j) => j !== i))}
                 />
@@ -369,7 +434,15 @@ export function BookingForm(props: BookingFormProps) {
             <div className="rounded-lg border border-dashed border-gray-300 px-3 py-2">
               <button
                 type="button"
-                onClick={() => setSellOpen(!sellOpen)}
+                onClick={() => {
+                  if (sellOpen) {
+                    // Closing the disclosure: drop any selected package and
+                    // reset rows that were flagged as redemptions from it.
+                    setSellPackageId('');
+                    clearNewPackageRedemptions();
+                  }
+                  setSellOpen(!sellOpen);
+                }}
                 className="text-sm font-medium text-indigo-600"
               >
                 {sellOpen ? "− Don't sell a package" : '+ Also sell a package'}
@@ -378,7 +451,12 @@ export function BookingForm(props: BookingFormProps) {
                 <div className="mt-2">
                   <select
                     value={sellPackageId}
-                    onChange={(e) => setSellPackageId(e.target.value)}
+                    onChange={(e) => {
+                      // Any existing row redemptions referenced the prior
+                      // package's capacity — clear them before switching.
+                      clearNewPackageRedemptions();
+                      setSellPackageId(e.target.value);
+                    }}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
                     <option value="">Select package to sell...</option>
@@ -409,8 +487,27 @@ export function BookingForm(props: BookingFormProps) {
             </div>
             <div className="flex items-end">
               <div className="w-full rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm">
-                <span className="text-gray-500">Total: </span>
-                <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+                {sellPackageTemplate ? (
+                  <>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Services:</span>
+                      <span>S${totalPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Package:</span>
+                      <span>S${Number(sellPackageTemplate.priceSgd).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 mt-1 pt-1">
+                      <span>Total:</span>
+                      <span>S${(totalPrice + Number(sellPackageTemplate.priceSgd)).toFixed(2)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-gray-500">Total: </span>
+                    <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>

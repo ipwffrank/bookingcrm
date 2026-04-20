@@ -1,5 +1,40 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 20 April 2026 (Session 13)**
+**Last updated: 20 April 2026 (Session 14)**
+
+---
+
+## What's Completed (Session 14 — 20 April 2026)
+
+### Walk-in form polish, staff availability hints, retired legacy walk-in page ✅
+Three small but cumulative fixes before the Session 14 headline feature:
+
+- **Walk-in auto-fill respects buffer.** Adding a second service row previously offset only by `durationMinutes`, producing a row-1-end / row-2-start overlap equal to the first service's buffer. Now uses `duration + buffer`, matching the server's `endTime` formula.
+- **Schedule-overlap banner** in `BookingForm` — non-blocking amber warning listing any pairs of rows whose time windows overlap. Uses the same `duration + buffer` formula.
+- **Staff availability hints** — `BookingForm` fetches the day's bookings; each `ServiceRow`'s staff dropdown now renders `⚠ name — busy until HH:MM` for staff with overlapping bookings at the row's start time, and an inline warning surfaces when the selected staff conflicts. Cancelled / no-show bookings ignored; the current group's own siblings excluded via `ownBookingIds`.
+- **Legacy `/dashboard/walkins` retired.** That route was a pre-Session-13 single-service form and was the root of a bug where staff thought multi-service walk-ins only booked the first service. Sidebar entry + its icon removed; the route now redirects to `/dashboard`. Client-detail "New Booking" link repointed to `/dashboard`.
+
+Commits: `035f8ac`, `9f3b05e`.
+
+### Atomic package sell + redeem, plus activity view ✅
+Walk-in merchants can now sell a package and redeem session(s) from it in a single transaction — closing the Session 13 two-round-trip gap. The client-detail page gains an activity timeline and enriched per-session information.
+
+- **Data model:** one new column `booking_groups.package_price_sgd numeric(10,2) not null default 0` (migration `0011_booking_groups_package_price.sql`). No backfill — historical rows default to `0`, which is correct (no atomic sell+redeem existed before). Migration applied manually on Neon; the `drizzle.__drizzle_migrations` backfill from Session 13's follow-up list is still open.
+- **API — POST `/merchant/bookings/group`:** transaction reordered so the sold package and its sessions are created **before** the bookings-insert loop. Each row with `use_new_package: true` pops a session from an in-memory pool keyed by `service_id`. Zod schema now carries a `.refine` that rejects rows combining `use_package` and `use_new_package`. Pre-tx validation rejects `use_new_package` without `sell_package` or with a service that isn't in the sold package. Server computes grand total = `sum(booking prices) + soldPackagePrice` and persists it via an UPDATE at the end of the tx. Response is extended with `soldPackage.sessions[]` (final statuses) so the client can render capacity without a second call.
+- **API — PATCH `/merchant/bookings/group/:groupId`:** total recompute now includes the already-stored `packagePriceSgd`, fixing a clobber bug that would otherwise zero the package component on the first edit of a sold+redeemed group.
+- **API — GET `/merchant/packages/client/:clientId`:** joined `services` so every session returns `serviceName` (timeline + inline list show names instead of UUIDs).
+- **Frontend — BookingForm + ServiceRow:** new emerald **Redeem from new package** pill per eligible row, mutually exclusive with the existing indigo **Use package** pill. Per-service capacity header under the Services label (`Selling X (S$…): Classic Manicure — 0 of 1 to redeem today, 1 remaining …`). Total card renders a Services / Package / Total breakdown whenever a package is being sold. On submit, the POST body sends `use_new_package: true` for flagged rows.
+- **Frontend — disclosure cleanup:** closing "− Don't sell a package" (or switching packages) now clears `sellPackageId` and resets any row flagged `useNewPackage`, restoring list prices. Fixes a bug where deselecting the sale left the package in the total and the Redeem pills still active.
+- **Frontend — Client detail:** new **Package Activity** section above the Packages card — flattened timeline of `📦` purchases + `✅` redemptions (reverse chrono). Inline session rows inside each package card also gained `· serviceName · staffName` on completed sessions.
+
+Design doc: [docs/superpowers/specs/2026-04-20-atomic-package-sell-redeem-and-tracking-design.md](docs/superpowers/specs/2026-04-20-atomic-package-sell-redeem-and-tracking-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-20-atomic-package-sell-redeem-and-tracking.md](docs/superpowers/plans/2026-04-20-atomic-package-sell-redeem-and-tracking.md)
+
+**Verified live:** browser walk-through of new-client buy + redeem flow including the deselect-package edge case (found and fixed in a post-implementation pass).
+
+### Next up (Session 15)
+- Backfill `drizzle.__drizzle_migrations` on Neon so `pnpm db:migrate` becomes usable again (still pending from Session 13).
+- Decide whether POST group should gain a staff-conflict check (symmetric with PATCH).
+- Optional: fix the `durationMinutes` audit-log asymmetry from Session 13.
 
 ---
 
