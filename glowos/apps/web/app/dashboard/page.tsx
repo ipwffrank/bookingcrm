@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
@@ -203,6 +204,13 @@ export default function DashboardPage() {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [editTarget, setEditTarget] = useState<{ bookingId: string } | null>(null);
   const [date] = useState(todayDateString());
+  const [revenue, setRevenue] = useState<{
+    completedRevenue: string;
+    cancelledRetained: string;
+    noShowRetained: string;
+    packageRevenue: string;
+    total: string;
+  } | null>(null);
 
   const fetchBookings = useCallback(async () => {
     const token = localStorage.getItem('access_token');
@@ -244,6 +252,12 @@ export default function DashboardPage() {
         setBookings(sorted);
         setServices(servicesData.services ?? []);
         setStaffList(staffData.staff ?? []);
+
+        apiFetch('/merchant/analytics/today-revenue', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => setRevenue(d as {
+            completedRevenue: string; cancelledRetained: string; noShowRetained: string; packageRevenue: string; total: string;
+          }))
+          .catch(() => {}); // non-fatal
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
         if (err instanceof ApiError && err.status === 401) {
@@ -268,6 +282,9 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       await fetchBookings();
+      apiFetch(`/merchant/analytics/today-revenue`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((d) => setRevenue(d as any))
+        .catch(() => {});
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Action failed';
       if (err instanceof ApiError && err.status === 401) {
@@ -347,6 +364,28 @@ export default function DashboardPage() {
           </button>
         </div>
       )}
+
+      <Link
+        href="/dashboard/analytics?period=today"
+        className="block mb-4 bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs font-medium text-gray-500">Today&apos;s Revenue</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5">
+              S${revenue ? Number(revenue.total).toFixed(2) : '—'}
+            </p>
+          </div>
+        </div>
+        {revenue && (
+          <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-y-1 gap-x-4 text-xs">
+            <div className="flex justify-between"><span className="text-gray-500">Services completed</span><span className="text-gray-900 tabular-nums">S${Number(revenue.completedRevenue).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Cancellations retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.cancelledRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">No-shows retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.noShowRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Packages sold</span><span className="text-gray-900 tabular-nums">S${Number(revenue.packageRevenue).toFixed(2)}</span></div>
+          </div>
+        )}
+      </Link>
 
       {loading && <Spinner />}
 
