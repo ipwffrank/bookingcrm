@@ -211,6 +211,16 @@ export default function DashboardPage() {
     packageRevenue: string;
     total: string;
   } | null>(null);
+  const [lowRatings, setLowRatings] = useState<Array<{
+    id: string;
+    rating: number;
+    comment: string | null;
+    serviceName: string;
+    staffName: string;
+    clientId: string;
+    clientName: string | null;
+    clientPhone: string | null;
+  }>>([]);
 
   const fetchBookings = useCallback(async () => {
     const token = localStorage.getItem('access_token');
@@ -258,6 +268,13 @@ export default function DashboardPage() {
             completedRevenue: string; cancelledRetained: string; noShowRetained: string; packageRevenue: string; total: string;
           }))
           .catch(() => {}); // non-fatal
+
+        apiFetch('/merchant/reviews?period=7d&maxRating=2&limit=5', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => {
+            const res = d as { reviews: Array<{ id: string; rating: number; comment: string | null; serviceName: string; staffName: string; clientId: string; clientName: string | null; clientPhone: string | null }> };
+            setLowRatings(res.reviews ?? []);
+          })
+          .catch(() => {});
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
         if (err instanceof ApiError && err.status === 401) {
@@ -386,6 +403,38 @@ export default function DashboardPage() {
           </div>
         )}
       </Link>
+
+      {lowRatings.length > 0 && (
+        <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span>⚠</span>
+            <h2 className="text-sm font-semibold text-gray-900">Recent low ratings (last 7 days)</h2>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {lowRatings.map((r) => (
+              <li key={r.id}>
+                <Link
+                  href={`/dashboard/clients/${r.clientId}`}
+                  className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-md hover:bg-gray-50"
+                >
+                  <span className="text-amber-500 text-sm shrink-0">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-900 truncate">
+                      <span className="font-medium">{r.serviceName}</span>
+                      <span className="text-gray-500"> · {r.staffName}</span>
+                      {r.comment && <span className="text-gray-600"> · &ldquo;{r.comment}&rdquo;</span>}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {r.clientName ?? 'Unknown'}{r.clientPhone ? ` · ${r.clientPhone}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-gray-400 text-xs">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {loading && <Spinner />}
 
