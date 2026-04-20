@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../../../lib/api';
+import { NoShowChip } from '../../components/NoShowChip';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ interface ClientDetailData {
   profile: ClientProfile;
   client: Client;
   recent_bookings: BookingEntry[];
+  noShowCount?: number;
 }
 
 interface ClientReview {
@@ -280,6 +282,7 @@ export default function ClientProfilePage() {
                   {churnCfg.label}
                 </span>
               )}
+              <NoShowChip count={data?.noShowCount ?? 0} />
             </div>
             <div className="flex flex-wrap gap-4 mt-2">
               <div className="flex items-center gap-1.5 text-sm text-gray-600">
