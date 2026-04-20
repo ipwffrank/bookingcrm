@@ -46,6 +46,12 @@ clientsRouter.get("/", requireMerchant, async (c) => {
     .select({
       profile: clientProfiles,
       client: clients,
+      noShowCount: sql<number>`cast((
+        SELECT COUNT(*) FROM ${bookings}
+        WHERE ${bookings.clientId} = ${clients.id}
+          AND ${bookings.merchantId} = ${merchantId}
+          AND ${bookings.status} = 'no_show'
+      ) as int)`,
     })
     .from(clientProfiles)
     .innerJoin(clients, eq(clientProfiles.clientId, clients.id))
@@ -112,6 +118,7 @@ clientsRouter.get("/", requireMerchant, async (c) => {
         lastVisitAt: spending?.lastVisitAt ?? null,
       },
       client: r.client,
+      noShowCount: Number(r.noShowCount ?? 0),
     };
   });
 
@@ -172,8 +179,20 @@ clientsRouter.get("/lookup", requireMerchant, async (c) => {
         )
     : [];
 
+  const [nsRow] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, client.id),
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.status, "no_show")
+      )
+    );
+  const noShowCount = Number(nsRow?.count ?? 0);
+
   return c.json({
-    client,
+    client: { ...client, noShowCount },
     activePackages: active.map((p) => ({
       id: p.id,
       packageName: p.packageName,
@@ -315,6 +334,18 @@ clientsRouter.get("/:id", requireMerchant, async (c) => {
       )
     );
 
+  const [nsRow] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, row.profile.clientId),
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.status, "no_show")
+      )
+    );
+  const noShowCount = Number(nsRow?.count ?? 0);
+
   return c.json({
     profile: {
       ...row.profile,
@@ -324,6 +355,7 @@ clientsRouter.get("/:id", requireMerchant, async (c) => {
     },
     client: row.client,
     recent_bookings: recentBookings,
+    noShowCount,
   });
 });
 
