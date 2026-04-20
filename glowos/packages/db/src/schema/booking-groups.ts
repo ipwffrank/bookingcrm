@@ -24,6 +24,9 @@ export const bookingGroups = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "restrict" }),
     totalPriceSgd: numeric("total_price_sgd", { precision: 10, scale: 2 }).notNull(),
+    packagePriceSgd: numeric("package_price_sgd", { precision: 10, scale: 2 })
+      .notNull()
+      .default("0"),
     paymentMethod: varchar("payment_method", { length: 20 })
       .notNull()
       .$type<"cash" | "card" | "paynow" | "other">(),
