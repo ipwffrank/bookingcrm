@@ -695,7 +695,9 @@ bookingGroupsRouter.patch(
         .select({ price: bookings.priceSgd })
         .from(bookings)
         .where(eq(bookings.groupId, groupId));
-      const newTotal = remaining.reduce((s, r) => s + Number(r.price), 0).toFixed(2);
+      const bookingsSum = remaining.reduce((s, r) => s + Number(r.price), 0);
+      // Use the already-stored packagePriceSgd — PATCH never modifies it.
+      const newTotal = (bookingsSum + Number(group.packagePriceSgd)).toFixed(2);
 
       await writeAuditDiff(
         { userId, userRole, bookingGroupId: groupId },

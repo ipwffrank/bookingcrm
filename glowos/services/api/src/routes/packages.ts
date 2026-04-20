@@ -150,12 +150,23 @@ packagesRouter.get("/client/:clientId", requireMerchant, async (c) => {
     )
     .orderBy(desc(clientPackages.purchasedAt));
 
-  // Load sessions for each package
+  // Load sessions for each package, joining services for serviceName
   const result = [];
   for (const pkg of pkgs) {
     const sessions = await db
-      .select()
+      .select({
+        id: packageSessions.id,
+        sessionNumber: packageSessions.sessionNumber,
+        serviceId: packageSessions.serviceId,
+        serviceName: services.name,
+        status: packageSessions.status,
+        bookingId: packageSessions.bookingId,
+        staffId: packageSessions.staffId,
+        staffName: packageSessions.staffName,
+        completedAt: packageSessions.completedAt,
+      })
       .from(packageSessions)
+      .leftJoin(services, eq(packageSessions.serviceId, services.id))
       .where(eq(packageSessions.clientPackageId, pkg.id))
       .orderBy(packageSessions.sessionNumber);
     result.push({ ...pkg, sessions });
