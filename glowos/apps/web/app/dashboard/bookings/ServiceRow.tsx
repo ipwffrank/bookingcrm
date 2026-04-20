@@ -6,6 +6,7 @@ import type {
   ServiceRowState,
   ActivePackage,
   DayBooking,
+  SoldPackageTemplate,
 } from './types';
 
 export interface ServiceRowProps {
@@ -16,6 +17,8 @@ export interface ServiceRowProps {
   dayBookings: DayBooking[];
   ownBookingIds: Set<string>;
   canRemove: boolean;
+  sellPackageTemplate: SoldPackageTemplate | null;
+  newPackageUsedForService: number;
   onChange: (patch: Partial<ServiceRowState>) => void;
   onRemove: () => void;
   error?: string;
@@ -29,6 +32,8 @@ export function ServiceRow({
   dayBookings,
   ownBookingIds,
   canRemove,
+  sellPackageTemplate,
+  newPackageUsedForService,
   onChange,
   onRemove,
   error,
@@ -40,6 +45,20 @@ export function ServiceRow({
   );
 
   const svc = services.find((s) => s.id === row.serviceId);
+
+  const soldQuantityForService = sellPackageTemplate
+    ? sellPackageTemplate.includedServices
+        .filter((s) => s.serviceId === row.serviceId)
+        .reduce((sum, s) => sum + s.quantity, 0)
+    : 0;
+  const rowCountsTowardCapacity = row.useNewPackage ? 1 : 0;
+  const otherRowsUsingSame = newPackageUsedForService;
+  const remainingCapacity =
+    soldQuantityForService - otherRowsUsingSame - rowCountsTowardCapacity;
+  const canToggleNewPackage =
+    sellPackageTemplate !== null &&
+    soldQuantityForService > 0 &&
+    (row.useNewPackage || remainingCapacity >= 0);
   const rowStart = row.startTime ? new Date(row.startTime).getTime() : NaN;
   const rowEnd =
     svc && !Number.isNaN(rowStart)
@@ -147,21 +166,55 @@ export function ServiceRow({
         </p>
       )}
       <div className="flex items-center justify-between">
-        {eligiblePackages.length > 0 ? (
-          <button
-            type="button"
-            onClick={togglePackage}
-            className={`px-2 py-1 rounded-full text-xs font-medium border ${
-              row.usePackage
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
-            }`}
-          >
-            {row.usePackage ? '✓ Using package' : 'Use package'}
-          </button>
-        ) : (
-          <span />
-        )}
+        <div className="flex items-center gap-1">
+          {eligiblePackages.length > 0 && (
+            <button
+              type="button"
+              onClick={togglePackage}
+              disabled={Boolean(row.useNewPackage)}
+              className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
+                row.usePackage
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              {row.usePackage ? '✓ Using package' : 'Use package'}
+            </button>
+          )}
+          {sellPackageTemplate && soldQuantityForService > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (row.useNewPackage) {
+                  onChange({
+                    useNewPackage: false,
+                    priceSgd: svc?.priceSgd ?? row.priceSgd,
+                    priceTouched: false,
+                  });
+                } else {
+                  onChange({
+                    useNewPackage: true,
+                    usePackage: undefined,
+                    priceSgd: '0.00',
+                    priceTouched: false,
+                  });
+                }
+              }}
+              disabled={!canToggleNewPackage}
+              className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
+                row.useNewPackage
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+              }`}
+            >
+              {row.useNewPackage
+                ? '✓ Redeem from new package'
+                : remainingCapacity < 0
+                ? '⚠ exceeds package quantity'
+                : 'Redeem from new package'}
+            </button>
+          )}
+        </div>
         <button
           type="button"
           onClick={onRemove}
