@@ -14,6 +14,7 @@ import type {
 } from './types';
 import { ServiceRow } from './ServiceRow';
 import { EditHistoryPanel } from './EditHistoryPanel';
+import { NoShowChip } from '../components/NoShowChip';
 
 export interface BookingFormProps {
   mode: 'create' | 'edit';
@@ -34,6 +35,7 @@ export function BookingForm(props: BookingFormProps) {
   const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(props.groupId ?? null);
   const [apiError, setApiError] = useState('');
   const [clientName, setClientName] = useState('');
+  const [clientNoShowCount, setClientNoShowCount] = useState(0);
   const [clientPhone, setClientPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [notes, setNotes] = useState('');
@@ -213,17 +215,21 @@ export function BookingForm(props: BookingFormProps) {
   }
 
   async function maybeLookupClient() {
-    if (mode !== 'create' || clientPhone.trim().length < 6) return;
+    if (mode !== 'create' || clientPhone.trim().length < 6) {
+      setClientNoShowCount(0);
+      return;
+    }
     const token = localStorage.getItem('access_token');
     try {
       const res = (await apiFetch(
         `/merchant/clients/lookup?phone=${encodeURIComponent(clientPhone)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )) as {
-        client: { id: string; name: string | null } | null;
+        client: { id: string; name: string | null; noShowCount?: number } | null;
         activePackages: ActivePackage[];
       };
       if (res.client && !clientName) setClientName(res.client.name ?? '');
+      setClientNoShowCount(res.client?.noShowCount ?? 0);
       setActivePackages(res.activePackages ?? []);
     } catch {
       // silent — lookup is opportunistic
@@ -354,6 +360,11 @@ export function BookingForm(props: BookingFormProps) {
                 placeholder="Jane Doe"
                 disabled={mode === 'edit'}
               />
+              {clientNoShowCount > 0 && (
+                <div className="mt-1">
+                  <NoShowChip count={clientNoShowCount} />
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
