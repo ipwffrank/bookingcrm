@@ -147,6 +147,21 @@ export function BookingForm(props: BookingFormProps) {
     );
   }
 
+  function clearNewPackageRedemptions() {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (!r.useNewPackage) return r;
+        const svc = services.find((s) => s.id === r.serviceId);
+        return {
+          ...r,
+          useNewPackage: false,
+          priceSgd: svc?.priceSgd ?? r.priceSgd,
+          priceTouched: false,
+        };
+      })
+    );
+  }
+
   useEffect(() => {
     if (!focusDate) return;
     const token = localStorage.getItem('access_token');
@@ -419,7 +434,15 @@ export function BookingForm(props: BookingFormProps) {
             <div className="rounded-lg border border-dashed border-gray-300 px-3 py-2">
               <button
                 type="button"
-                onClick={() => setSellOpen(!sellOpen)}
+                onClick={() => {
+                  if (sellOpen) {
+                    // Closing the disclosure: drop any selected package and
+                    // reset rows that were flagged as redemptions from it.
+                    setSellPackageId('');
+                    clearNewPackageRedemptions();
+                  }
+                  setSellOpen(!sellOpen);
+                }}
                 className="text-sm font-medium text-indigo-600"
               >
                 {sellOpen ? "− Don't sell a package" : '+ Also sell a package'}
@@ -428,7 +451,12 @@ export function BookingForm(props: BookingFormProps) {
                 <div className="mt-2">
                   <select
                     value={sellPackageId}
-                    onChange={(e) => setSellPackageId(e.target.value)}
+                    onChange={(e) => {
+                      // Any existing row redemptions referenced the prior
+                      // package's capacity — clear them before switching.
+                      clearNewPackageRedemptions();
+                      setSellPackageId(e.target.value);
+                    }}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
                     <option value="">Select package to sell...</option>
