@@ -837,7 +837,11 @@ merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
   const bookingId = c.req.param("id")!;
 
   const [existing] = await db
-    .select({ id: bookings.id, status: bookings.status })
+    .select({
+      id: bookings.id,
+      status: bookings.status,
+      priceSgd: bookings.priceSgd,
+    })
     .from(bookings)
     .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
     .limit(1);
@@ -853,9 +857,28 @@ merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
     );
   }
 
+  // Load merchant's cancellation policy to compute the retained amount.
+  const [merchant] = await db
+    .select({ cancellationPolicy: merchants.cancellationPolicy })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  const policy = (merchant?.cancellationPolicy ?? null) as
+    | { no_show_charge?: "full" | "partial" | "none" }
+    | null;
+  const charge = policy?.no_show_charge ?? "full";
+  const refundPct = charge === "full" ? 0 : charge === "partial" ? 50 : 100;
+  const refundAmountSgd = ((Number(existing.priceSgd) * refundPct) / 100).toFixed(2);
+
   const [updated] = await db
     .update(bookings)
-    .set({ status: "no_show", noShowAt: new Date(), updatedAt: new Date() })
+    .set({
+      status: "no_show",
+      noShowAt: new Date(),
+      refundAmountSgd,
+      updatedAt: new Date(),
+    })
     .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
     .returning();
 
