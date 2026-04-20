@@ -139,6 +139,14 @@ export function BookingForm(props: BookingFormProps) {
     ? packageTemplates.find((p) => p.id === sellPackageId) ?? null
     : null;
 
+  function newPackageUsedFor(serviceId: string, excludeIndex: number): number {
+    return rows.reduce(
+      (count, r, j) =>
+        count + (j !== excludeIndex && r.useNewPackage && r.serviceId === serviceId ? 1 : 0),
+      0
+    );
+  }
+
   useEffect(() => {
     if (!focusDate) return;
     const token = localStorage.getItem('access_token');
@@ -358,6 +366,8 @@ export function BookingForm(props: BookingFormProps) {
                   dayBookings={dayBookings}
                   ownBookingIds={ownBookingIds}
                   canRemove={rows.length > 1}
+                  sellPackageTemplate={mode === 'create' ? sellPackageTemplate : null}
+                  newPackageUsedForService={newPackageUsedFor(row.serviceId, i)}
                   onChange={(patch) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
                   onRemove={() => setRows(rows.filter((_, j) => j !== i))}
                 />
