@@ -27,19 +27,24 @@ import type { AppVariables } from "../lib/types.js";
 
 export const bookingGroupsRouter = new Hono<{ Variables: AppVariables }>();
 
-const serviceItemSchema = z.object({
-  booking_id: z.string().uuid().optional(),
-  service_id: z.string().uuid(),
-  staff_id: z.string().uuid(),
-  start_time: z.string().datetime().optional(),
-  price_sgd: z.number().nonnegative().optional(),
-  use_package: z
-    .object({
-      client_package_id: z.string().uuid(),
-      session_id: z.string().uuid(),
-    })
-    .optional(),
-});
+const serviceItemSchema = z
+  .object({
+    booking_id: z.string().uuid().optional(),
+    service_id: z.string().uuid(),
+    staff_id: z.string().uuid(),
+    start_time: z.string().datetime().optional(),
+    price_sgd: z.number().nonnegative().optional(),
+    use_package: z
+      .object({
+        client_package_id: z.string().uuid(),
+        session_id: z.string().uuid(),
+      })
+      .optional(),
+    use_new_package: z.boolean().optional(),
+  })
+  .refine((v) => !(v.use_package && v.use_new_package), {
+    message: "cannot combine use_package and use_new_package on one row",
+  });
 
 const patchGroupSchema = z.object({
   payment_method: z.enum(["cash", "card", "paynow", "other"]).optional(),
