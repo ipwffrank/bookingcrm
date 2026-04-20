@@ -28,6 +28,7 @@ Walk-in merchants can now sell a package and redeem session(s) from it in a sing
 
 Design doc: [docs/superpowers/specs/2026-04-20-atomic-package-sell-redeem-and-tracking-design.md](docs/superpowers/specs/2026-04-20-atomic-package-sell-redeem-and-tracking-design.md)
 Implementation plan: [docs/superpowers/plans/2026-04-20-atomic-package-sell-redeem-and-tracking.md](docs/superpowers/plans/2026-04-20-atomic-package-sell-redeem-and-tracking.md)
+Merge commit: `26d4ff3` on `main` (feature branch `feature/atomic-package-sell-redeem`, 22 commits, deleted after merge).
 
 **Verified live:** browser walk-through of new-client buy + redeem flow including the deselect-package edge case (found and fixed in a post-implementation pass).
 
