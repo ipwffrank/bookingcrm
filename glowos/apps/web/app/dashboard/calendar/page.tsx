@@ -101,6 +101,7 @@ export default function CalendarPage() {
   const [fcRange, setFcRange] = useState<{ start: string; end: string } | null>(null);
   const [editBookingId, setEditBookingId] = useState<string | null>(null);
   const [allClosures, setAllClosures] = useState<Array<{ id: string; date: string; title: string; isFullDay: boolean; startTime: string | null; endTime: string | null }>>([]);
+  const [operatingHours, setOperatingHours] = useState<Record<string, { open: string; close: string; closed: boolean }> | null>(null);
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
@@ -216,6 +217,14 @@ export default function CalendarPage() {
   useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { load(); }, [load]);
 
+  // Fetch merchant operating hours once — used as the occupancy denominator
+  // when a staff has no duty rostered for the day.
+  useEffect(() => {
+    apiFetch('/merchant/me')
+      .then((d: any) => setOperatingHours(d?.merchant?.operatingHours ?? null))
+      .catch(() => {});
+  }, []);
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -241,14 +250,33 @@ export default function CalendarPage() {
   }, [dateStr]);
 
   // ── Occupancy ─────────────────────────────────────────────────────────────────
-  function occupancy(staffId: string) {
-    const sb = bookings.filter(b => b.staffId === staffId);
-    if (!sb.length) return 0;
-    const bookedMin = sb.reduce((acc, b) => acc + isoToLocalMin(b.endTime) - isoToLocalMin(b.startTime), 0);
+  // Denominator preference: staff duty > merchant operating hours for the day >
+  // calendar view window (DAY_START_H .. DAY_END_H). Numerator is total booked minutes.
+  function denominatorMin(staffId: string): number {
     const d = duties.find(d => d.staffId === staffId);
-    if (!d) return 0;
-    const dutyMin = timeStrToMin(d.endTime) - timeStrToMin(d.startTime);
-    return dutyMin > 0 ? clamp(Math.round((bookedMin / dutyMin) * 100), 0, 100) : 0;
+    if (d) return timeStrToMin(d.endTime) - timeStrToMin(d.startTime);
+    if (operatingHours) {
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const key = dayNames[date.getDay()];
+      const oh = key ? operatingHours[key] : undefined;
+      if (oh && !oh.closed && oh.open && oh.close) {
+        const mins = timeStrToMin(oh.close) - timeStrToMin(oh.open);
+        if (mins > 0) return mins;
+      }
+    }
+    return (DAY_END_H - DAY_START_H) * 60;
+  }
+  function occupancy(staffId: string): { bookedMin: number; denomMin: number; pct: number } {
+    const sb = bookings.filter(b => b.staffId === staffId);
+    const bookedMin = sb.reduce((acc, b) => acc + isoToLocalMin(b.endTime) - isoToLocalMin(b.startTime), 0);
+    const denomMin = denominatorMin(staffId);
+    const pct = denomMin > 0 ? clamp(Math.round((bookedMin / denomMin) * 100), 0, 100) : 0;
+    return { bookedMin, denomMin, pct };
+  }
+  function fmtHours(mins: number): string {
+    if (mins <= 0) return '0h';
+    const h = mins / 60;
+    return h >= 1 ? `${h.toFixed(h % 1 === 0 ? 0 : 1)}h` : `${mins}m`;
   }
 
   // ── Drag ─────────────────────────────────────────────────────────────────────
@@ -849,8 +877,9 @@ export default function CalendarPage() {
         <div className="flex border-b border-gray-100 bg-white z-20 shrink-0">
           <div className="w-16 shrink-0 border-r border-gray-200" />
           {staffList.map((s, i) => {
-            const occ   = occupancy(s.id);
+            const { bookedMin, denomMin, pct } = occupancy(s.id);
             const color = STAFF_COLORS[i % STAFF_COLORS.length]!;
+            const dutyRostered = duties.some(d => d.staffId === s.id);
             return (
               <div key={s.id} className="flex-1 min-w-[160px] border-r border-gray-100 last:border-r-0 px-3 py-3">
                 <div className="flex items-center gap-2">
@@ -867,12 +896,17 @@ export default function CalendarPage() {
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${occ}%`,
-                            backgroundColor: occ > 80 ? '#ef4444' : occ > 50 ? '#f59e0b' : color,
+                            width: `${pct}%`,
+                            backgroundColor: pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : color,
                           }}
                         />
                       </div>
-                      <span className="text-[10px] text-gray-400 tabular-nums">{occ}%</span>
+                      <span
+                        className="text-[10px] text-gray-400 tabular-nums"
+                        title={dutyRostered ? 'Booked vs rostered duty hours' : 'Booked vs salon operating hours (no duty rostered)'}
+                      >
+                        {fmtHours(bookedMin)} / {fmtHours(denomMin)} · {pct}%
+                      </span>
                     </div>
                   </div>
                 </div>
