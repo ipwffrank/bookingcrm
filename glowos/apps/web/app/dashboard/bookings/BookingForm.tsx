@@ -112,18 +112,17 @@ export function BookingForm(props: BookingFormProps) {
   }
 
   const totalPrice = rows.reduce((s, r) => s + Number(r.priceSgd || 0), 0);
+  const scheduleOverlaps = findScheduleOverlaps(rows, services);
 
   function addServiceRow() {
     const prev = rows[rows.length - 1];
     const defaultSvc = services[0];
     const defaultStaff = staffList[0];
     if (!defaultSvc || !defaultStaff) return;
+    const prevSvc = prev ? services.find((s) => s.id === prev.serviceId) : undefined;
+    const offsetMinutes = (prevSvc?.durationMinutes ?? 30) + (prevSvc?.bufferMinutes ?? 0);
     const anchor = prev
-      ? new Date(
-          new Date(prev.startTime).getTime() +
-            (services.find((s) => s.id === prev.serviceId)?.durationMinutes ?? 30) *
-              60_000
-        ).toISOString()
+      ? new Date(new Date(prev.startTime).getTime() + offsetMinutes * 60_000).toISOString()
       : new Date().toISOString();
     setRows([
       ...rows,
@@ -316,6 +315,18 @@ export function BookingForm(props: BookingFormProps) {
             >
               + Add service
             </button>
+            {scheduleOverlaps.length > 0 && (
+              <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <p className="font-medium mb-0.5">Heads-up: overlapping times</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {scheduleOverlaps.map((o) => (
+                    <li key={`${o.a}-${o.b}`}>
+                      Service {o.a + 1} ({o.aRange}) overlaps Service {o.b + 1} ({o.bRange})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {mode === 'create' && packageTemplates.length > 0 && (
@@ -399,4 +410,52 @@ export function BookingForm(props: BookingFormProps) {
       </div>
     </div>
   );
+}
+
+interface OverlapPair {
+  a: number;
+  b: number;
+  aRange: string;
+  bRange: string;
+}
+
+function findScheduleOverlaps(
+  rows: ServiceRowState[],
+  services: ServiceOption[]
+): OverlapPair[] {
+  const intervals = rows.map((r) => {
+    const svc = services.find((s) => s.id === r.serviceId);
+    if (!svc || !r.startTime) return null;
+    const start = new Date(r.startTime).getTime();
+    if (Number.isNaN(start)) return null;
+    const end = start + (svc.durationMinutes + svc.bufferMinutes) * 60_000;
+    return { start, end };
+  });
+
+  const overlaps: OverlapPair[] = [];
+  for (let a = 0; a < intervals.length; a++) {
+    const x = intervals[a];
+    if (!x) continue;
+    for (let b = a + 1; b < intervals.length; b++) {
+      const y = intervals[b];
+      if (!y) continue;
+      if (x.start < y.end && y.start < x.end) {
+        overlaps.push({
+          a,
+          b,
+          aRange: `${fmtTime(x.start)}–${fmtTime(x.end)}`,
+          bRange: `${fmtTime(y.start)}–${fmtTime(y.end)}`,
+        });
+      }
+    }
+  }
+  return overlaps;
+}
+
+function fmtTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-SG', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
