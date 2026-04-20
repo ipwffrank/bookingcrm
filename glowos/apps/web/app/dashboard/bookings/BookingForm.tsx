@@ -355,6 +355,26 @@ export function BookingForm(props: BookingFormProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Services</label>
+            {sellPackageTemplate && (
+              <div className="mb-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+                <p className="font-semibold mb-1">
+                  Selling {sellPackageTemplate.name} (S${sellPackageTemplate.priceSgd}):
+                </p>
+                <ul className="space-y-0.5">
+                  {sellPackageTemplate.includedServices.map((s) => {
+                    const used = rows.filter(
+                      (r) => r.useNewPackage && r.serviceId === s.serviceId
+                    ).length;
+                    const remaining = s.quantity - used;
+                    return (
+                      <li key={s.serviceId}>
+                        · {s.serviceName} — {used} of {s.quantity} to redeem today, {remaining} remaining
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             <div className="space-y-2">
               {rows.map((row, i) => (
                 <ServiceRow
