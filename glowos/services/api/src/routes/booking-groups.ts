@@ -144,6 +144,45 @@ bookingGroupsRouter.post(
       });
     }
 
+    // Validate use_new_package rows: require sell_package in same request,
+    // and require the row's service to be included in the sold package.
+    if (body.services.some((s) => s.use_new_package)) {
+      if (!body.sell_package) {
+        return c.json(
+          { error: "Bad Request", message: "use_new_package requires sell_package in same request" },
+          400
+        );
+      }
+      // Load the package template once to validate includedServices
+      const [soldTemplate] = await db
+        .select({ includedServices: servicePackages.includedServices })
+        .from(servicePackages)
+        .where(
+          and(
+            eq(servicePackages.id, body.sell_package.package_id),
+            eq(servicePackages.merchantId, merchantId)
+          )
+        )
+        .limit(1);
+      if (!soldTemplate) {
+        return c.json({ error: "Not Found", message: "Package template not found" }, 404);
+      }
+      const includedServiceIds = new Set(
+        soldTemplate.includedServices.map((s) => s.serviceId)
+      );
+      for (const s of body.services) {
+        if (s.use_new_package && !includedServiceIds.has(s.service_id)) {
+          return c.json(
+            {
+              error: "Bad Request",
+              message: `Service ${s.service_id} is not included in the sold package`,
+            },
+            400
+          );
+        }
+      }
+    }
+
     // Validate package sessions (must be pending, belong to this client)
     for (const p of plan) {
       if (!p.usePackage) continue;
