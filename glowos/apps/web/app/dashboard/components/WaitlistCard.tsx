@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiFetch } from '../../lib/api';
 
-interface Entry {
+export interface WaitlistEntry {
   id: string;
   clientName: string | null;
   clientPhone: string | null;
@@ -16,24 +16,13 @@ interface Entry {
   holdExpiresAt: string | null;
 }
 
-export function WaitlistCard() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+interface Props {
+  entries: WaitlistEntry[];
+  onEntriesChange: (entries: WaitlistEntry[]) => void;
+}
+
+export function WaitlistCard({ entries, onEntriesChange }: Props) {
   const [expanded, setExpanded] = useState(false);
-
-  async function load() {
-    try {
-      const token = localStorage.getItem('access_token');
-      const d = await apiFetch('/merchant/waitlist?status=active', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const res = d as { entries: Entry[] };
-      setEntries(res.entries ?? []);
-    } catch {
-      /* silent */
-    }
-  }
-
-  useEffect(() => { load(); }, []);
 
   async function remove(id: string) {
     const token = localStorage.getItem('access_token');
@@ -41,7 +30,7 @@ export function WaitlistCard() {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => {});
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    onEntriesChange(entries.filter((e) => e.id !== id));
   }
 
   if (entries.length === 0) return null;

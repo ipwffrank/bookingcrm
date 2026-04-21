@@ -7,7 +7,7 @@ import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
 import { DayTimelineStrip } from './components/DayTimelineStrip';
-import { WaitlistCard } from './components/WaitlistCard';
+import { WaitlistCard, type WaitlistEntry } from './components/WaitlistCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -236,6 +236,7 @@ function DashboardPageInner() {
   const [operatingHours, setOperatingHours] = useState<
     Record<string, { open: string; close: string; closed: boolean }> | null
   >(null);
+  const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [flashBookingId, setFlashBookingId] = useState<string | null>(null);
   const bookingRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -307,6 +308,13 @@ function DashboardPageInner() {
             setOperatingHours(res.merchant?.operatingHours ?? null);
           })
           .catch(() => {});
+
+        apiFetch('/merchant/waitlist?status=active', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => {
+            const res = d as { entries: WaitlistEntry[] };
+            setWaitlistEntries(res.entries ?? []);
+          })
+          .catch(() => {});
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
         if (err instanceof ApiError && err.status === 401) {
@@ -374,7 +382,7 @@ function DashboardPageInner() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         {[
           { key: 'confirmed' as const,   label: 'Confirmed',   value: confirmed.length,   color: 'text-green-600 bg-green-50 border-green-200' },
           { key: 'in_progress' as const, label: 'In Progress', value: inProgress.length,  color: 'text-blue-600 bg-blue-50 border-blue-200' },
@@ -400,6 +408,10 @@ function DashboardPageInner() {
             </button>
           );
         })}
+        <div className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200">
+          <p className="text-2xl font-bold">{waitlistEntries.length}</p>
+          <p className="text-xs font-medium mt-0.5 opacity-80">Waitlist</p>
+        </div>
       </div>
       {statusFilter && (
         <div className="mb-4 -mt-2 flex items-center gap-2 text-xs text-gray-600">
@@ -450,7 +462,7 @@ function DashboardPageInner() {
         )}
       </Link>
 
-      <WaitlistCard />
+      <WaitlistCard entries={waitlistEntries} onEntriesChange={setWaitlistEntries} />
 
       {lowRatings.length > 0 && (
         <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
