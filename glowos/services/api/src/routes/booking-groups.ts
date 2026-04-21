@@ -63,6 +63,7 @@ const createGroupSchema = z.object({
     .object({
       package_id: z.string().uuid(),
       price_sgd: z.number().nonnegative().optional(),
+      sold_by_staff_id: z.string().uuid().optional(),
     })
     .optional(),
 });
@@ -207,6 +208,32 @@ bookingGroupsRouter.post(
       }
     }
 
+    // Require sold_by_staff_id when selling a package; validate it belongs to this merchant and is active.
+    if (body.sell_package) {
+      if (!body.sell_package.sold_by_staff_id) {
+        return c.json(
+          { error: "Bad Request", message: "sold_by_staff_id is required when sell_package is provided" },
+          400
+        );
+      }
+      const [seller] = await db
+        .select({ id: staff.id, isActive: staff.isActive })
+        .from(staff)
+        .where(
+          and(
+            eq(staff.id, body.sell_package.sold_by_staff_id),
+            eq(staff.merchantId, merchantId)
+          )
+        )
+        .limit(1);
+      if (!seller || !seller.isActive) {
+        return c.json(
+          { error: "Not Found", message: "Seller staff not found or inactive" },
+          404
+        );
+      }
+    }
+
     // Transactional write
     let result;
     try {
@@ -271,6 +298,7 @@ bookingGroupsRouter.post(
               sessionsTotal: pkg.totalSessions,
               pricePaidSgd: pricePaid,
               expiresAt,
+              soldByStaffId: body.sell_package.sold_by_staff_id,
             })
             .returning();
           const sessionValues: Array<{
