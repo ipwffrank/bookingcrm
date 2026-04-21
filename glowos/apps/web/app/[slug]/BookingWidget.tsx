@@ -7,6 +7,7 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { OTPVerificationCard } from './components/OTPVerificationCard';
 import { ReturningCustomerCard } from './components/ReturningCustomerCard';
+import { JoinWaitlistCard } from './components/JoinWaitlistCard';
 
 declare global {
   interface Window {
@@ -1030,6 +1031,17 @@ export default function BookingWidget({
                         <div className="mt-3 text-xs text-gray-400">
                           No availability with {selectedStaff.name} in the next 30 days.
                         </div>
+                      )}
+                      {selectedStaff && selectedStaff.id !== 'any' && selectedService && selectedDate && (
+                        <JoinWaitlistCard
+                          slug={slug}
+                          serviceId={selectedService.id}
+                          staffId={selectedStaff.id}
+                          staffName={selectedStaff.name}
+                          targetDate={`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`}
+                          defaultWindowStart="09:00"
+                          defaultWindowEnd="18:00"
+                        />
                       )}
                     </div>
                   )}
