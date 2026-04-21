@@ -17,6 +17,7 @@ import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
 import { generateBookingToken } from "../lib/jwt.js";
 import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
+import { addJob } from "../lib/queue.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -793,6 +794,67 @@ async function handleOtpSend(data: OtpSendData): Promise<void> {
   });
 }
 
+// ─── Waitlist handlers ─────────────────────────────────────────────────────────
+
+interface WaitlistMatchData {
+  merchant_id: string;
+  staff_id: string;
+  service_id: string;
+  freed_start: string;
+  freed_end: string;
+  notified_booking_slot_id: string;
+}
+
+async function handleWaitlistMatch(data: WaitlistMatchData): Promise<void> {
+  const freedStart = new Date(data.freed_start);
+  const freedEnd   = new Date(data.freed_end);
+  const targetDate = `${freedStart.getFullYear()}-${String(freedStart.getMonth() + 1).padStart(2, "0")}-${String(freedStart.getDate()).padStart(2, "0")}`;
+  const freedStartHHMM = `${String(freedStart.getHours()).padStart(2, "0")}:${String(freedStart.getMinutes()).padStart(2, "0")}`;
+  const freedEndHHMM   = `${String(freedEnd.getHours()).padStart(2, "0")}:${String(freedEnd.getMinutes()).padStart(2, "0")}`;
+
+  const { waitlist } = await import("@glowos/db");
+  const { and, eq, lte, gte } = await import("drizzle-orm");
+
+  const [entry] = await db
+    .select()
+    .from(waitlist)
+    .where(
+      and(
+        eq(waitlist.merchantId, data.merchant_id),
+        eq(waitlist.staffId, data.staff_id),
+        eq(waitlist.status, "pending"),
+        eq(waitlist.targetDate, targetDate),
+        lte(waitlist.windowStart, freedStartHHMM),
+        gte(waitlist.windowEnd, freedEndHHMM),
+      )
+    )
+    .orderBy(waitlist.createdAt)
+    .limit(1);
+
+  if (!entry) {
+    console.log("[WaitlistMatch] no pending entries match", { data });
+    return;
+  }
+
+  const HOLD_MINUTES = 10;
+  const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * 60 * 1000);
+  await db
+    .update(waitlist)
+    .set({
+      status: "notified",
+      notifiedAt: new Date(),
+      holdExpiresAt,
+      notifiedBookingSlotId: data.notified_booking_slot_id,
+      updatedAt: new Date(),
+    })
+    .where(eq(waitlist.id, entry.id));
+
+  const { scheduleWaitlistHoldExpire } = await import("../lib/waitlist-scheduler.js");
+  await scheduleWaitlistHoldExpire(entry.id, HOLD_MINUTES * 60 * 1000);
+
+  await addJob("notifications", "waitlist_slot_opened", { waitlist_id: entry.id });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -863,6 +925,10 @@ export function createNotificationWorker(): Worker {
         }
         case "otp_send": {
           await handleOtpSend(job.data as OtpSendData);
+          break;
+        }
+        case "waitlist_match": {
+          await handleWaitlistMatch(job.data as WaitlistMatchData);
           break;
         }
         default:
