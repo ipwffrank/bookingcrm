@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
+import { DayTimelineStrip } from './components/DayTimelineStrip';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -221,6 +222,19 @@ export default function DashboardPage() {
     clientName: string | null;
     clientPhone: string | null;
   }>>([]);
+  const [operatingHours, setOperatingHours] = useState<
+    Record<string, { open: string; close: string; closed: boolean }> | null
+  >(null);
+  const [flashBookingId, setFlashBookingId] = useState<string | null>(null);
+  const bookingRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  function handleTimelineClick(bookingId: string) {
+    const el = bookingRefs.current[bookingId];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashBookingId(bookingId);
+    setTimeout(() => setFlashBookingId((id) => (id === bookingId ? null : id)), 1200);
+  }
 
   const fetchBookings = useCallback(async () => {
     const token = localStorage.getItem('access_token');
@@ -273,6 +287,13 @@ export default function DashboardPage() {
           .then((d) => {
             const res = d as { reviews: Array<{ id: string; rating: number; comment: string | null; serviceName: string; staffName: string; clientId: string; clientName: string | null; clientPhone: string | null }> };
             setLowRatings(res.reviews ?? []);
+          })
+          .catch(() => {});
+
+        apiFetch('/merchant/me', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => {
+            const res = d as { merchant?: { operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null } };
+            setOperatingHours(res.merchant?.operatingHours ?? null);
           })
           .catch(() => {});
       } catch (err) {
@@ -382,6 +403,20 @@ export default function DashboardPage() {
         </div>
       )}
 
+      <DayTimelineStrip
+        bookings={bookings.map((r) => ({
+          id: r.booking.id,
+          startTime: r.booking.startTime,
+          endTime: r.booking.endTime,
+          status: r.booking.status,
+          staffId: r.staffMember.id,
+          staffName: r.staffMember.name,
+        }))}
+        operatingHours={operatingHours}
+        statusFilter={statusFilter}
+        onBarClick={handleTimelineClick}
+      />
+
       <Link
         href="/dashboard/analytics?period=today"
         className="block mb-4 bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow"
@@ -467,7 +502,13 @@ export default function DashboardPage() {
       {!loading && !error && bookings.length > 0 && (
         <div className="space-y-3">
           {bookings.filter((b) => !statusFilter || b.booking.status === statusFilter).map((row) => (
-            <BookingCard key={row.booking.id} row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
+            <div
+              key={row.booking.id}
+              ref={(el) => { bookingRefs.current[row.booking.id] = el; }}
+              className={`rounded-xl transition-shadow ${flashBookingId === row.booking.id ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
+            >
+              <BookingCard row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
+            </div>
           ))}
         </div>
       )}
