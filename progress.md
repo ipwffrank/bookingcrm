@@ -19,6 +19,7 @@ The merchant dashboard now answers "what's today look like and who should I watc
 
 Design doc: [docs/superpowers/specs/2026-04-21-dashboard-revamp-and-no-show-awareness-design.md](docs/superpowers/specs/2026-04-21-dashboard-revamp-and-no-show-awareness-design.md)
 Implementation plan: [docs/superpowers/plans/2026-04-21-dashboard-revamp-and-no-show-awareness.md](docs/superpowers/plans/2026-04-21-dashboard-revamp-and-no-show-awareness.md)
+Merge commit: `fee9247` on `main` (feature branch `feature/dashboard-revamp`, 13 commits, deleted after merge).
 
 ### Next up (Session 16)
 - **Waitlist feature** — deferred from Session 15. Needs DB table + widget "join waitlist" flow + admin view + notifications when a slot opens.
