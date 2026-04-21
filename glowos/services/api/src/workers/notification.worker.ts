@@ -855,6 +855,48 @@ async function handleWaitlistMatch(data: WaitlistMatchData): Promise<void> {
   await addJob("notifications", "waitlist_slot_opened", { waitlist_id: entry.id });
 }
 
+interface WaitlistHoldExpireData {
+  waitlist_id: string;
+}
+
+async function handleWaitlistHoldExpire(data: WaitlistHoldExpireData): Promise<void> {
+  const { waitlist } = await import("@glowos/db");
+  const { eq } = await import("drizzle-orm");
+
+  const [row] = await db
+    .select()
+    .from(waitlist)
+    .where(eq(waitlist.id, data.waitlist_id))
+    .limit(1);
+  if (!row || row.status !== "notified") {
+    return;
+  }
+
+  await db
+    .update(waitlist)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(eq(waitlist.id, data.waitlist_id));
+
+  if (row.notifiedBookingSlotId) {
+    const [freed] = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, row.notifiedBookingSlotId))
+      .limit(1);
+    if (freed) {
+      const { scheduleWaitlistMatchJob } = await import("../lib/waitlist-scheduler.js");
+      await scheduleWaitlistMatchJob({
+        merchant_id: row.merchantId,
+        staff_id: row.staffId,
+        service_id: row.serviceId,
+        freed_start: freed.startTime.toISOString(),
+        freed_end: freed.endTime.toISOString(),
+        notified_booking_slot_id: row.notifiedBookingSlotId,
+      });
+    }
+  }
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -929,6 +971,10 @@ export function createNotificationWorker(): Worker {
         }
         case "waitlist_match": {
           await handleWaitlistMatch(job.data as WaitlistMatchData);
+          break;
+        }
+        case "waitlist_hold_expire": {
+          await handleWaitlistHoldExpire(job.data as WaitlistHoldExpireData);
           break;
         }
         default:
