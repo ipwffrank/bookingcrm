@@ -10,6 +10,7 @@ import {
   clientProfiles,
   bookings,
   merchants,
+  staff,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
@@ -183,6 +184,7 @@ packagesRouter.post("/assign", requireMerchant, async (c) => {
     packageId: string;
     pricePaidSgd: number;
     notes?: string;
+    soldByStaffId?: string;
   }>();
 
   // Load package template
@@ -203,6 +205,17 @@ packagesRouter.post("/assign", requireMerchant, async (c) => {
       404
     );
 
+  if (body.soldByStaffId) {
+    const [seller] = await db
+      .select({ id: staff.id, isActive: staff.isActive })
+      .from(staff)
+      .where(and(eq(staff.id, body.soldByStaffId), eq(staff.merchantId, merchantId)))
+      .limit(1);
+    if (!seller || !seller.isActive) {
+      return c.json({ error: "Not Found", message: "Seller staff not found or inactive" }, 404);
+    }
+  }
+
   // Calculate expiry
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + pkg.validityDays);
@@ -219,6 +232,7 @@ packagesRouter.post("/assign", requireMerchant, async (c) => {
       pricePaidSgd: String(body.pricePaidSgd),
       expiresAt,
       notes: body.notes || null,
+      soldByStaffId: body.soldByStaffId ?? null,
     })
     .returning();
 
