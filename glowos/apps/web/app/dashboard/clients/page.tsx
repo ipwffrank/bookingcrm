@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
+import { NoShowChip } from '../components/NoShowChip';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ interface Client {
 interface ClientRow {
   profile: ClientProfile;
   client: Client;
+  noShowCount?: number;
 }
 
 interface BookingEntry {
@@ -593,7 +595,10 @@ export default function ClientsPage() {
                           </span>
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{row.client.name ?? 'Unknown'}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-medium text-gray-900">{row.client.name ?? 'Unknown'}</p>
+                            <NoShowChip count={row.noShowCount ?? 0} compact />
+                          </div>
                           <p className="text-xs text-gray-500">{row.client.phone}</p>
                         </div>
                       </div>

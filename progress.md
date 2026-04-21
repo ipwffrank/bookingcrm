@@ -1,5 +1,30 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 20 April 2026 (Session 14)**
+**Last updated: 21 April 2026 (Session 15)**
+
+---
+
+## What's Completed (Session 15 — 21 April 2026)
+
+### Dashboard revamp + no-show awareness ✅
+The merchant dashboard now answers "what's today look like and who should I watch" on one page.
+
+- **`/no-show` endpoint** now reads `cancellation_policy.no_show_charge` and stores `refundAmountSgd` on the booking (0 for `full`, 50% for `partial`, 100% for `none`). Retained revenue semantics match cancellations: `retained = priceSgd − refundAmountSgd`.
+- **New endpoint `GET /merchant/analytics/today-revenue`** returns `{ completedRevenue, cancelledRetained, noShowRetained, packageRevenue, total }` — all today only.
+- **`noShowCount` on three client endpoints**: `/merchant/clients/lookup`, `/merchant/clients/:id`, and `/merchant/clients` (list). Computed on the fly via a scoped `COUNT(*)`; no denormalized column yet.
+- **`GET /merchant/reviews` enriched** — accepts `?maxRating=N` (validated 1–5) and returns `clientId` + `clientPhone` on each row for the dashboard's low-ratings card.
+- **Shared `NoShowChip` component** rendered in three surfaces: BookingForm after phone lookup (full chip), client detail page header (full chip), clients list rows (compact chip). Zero-count renders nothing.
+- **Dashboard landing redesigned**: four clickable status cards (`?status=` URL filter with back-button support), a Today's Revenue card with a retained-revenue breakdown, and a conditional Low Ratings card (< 3★ in the last 7 days). Bookings list below filters to the selected status.
+- **Calendar occupancy bar fallback** ([035f8ac](https://github.com/ipwffrank/bookingcrm/commit/035f8ac)): when a staff has no duty rostered, the `%` bar now uses merchant operating hours as the denominator and displays as `Xh / Yh · Z%` with a tooltip explaining which denominator is active.
+- **DayTimelineStrip on the dashboard** — compact horizontal strip between the status cards and the Revenue card. Axis follows the merchant's operating hours for today (falls back to 8 AM–8 PM; renders "Closed today" when closed). One row per staff, bars sized by duration, colored to match the Calendar's staff palette. Clicking a bar scrolls the matching booking card into view with a 1s ring flash. Respects the `?status=` filter (non-matching bars dim to 20%). Cancelled bookings render at 30% + strikethrough; no-shows get a dashed border.
+
+Design doc: [docs/superpowers/specs/2026-04-21-dashboard-revamp-and-no-show-awareness-design.md](docs/superpowers/specs/2026-04-21-dashboard-revamp-and-no-show-awareness-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-21-dashboard-revamp-and-no-show-awareness.md](docs/superpowers/plans/2026-04-21-dashboard-revamp-and-no-show-awareness.md)
+
+### Next up (Session 16)
+- **Waitlist feature** — deferred from Session 15. Needs DB table + widget "join waitlist" flow + admin view + notifications when a slot opens.
+- **Staff revenue attribution** — show each staff's contribution to today's revenue on the merchant dashboard AND on a per-staff dashboard. For multi-staff bookings, show the full revenue to each staff (splits are company-policy).
+- **Backfill `drizzle.__drizzle_migrations`** on Neon (still pending from Session 13).
+- Optional: `no_show_refund_pct` merchant setting to replace the hardcoded 50% for partial no-show charge.
 
 ---
 

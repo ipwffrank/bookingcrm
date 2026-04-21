@@ -155,6 +155,7 @@ function getReviewPeriodBounds(period: string): { start: Date; end: Date } | nul
 merchantReviewRouter.get("/", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const ratingFilter = c.req.query("rating");
+  const maxRatingFilter = c.req.query("maxRating");
   const staffFilter = c.req.query("staffId");
   const clientFilter = c.req.query("clientId");
   const period = c.req.query("period") ?? "30d";
@@ -179,6 +180,13 @@ merchantReviewRouter.get("/", requireMerchant, async (c) => {
   if (ratingFilter) {
     conditions.push(eq(reviews.rating, Number(ratingFilter)));
   }
+  if (maxRatingFilter) {
+    const maxR = Number(maxRatingFilter);
+    if (!Number.isFinite(maxR) || maxR < 1 || maxR > 5) {
+      return c.json({ error: "Bad Request", message: "maxRating must be 1–5" }, 400);
+    }
+    conditions.push(lte(reviews.rating, maxR));
+  }
   if (staffFilter) {
     conditions.push(eq(bookings.staffId, staffFilter));
   }
@@ -192,7 +200,9 @@ merchantReviewRouter.get("/", requireMerchant, async (c) => {
       rating: reviews.rating,
       comment: reviews.comment,
       createdAt: reviews.createdAt,
+      clientId: clients.id,
       clientName: clients.name,
+      clientPhone: clients.phone,
       clientEmail: clients.email,
       serviceName: services.name,
       staffName: staff.name,

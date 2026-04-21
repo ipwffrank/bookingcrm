@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
+import { DayTimelineStrip } from './components/DayTimelineStrip';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -194,6 +196,7 @@ function BookingCard({
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
@@ -202,6 +205,36 @@ export default function DashboardPage() {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [editTarget, setEditTarget] = useState<{ bookingId: string } | null>(null);
   const [date] = useState(todayDateString());
+  const [revenue, setRevenue] = useState<{
+    completedRevenue: string;
+    cancelledRetained: string;
+    noShowRetained: string;
+    packageRevenue: string;
+    total: string;
+  } | null>(null);
+  const [lowRatings, setLowRatings] = useState<Array<{
+    id: string;
+    rating: number;
+    comment: string | null;
+    serviceName: string;
+    staffName: string;
+    clientId: string;
+    clientName: string | null;
+    clientPhone: string | null;
+  }>>([]);
+  const [operatingHours, setOperatingHours] = useState<
+    Record<string, { open: string; close: string; closed: boolean }> | null
+  >(null);
+  const [flashBookingId, setFlashBookingId] = useState<string | null>(null);
+  const bookingRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  function handleTimelineClick(bookingId: string) {
+    const el = bookingRefs.current[bookingId];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashBookingId(bookingId);
+    setTimeout(() => setFlashBookingId((id) => (id === bookingId ? null : id)), 1200);
+  }
 
   const fetchBookings = useCallback(async () => {
     const token = localStorage.getItem('access_token');
@@ -243,6 +276,26 @@ export default function DashboardPage() {
         setBookings(sorted);
         setServices(servicesData.services ?? []);
         setStaffList(staffData.staff ?? []);
+
+        apiFetch('/merchant/analytics/today-revenue', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => setRevenue(d as {
+            completedRevenue: string; cancelledRetained: string; noShowRetained: string; packageRevenue: string; total: string;
+          }))
+          .catch(() => {}); // non-fatal
+
+        apiFetch('/merchant/reviews?period=7d&maxRating=2&limit=5', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => {
+            const res = d as { reviews: Array<{ id: string; rating: number; comment: string | null; serviceName: string; staffName: string; clientId: string; clientName: string | null; clientPhone: string | null }> };
+            setLowRatings(res.reviews ?? []);
+          })
+          .catch(() => {});
+
+        apiFetch('/merchant/me', { headers: { Authorization: `Bearer ${token}` } })
+          .then((d) => {
+            const res = d as { merchant?: { operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null } };
+            setOperatingHours(res.merchant?.operatingHours ?? null);
+          })
+          .catch(() => {});
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load data';
         if (err instanceof ApiError && err.status === 401) {
@@ -267,6 +320,9 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       await fetchBookings();
+      apiFetch(`/merchant/analytics/today-revenue`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((d) => setRevenue(d as any))
+        .catch(() => {});
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Action failed';
       if (err instanceof ApiError && err.status === 401) {
@@ -281,6 +337,12 @@ export default function DashboardPage() {
   const inProgress = bookings.filter((b) => b.booking.status === 'in_progress');
   const completed = bookings.filter((b) => b.booking.status === 'completed');
   const noShow = bookings.filter((b) => b.booking.status === 'no_show');
+
+  const VALID_STATUSES: BookingStatus[] = ['confirmed', 'in_progress', 'completed', 'no_show'];
+  const rawFilter = searchParams.get('status');
+  const statusFilter: BookingStatus | null = VALID_STATUSES.includes(rawFilter as BookingStatus)
+    ? (rawFilter as BookingStatus)
+    : null;
 
   return (
     <>
@@ -303,17 +365,111 @@ export default function DashboardPage() {
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Confirmed', value: confirmed.length, color: 'text-green-600 bg-green-50 border-green-200' },
-          { label: 'In Progress', value: inProgress.length, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-          { label: 'Completed', value: completed.length, color: 'text-gray-600 bg-gray-50 border-gray-200' },
-          { label: 'No Show', value: noShow.length, color: 'text-orange-600 bg-orange-50 border-orange-200' },
-        ].map((stat) => (
-          <div key={stat.label} className={`rounded-xl border p-4 ${stat.color}`}>
-            <p className="text-2xl font-bold">{stat.value}</p>
-            <p className="text-xs font-medium mt-0.5 opacity-80">{stat.label}</p>
-          </div>
-        ))}
+          { key: 'confirmed' as const,   label: 'Confirmed',   value: confirmed.length,   color: 'text-green-600 bg-green-50 border-green-200' },
+          { key: 'in_progress' as const, label: 'In Progress', value: inProgress.length,  color: 'text-blue-600 bg-blue-50 border-blue-200' },
+          { key: 'completed' as const,   label: 'Completed',   value: completed.length,   color: 'text-gray-600 bg-gray-50 border-gray-200' },
+          { key: 'no_show' as const,     label: 'No Show',     value: noShow.length,      color: 'text-orange-600 bg-orange-50 border-orange-200' },
+        ].map((stat) => {
+          const selected = statusFilter === stat.key;
+          return (
+            <button
+              key={stat.key}
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(Array.from(searchParams.entries()));
+                if (selected) next.delete('status');
+                else next.set('status', stat.key);
+                router.replace(`/dashboard${next.toString() ? `?${next}` : ''}`);
+              }}
+              className={`text-left rounded-xl border p-4 transition-shadow ${stat.color} ${selected ? 'ring-2 ring-indigo-400 shadow' : 'hover:shadow-sm'}`}
+              aria-pressed={selected}
+            >
+              <p className="text-2xl font-bold">{stat.value}</p>
+              <p className="text-xs font-medium mt-0.5 opacity-80">{stat.label}</p>
+            </button>
+          );
+        })}
       </div>
+      {statusFilter && (
+        <div className="mb-4 -mt-2 flex items-center gap-2 text-xs text-gray-600">
+          <span>Filtering by <strong className="capitalize">{statusFilter.replace('_', ' ')}</strong></span>
+          <button
+            type="button"
+            onClick={() => router.replace('/dashboard')}
+            className="underline hover:text-gray-900"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <DayTimelineStrip
+        bookings={bookings.map((r) => ({
+          id: r.booking.id,
+          startTime: r.booking.startTime,
+          endTime: r.booking.endTime,
+          status: r.booking.status,
+          staffId: r.staffMember.id,
+          staffName: r.staffMember.name,
+        }))}
+        operatingHours={operatingHours}
+        statusFilter={statusFilter}
+        onBarClick={handleTimelineClick}
+      />
+
+      <Link
+        href="/dashboard/analytics?period=today"
+        className="block mb-4 bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs font-medium text-gray-500">Today&apos;s Revenue</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5">
+              S${revenue ? Number(revenue.total).toFixed(2) : '—'}
+            </p>
+          </div>
+        </div>
+        {revenue && (
+          <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-y-1 gap-x-4 text-xs">
+            <div className="flex justify-between"><span className="text-gray-500">Services completed</span><span className="text-gray-900 tabular-nums">S${Number(revenue.completedRevenue).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Cancellations retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.cancelledRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">No-shows retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.noShowRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Packages sold</span><span className="text-gray-900 tabular-nums">S${Number(revenue.packageRevenue).toFixed(2)}</span></div>
+          </div>
+        )}
+      </Link>
+
+      {lowRatings.length > 0 && (
+        <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span>⚠</span>
+            <h2 className="text-sm font-semibold text-gray-900">Recent low ratings (last 7 days)</h2>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {lowRatings.map((r) => (
+              <li key={r.id}>
+                <Link
+                  href={`/dashboard/clients/${r.clientId}`}
+                  className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-md hover:bg-gray-50"
+                >
+                  <span className="text-amber-500 text-sm shrink-0">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-900 truncate">
+                      <span className="font-medium">{r.serviceName}</span>
+                      <span className="text-gray-500"> · {r.staffName}</span>
+                      {r.comment && <span className="text-gray-600"> · &ldquo;{r.comment}&rdquo;</span>}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {r.clientName ?? 'Unknown'}{r.clientPhone ? ` · ${r.clientPhone}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-gray-400 text-xs">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {loading && <Spinner />}
 
@@ -345,8 +501,14 @@ export default function DashboardPage() {
 
       {!loading && !error && bookings.length > 0 && (
         <div className="space-y-3">
-          {bookings.map((row) => (
-            <BookingCard key={row.booking.id} row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
+          {bookings.filter((b) => !statusFilter || b.booking.status === statusFilter).map((row) => (
+            <div
+              key={row.booking.id}
+              ref={(el) => { bookingRefs.current[row.booking.id] = el; }}
+              className={`rounded-xl transition-shadow ${flashBookingId === row.booking.id ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
+            >
+              <BookingCard row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
+            </div>
           ))}
         </div>
       )}
