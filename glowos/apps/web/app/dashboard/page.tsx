@@ -8,6 +8,7 @@ import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
 import { DayTimelineStrip } from './components/DayTimelineStrip';
 import { WaitlistCard, type WaitlistEntry } from './components/WaitlistCard';
+import { StaffContributionCard } from './components/StaffContributionCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -476,6 +477,8 @@ function DashboardPageInner() {
           </div>
         )}
       </Link>
+
+      <StaffContributionCard />
 
       <div
         ref={waitlistRef}

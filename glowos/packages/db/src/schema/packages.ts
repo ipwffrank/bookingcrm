@@ -64,6 +64,9 @@ export const clientPackages = pgTable(
       .default("active")
       .$type<"active" | "completed" | "expired" | "cancelled">(),
     pricePaidSgd: numeric("price_paid_sgd", { precision: 10, scale: 2 }).notNull(),
+    soldByStaffId: uuid("sold_by_staff_id").references(() => staff.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

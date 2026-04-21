@@ -1,5 +1,29 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 21 April 2026 (Session 16)**
+**Last updated: 21 April 2026 (Session 17)**
+
+---
+
+## What's Completed (Session 17 — 21 April 2026)
+
+### Staff revenue attribution ✅
+Per-staff revenue visibility for both merchant and individual staff. Two parallel streams: services delivered (valued at list price, credited to the booking's staff) and packages sold (credited to a new `sold_by_staff_id` on `client_packages`). No splitting — each stream is attributed in full to the performer/seller, aligning with the multi-staff rule from Session 15.
+
+- **Data:** new nullable column `client_packages.sold_by_staff_id uuid references staff(id) on delete set null` (migration 0013). Historical rows stay NULL and are excluded from the merchant-view totals.
+- **API — POST `/merchant/bookings/group`:** `sell_package` now requires `sold_by_staff_id`. 400 if missing, 404 if the staff isn't in this merchant or is inactive.
+- **API — POST `/merchant/packages/assign`:** optional `soldByStaffId` with the same validation when supplied.
+- **API — new `GET /merchant/analytics/staff-contribution?period=today|7d|30d|90d|all`:** returns one row per active staff with `servicesDelivered`, `packagesSold`, `total` (all as `.toFixed(2)` strings). Sorted by total DESC then name ASC. Zero-contribution rows included so merchants see who isn't closing work.
+- **API — new `GET /staff/my-contribution?period=…`:** same math scoped to the signed-in staff.
+- **Walk-in form:** required "Sold by" dropdown appears whenever a package is selected. Defaults to the first service row's staff, overridable to any active staff — matters for sales-only consultants who don't perform treatments.
+- **Merchant dashboard:** new **Staff Contribution** card between Revenue and Waitlist with a period selector (Today / 7d / 30d / 90d / All).
+- **Staff dashboard:** `/staff/dashboard` is now a real page (previously a redirect). Greeting + side-by-side Today + This Month cards, with a 5-period selector that collapses to a single card when non-default.
+
+### Next up (Session 18)
+- Backfill `drizzle.__drizzle_migrations` on Neon (still pending since Session 13).
+- Optional: `no_show_refund_pct` merchant setting to replace hardcoded 50% from Session 15.
+- Optional: team leaderboard on staff view (deferred — Option B from Session 17 brainstorm).
+
+Design doc: [docs/superpowers/specs/2026-04-21-staff-revenue-attribution-design.md](docs/superpowers/specs/2026-04-21-staff-revenue-attribution-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-21-staff-revenue-attribution.md](docs/superpowers/plans/2026-04-21-staff-revenue-attribution.md)
 
 ---
 
