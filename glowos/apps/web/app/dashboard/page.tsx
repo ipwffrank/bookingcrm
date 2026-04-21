@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../lib/api';
@@ -195,6 +195,16 @@ function BookingCard({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  // Next.js 15 requires a Suspense boundary around any component that calls
+  // useSearchParams() at the page level — otherwise prerender bails out.
+  return (
+    <Suspense fallback={<Spinner />}>
+      <DashboardPageInner />
+    </Suspense>
+  );
+}
+
+function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [bookings, setBookings] = useState<BookingRow[]>([]);
