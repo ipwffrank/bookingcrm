@@ -36,6 +36,7 @@ import {
   scheduleRebookingPrompt,
   schedulePostServiceSequence,
 } from "../lib/scheduler.js";
+import { scheduleWaitlistMatchJob } from "../lib/waitlist-scheduler.js";
 import type { AppVariables } from "../lib/types.js";
 
 const bookingsRouter = new Hono<{ Variables: AppVariables }>();
@@ -348,6 +349,16 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
   // Queue cancellation notifications
   await addJob("notifications", "cancellation_notification", { booking_id: bookingId });
   await scheduleRebookingPrompt(bookingId);
+
+  // Fire waitlist matcher with the freed slot
+  await scheduleWaitlistMatchJob({
+    merchant_id: booking.merchantId,
+    staff_id: booking.staffId,
+    service_id: booking.serviceId,
+    freed_start: booking.startTime.toISOString(),
+    freed_end: booking.endTime.toISOString(),
+    notified_booking_slot_id: booking.id,
+  });
 
   // Reload the updated booking to return
   const [updated] = await db
@@ -931,6 +942,10 @@ merchantBookingsRouter.patch(
       ? parseISO(body.end_time)
       : new Date(newStart.getTime() + (existing.endTime.getTime() - existing.startTime.getTime()));
 
+    // Capture pre-update slot times for the waitlist matcher (the freed slot)
+    const oldStart = existing.startTime;
+    const oldEnd = existing.endTime;
+
     const [updated] = await db
       .update(bookings)
       .set({ startTime: newStart, endTime: newEnd, updatedAt: new Date() })
@@ -938,6 +953,16 @@ merchantBookingsRouter.patch(
       .returning();
 
     await invalidateAvailabilityCacheByMerchantId(merchantId);
+
+    // Fire waitlist matcher with the old (freed) slot times
+    await scheduleWaitlistMatchJob({
+      merchant_id: existing.merchantId,
+      staff_id: existing.staffId,
+      service_id: existing.serviceId,
+      freed_start: oldStart.toISOString(),
+      freed_end: oldEnd.toISOString(),
+      notified_booking_slot_id: existing.id,
+    });
 
     return c.json({ booking: updated });
   }
