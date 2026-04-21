@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions } from "@glowos/db";
+import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions, waitlist } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
@@ -478,6 +478,32 @@ clientsRouter.post("/import", requireMerchant, zValidator(importBatchSchema), as
   }
 
   return c.json({ results });
+});
+
+// ─── GET /merchant/clients/:id/waitlist-history ────────────────────────────────
+
+clientsRouter.get("/:id/waitlist-history", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const clientId = c.req.param("id")!;
+
+  const rows = await db
+    .select({
+      id: waitlist.id,
+      targetDate: waitlist.targetDate,
+      windowStart: waitlist.windowStart,
+      windowEnd: waitlist.windowEnd,
+      serviceName: services.name,
+      staffName: staff.name,
+      status: waitlist.status,
+      createdAt: waitlist.createdAt,
+    })
+    .from(waitlist)
+    .innerJoin(services, eq(waitlist.serviceId, services.id))
+    .innerJoin(staff, eq(waitlist.staffId, staff.id))
+    .where(and(eq(waitlist.merchantId, merchantId), eq(waitlist.clientId, clientId)))
+    .orderBy(desc(waitlist.createdAt));
+
+  return c.json({ entries: rows });
 });
 
 export { clientsRouter };

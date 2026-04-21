@@ -16,3 +16,4 @@ export * from "./closures.js";
 export * from "./client-notes.js";
 export * from "./packages.js";
 export * from "./booking-groups.js";
+export * from "./waitlist.js";

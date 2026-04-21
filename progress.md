@@ -1,5 +1,38 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 21 April 2026 (Session 15)**
+**Last updated: 21 April 2026 (Session 16)**
+
+---
+
+## What's Completed (Session 16 — 21 April 2026)
+
+### Waitlist ✅
+Clients can now join a waitlist from the booking widget when no slots fit their preferred staff + date + time window. When a matching slot opens via cancellation or reschedule, the first-in-queue waitlisted client gets a WhatsApp (email fallback) with a one-tap deep link that holds the slot for 10 minutes. Staff see active entries on the dashboard for manual follow-up.
+
+- **Data model:** new `waitlist` table (migration `0012_waitlist.sql`) with `target_date`, `window_start`/`window_end`, `status` (`pending` → `notified` → `booked` / `expired` / `cancelled`), `cancel_token`, and a `notified_booking_slot_id` pointer to the cancelled booking that created the opening.
+- **API — public:** `POST /waitlist` (join + WhatsApp confirmation), `DELETE /waitlist/:id?token=` (self-cancel via token), `POST /waitlist/:id/confirm?token=` (atomically books the freed slot inside a transaction and fires the existing booking-confirmation notification).
+- **API — merchant:** `GET /merchant/waitlist?status=active|all` with joins for client/service/staff names, `DELETE /merchant/waitlist/:id` for manual removal, `GET /merchant/clients/:id/waitlist-history` for the client-detail "Waitlist history" section.
+- **Matcher worker:** two new BullMQ job types. `waitlist_match` fires after a booking transitions to `cancelled` (public cancel) or a merchant reschedule moves the old slot, plus inside the `PATCH /merchant/bookings/group/:groupId` handler for row deletions and start-time changes. Finds the oldest pending entry matching `merchant+staff+targetDate+window` (window must contain the freed slot), flips it to `notified`, sets `hold_expires_at=now+10m`, and schedules `waitlist_hold_expire`.
+- **Hold-expire job:** on fire, if the entry is still `notified` it flips to `expired` and re-fires the matcher on the same freed slot so the next pending entry gets a chance.
+- **EOD cron:** `waitlist_expire_stale` runs daily at 00:05 (BullMQ `repeat: "5 0 * * *"`), sweeping any `pending`/`notified` entries whose `target_date < today` to `expired`.
+- **Notification templates:** `waitlist_confirmation` (on join) and `waitlist_slot_opened` (on match) added to `notification.worker.ts`. Both attempt WhatsApp first and fall back to email when `sendWhatsApp` returns null — consistent with the Session 15 design decision (Option B: WhatsApp first, email fallback).
+- **Widget:** new `JoinWaitlistCard` mounted in the empty-slot state (when a specific staff + date has no availability). Form captures time window + name + phone + optional email. Submit → success toast + WhatsApp confirmation.
+- **Deep-link confirm:** new route `/[slug]/confirm-waitlist?waitlist=<id>&token=<t>`. Renders a single Confirm button → `POST /waitlist/:id/confirm` → redirects to the standard booking confirmation. 409 when the hold expired or the slot was taken by another booking during the 10-minute window.
+- **Dashboard:** the stats row is now 5 tiles wide (`sm:grid-cols-5`). The 5th tile is **Waitlist** with the active count. Clicking it scrolls to a detailed panel below with tap-to-call phone numbers, status chips (including live countdown for `notified` entries), and a × remove button per row. Empty-state panel renders "No one on the waitlist right now" so the tile stays consistent-clickable even at zero.
+- **Client detail:** new "Waitlist history" section under Package Activity, listing every past entry for that client at that merchant.
+
+Design doc: [docs/superpowers/specs/2026-04-21-waitlist-design.md](docs/superpowers/specs/2026-04-21-waitlist-design.md)
+Implementation plan: [docs/superpowers/plans/2026-04-21-waitlist.md](docs/superpowers/plans/2026-04-21-waitlist.md)
+
+**Deviations from plan (all intentional):**
+- Only one cancellation trigger point in `routes/bookings.ts` — the public cancel. There's no `/merchant/bookings/:id/cancel` endpoint in the codebase; merchant cancellations flow through the same public cancel + `processRefund` path, which is already hooked.
+- Matcher jobs are enqueued inside the DB transactions that cancel/reschedule bookings. If the tx rolls back, the worker no-ops (idempotent lookup). Flagging for future cleanup if it matters.
+- `waitlist_expire_stale` uses `addJob(...).catch(...)` fire-and-forget at worker startup; BullMQ dedupes repeating jobs by `{name, repeatKey}` so restarts don't pile up duplicates.
+
+### Next up (Session 17)
+- Staff revenue attribution (deferred from Session 15).
+- Backfill `drizzle.__drizzle_migrations` on Neon (still pending from Session 13).
+- Optional: `no_show_refund_pct` merchant setting to replace the hardcoded 50% from Session 15.
+- Waitlist polish (if staff ask): proactive "join waitlist even when slots exist", hard block after N no-shows is explicitly off the list.
 
 ---
 

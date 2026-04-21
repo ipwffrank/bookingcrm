@@ -2,6 +2,7 @@ import type { Worker } from "bullmq";
 import { createNotificationWorker } from "./notification.worker.js";
 import { createCrmWorker } from "./crm.worker.js";
 import { createVipWorker } from "./vip.worker.js";
+import { addJob } from "../lib/queue.js";
 
 // ─── Worker registry ───────────────────────────────────────────────────────────
 
@@ -29,6 +30,15 @@ export function startWorkers(): void {
   ];
 
   console.log("[Workers] All workers started", { count: workers.length });
+
+  // Register repeating cron jobs. Fire-and-forget — queue registration is idempotent
+  // (BullMQ de-dupes repeating jobs by jobId + pattern).
+  void addJob(
+    "notifications",
+    "waitlist_expire_stale",
+    {},
+    { repeat: { pattern: "5 0 * * *" } } // 00:05 daily, server time
+  );
 }
 
 // ─── stopWorkers ───────────────────────────────────────────────────────────────

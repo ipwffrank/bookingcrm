@@ -17,6 +17,7 @@ import { sendWhatsApp } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
 import { generateBookingToken } from "../lib/jwt.js";
 import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
+import { addJob } from "../lib/queue.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ async function loadBookingWithDetails(bookingId: string) {
 async function logNotification(params: {
   merchantId: string;
   clientId: string | null;
-  bookingId: string;
+  bookingId: string | null;
   type: string;
   channel: string;
   recipient: string;
@@ -110,7 +111,7 @@ async function logNotification(params: {
     await db.insert(notificationLog).values({
       merchantId: params.merchantId,
       clientId: params.clientId ?? undefined,
-      bookingId: params.bookingId,
+      bookingId: params.bookingId ?? undefined,
       type: params.type,
       channel: params.channel,
       recipient: params.recipient,
@@ -793,6 +794,212 @@ async function handleOtpSend(data: OtpSendData): Promise<void> {
   });
 }
 
+// ─── Waitlist handlers ─────────────────────────────────────────────────────────
+
+interface WaitlistMatchData {
+  merchant_id: string;
+  staff_id: string;
+  service_id: string;
+  freed_start: string;
+  freed_end: string;
+  notified_booking_slot_id: string;
+}
+
+async function handleWaitlistMatch(data: WaitlistMatchData): Promise<void> {
+  const freedStart = new Date(data.freed_start);
+  const freedEnd   = new Date(data.freed_end);
+  const targetDate = `${freedStart.getFullYear()}-${String(freedStart.getMonth() + 1).padStart(2, "0")}-${String(freedStart.getDate()).padStart(2, "0")}`;
+  const freedStartHHMM = `${String(freedStart.getHours()).padStart(2, "0")}:${String(freedStart.getMinutes()).padStart(2, "0")}`;
+  const freedEndHHMM   = `${String(freedEnd.getHours()).padStart(2, "0")}:${String(freedEnd.getMinutes()).padStart(2, "0")}`;
+
+  const { waitlist } = await import("@glowos/db");
+  const { and, eq, lte, gte } = await import("drizzle-orm");
+
+  const [entry] = await db
+    .select()
+    .from(waitlist)
+    .where(
+      and(
+        eq(waitlist.merchantId, data.merchant_id),
+        eq(waitlist.staffId, data.staff_id),
+        eq(waitlist.status, "pending"),
+        eq(waitlist.targetDate, targetDate),
+        lte(waitlist.windowStart, freedStartHHMM),
+        gte(waitlist.windowEnd, freedEndHHMM),
+      )
+    )
+    .orderBy(waitlist.createdAt)
+    .limit(1);
+
+  if (!entry) {
+    console.log("[WaitlistMatch] no pending entries match", { data });
+    return;
+  }
+
+  const HOLD_MINUTES = 10;
+  const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * 60 * 1000);
+  await db
+    .update(waitlist)
+    .set({
+      status: "notified",
+      notifiedAt: new Date(),
+      holdExpiresAt,
+      notifiedBookingSlotId: data.notified_booking_slot_id,
+      updatedAt: new Date(),
+    })
+    .where(eq(waitlist.id, entry.id));
+
+  const { scheduleWaitlistHoldExpire } = await import("../lib/waitlist-scheduler.js");
+  await scheduleWaitlistHoldExpire(entry.id, HOLD_MINUTES * 60 * 1000);
+
+  await addJob("notifications", "waitlist_slot_opened", { waitlist_id: entry.id });
+}
+
+interface WaitlistHoldExpireData {
+  waitlist_id: string;
+}
+
+async function handleWaitlistHoldExpire(data: WaitlistHoldExpireData): Promise<void> {
+  const { waitlist } = await import("@glowos/db");
+  const { eq } = await import("drizzle-orm");
+
+  const [row] = await db
+    .select()
+    .from(waitlist)
+    .where(eq(waitlist.id, data.waitlist_id))
+    .limit(1);
+  if (!row || row.status !== "notified") {
+    return;
+  }
+
+  await db
+    .update(waitlist)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(eq(waitlist.id, data.waitlist_id));
+
+  if (row.notifiedBookingSlotId) {
+    const [freed] = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, row.notifiedBookingSlotId))
+      .limit(1);
+    if (freed) {
+      const { scheduleWaitlistMatchJob } = await import("../lib/waitlist-scheduler.js");
+      await scheduleWaitlistMatchJob({
+        merchant_id: row.merchantId,
+        staff_id: row.staffId,
+        service_id: row.serviceId,
+        freed_start: freed.startTime.toISOString(),
+        freed_end: freed.endTime.toISOString(),
+        notified_booking_slot_id: row.notifiedBookingSlotId,
+      });
+    }
+  }
+}
+
+async function handleWaitlistExpireStale(): Promise<void> {
+  const { waitlist } = await import("@glowos/db");
+  const { and, inArray, lt } = await import("drizzle-orm");
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  await db
+    .update(waitlist)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(
+      inArray(waitlist.status, ["pending", "notified"]),
+      lt(waitlist.targetDate, todayStr)
+    ));
+  console.log("[WaitlistExpire] swept past-date entries", { todayStr });
+}
+
+// ─── Waitlist notification handlers ───────────────────────────────────────────
+
+interface WaitlistConfirmationData { waitlist_id: string; }
+interface WaitlistSlotOpenedData   { waitlist_id: string; }
+
+async function loadWaitlistWithDetails(id: string) {
+  const { waitlist } = await import("@glowos/db");
+  const [row] = await db
+    .select({
+      w: waitlist,
+      merchant: merchants,
+      service: services,
+      staffMember: staff,
+      client: clients,
+    })
+    .from(waitlist)
+    .innerJoin(merchants, eq(waitlist.merchantId, merchants.id))
+    .innerJoin(services, eq(waitlist.serviceId, services.id))
+    .innerJoin(staff, eq(waitlist.staffId, staff.id))
+    .innerJoin(clients, eq(waitlist.clientId, clients.id))
+    .where(eq(waitlist.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promise<void> {
+  const row = await loadWaitlistWithDetails(data.waitlist_id);
+  if (!row) return;
+  const cancelUrl = `${config.frontendUrl}/${row.merchant.slug}/waitlist/cancel?id=${row.w.id}&token=${row.w.cancelToken}`;
+  const message = [
+    `Hi ${row.client.name ?? "there"}! You're on the waitlist at ${row.merchant.name}.`,
+    `${row.service.name} with ${row.staffMember.name}`,
+    `📅 ${row.w.targetDate} between ${row.w.windowStart}–${row.w.windowEnd}`,
+    `We'll WhatsApp you if a slot opens. Cancel: ${cancelUrl}`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  await logNotification({
+    merchantId: row.merchant.id,
+    clientId: row.client.id,
+    bookingId: null,
+    type: "waitlist_confirmation",
+    channel: "whatsapp",
+    recipient: row.client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+  if (!sid && row.client.email) {
+    await sendEmail({
+      to: row.client.email,
+      subject: `You're on the waitlist at ${row.merchant.name}`,
+      html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+    });
+  }
+}
+
+async function handleWaitlistSlotOpened(data: WaitlistSlotOpenedData): Promise<void> {
+  const row = await loadWaitlistWithDetails(data.waitlist_id);
+  if (!row) return;
+  const confirmUrl = `${config.frontendUrl}/${row.merchant.slug}/confirm-waitlist?waitlist=${row.w.id}&token=${row.w.cancelToken}`;
+  const message = [
+    `Slot opened! ${row.staffMember.name} has an opening on ${row.w.targetDate}.`,
+    `Confirm within 10 min: ${confirmUrl}`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  await logNotification({
+    merchantId: row.merchant.id,
+    clientId: row.client.id,
+    bookingId: null,
+    type: "waitlist_slot_opened",
+    channel: "whatsapp",
+    recipient: row.client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+  if (!sid && row.client.email) {
+    await sendEmail({
+      to: row.client.email,
+      subject: `A slot opened — confirm within 10 min`,
+      html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+    });
+  }
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -863,6 +1070,26 @@ export function createNotificationWorker(): Worker {
         }
         case "otp_send": {
           await handleOtpSend(job.data as OtpSendData);
+          break;
+        }
+        case "waitlist_match": {
+          await handleWaitlistMatch(job.data as WaitlistMatchData);
+          break;
+        }
+        case "waitlist_hold_expire": {
+          await handleWaitlistHoldExpire(job.data as WaitlistHoldExpireData);
+          break;
+        }
+        case "waitlist_expire_stale": {
+          await handleWaitlistExpireStale();
+          break;
+        }
+        case "waitlist_confirmation": {
+          await handleWaitlistConfirmation(job.data as WaitlistConfirmationData);
+          break;
+        }
+        case "waitlist_slot_opened": {
+          await handleWaitlistSlotOpened(job.data as WaitlistSlotOpenedData);
           break;
         }
         default:

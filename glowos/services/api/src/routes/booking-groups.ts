@@ -23,6 +23,7 @@ import { writeAuditDiff } from "../lib/booking-edits.js";
 import { incrementPackageSessionsUsed, decrementPackageSessionsUsed } from "../lib/package-helpers.js";
 import { normalizePhone } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
+import { scheduleWaitlistMatchJob } from "../lib/waitlist-scheduler.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const bookingGroupsRouter = new Hono<{ Variables: AppVariables }>();
@@ -573,6 +574,16 @@ bookingGroupsRouter.patch(
           tx
         );
         await tx.delete(bookings).where(eq(bookings.id, b.id));
+
+        // Fire waitlist matcher for the freed slot (deleted child booking)
+        await scheduleWaitlistMatchJob({
+          merchant_id: merchantId,
+          staff_id: b.staffId,
+          service_id: b.serviceId,
+          freed_start: b.startTime.toISOString(),
+          freed_end: b.endTime.toISOString(),
+          notified_booking_slot_id: b.id,
+        });
       }
 
       // UPDATE kept rows
@@ -610,6 +621,18 @@ bookingGroupsRouter.patch(
           .update(bookings)
           .set({ ...newValues, updatedAt: new Date() })
           .where(eq(bookings.id, existing.id));
+
+        // If startTime moved, fire waitlist matcher with the OLD slot times
+        if (start.getTime() !== existing.startTime.getTime()) {
+          await scheduleWaitlistMatchJob({
+            merchant_id: merchantId,
+            staff_id: existing.staffId,
+            service_id: existing.serviceId,
+            freed_start: existing.startTime.toISOString(),
+            freed_end: existing.endTime.toISOString(),
+            notified_booking_slot_id: existing.id,
+          });
+        }
 
         // Package redemption change: credit/debit based on usePackage toggle
         const [sessCurrent] = await tx
