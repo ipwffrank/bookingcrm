@@ -238,7 +238,17 @@ function DashboardPageInner() {
   >(null);
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [flashBookingId, setFlashBookingId] = useState<string | null>(null);
+  const [flashWaitlist, setFlashWaitlist] = useState(false);
   const bookingRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const waitlistRef = useRef<HTMLDivElement | null>(null);
+
+  function handleWaitlistTileClick() {
+    const el = waitlistRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashWaitlist(true);
+    setTimeout(() => setFlashWaitlist(false), 1200);
+  }
 
   function handleTimelineClick(bookingId: string) {
     const el = bookingRefs.current[bookingId];
@@ -408,10 +418,16 @@ function DashboardPageInner() {
             </button>
           );
         })}
-        <div className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200">
+        <button
+          type="button"
+          onClick={handleWaitlistTileClick}
+          disabled={waitlistEntries.length === 0}
+          className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200 transition-shadow hover:shadow-sm disabled:opacity-60 disabled:hover:shadow-none"
+          aria-label={waitlistEntries.length > 0 ? 'Scroll to waitlist details' : 'No waitlist entries'}
+        >
           <p className="text-2xl font-bold">{waitlistEntries.length}</p>
           <p className="text-xs font-medium mt-0.5 opacity-80">Waitlist</p>
-        </div>
+        </button>
       </div>
       {statusFilter && (
         <div className="mb-4 -mt-2 flex items-center gap-2 text-xs text-gray-600">
@@ -462,7 +478,12 @@ function DashboardPageInner() {
         )}
       </Link>
 
-      <WaitlistCard entries={waitlistEntries} onEntriesChange={setWaitlistEntries} />
+      <div
+        ref={waitlistRef}
+        className={`rounded-xl transition-shadow ${flashWaitlist ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
+      >
+        <WaitlistCard entries={waitlistEntries} onEntriesChange={setWaitlistEntries} />
+      </div>
 
       {lowRatings.length > 0 && (
         <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
