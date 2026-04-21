@@ -56,6 +56,7 @@ export function BookingForm(props: BookingFormProps) {
     }>
   >([]);
   const [sellPackageId, setSellPackageId] = useState<string>('');
+  const [soldByStaffId, setSoldByStaffId] = useState<string>('');
   const [sellOpen, setSellOpen] = useState(false);
 
   useEffect(() => {
@@ -251,6 +252,10 @@ export function BookingForm(props: BookingFormProps) {
       setApiError('Each service needs a service, staff, and start time');
       return;
     }
+    if (sellPackageId && !soldByStaffId) {
+      setApiError('Pick who sold the package');
+      return;
+    }
 
     const token = localStorage.getItem('access_token');
     setSaving(true);
@@ -274,7 +279,9 @@ export function BookingForm(props: BookingFormProps) {
                 : undefined,
               use_new_package: r.useNewPackage ? true : undefined,
             })),
-            sell_package: sellPackageId ? { package_id: sellPackageId } : undefined,
+            sell_package: sellPackageId
+              ? { package_id: sellPackageId, sold_by_staff_id: soldByStaffId }
+              : undefined,
           }),
         });
       } else if (resolvedGroupId) {
@@ -467,6 +474,12 @@ export function BookingForm(props: BookingFormProps) {
                       // package's capacity — clear them before switching.
                       clearNewPackageRedemptions();
                       setSellPackageId(e.target.value);
+                      if (e.target.value && !soldByStaffId) {
+                        setSoldByStaffId(rows[0]?.staffId ?? '');
+                      }
+                      if (!e.target.value) {
+                        setSoldByStaffId('');
+                      }
                     }}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   >
@@ -477,6 +490,22 @@ export function BookingForm(props: BookingFormProps) {
                       </option>
                     ))}
                   </select>
+                  {sellPackageId && (
+                    <div className="mt-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Sold by</label>
+                      <select
+                        value={soldByStaffId}
+                        onChange={(e) => setSoldByStaffId(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        required
+                      >
+                        <option value="">Select staff...</option>
+                        {staffList.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
