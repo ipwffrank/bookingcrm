@@ -22,6 +22,7 @@ Clients can now join a waitlist from the booking widget when no slots fit their 
 
 Design doc: [docs/superpowers/specs/2026-04-21-waitlist-design.md](docs/superpowers/specs/2026-04-21-waitlist-design.md)
 Implementation plan: [docs/superpowers/plans/2026-04-21-waitlist.md](docs/superpowers/plans/2026-04-21-waitlist.md)
+Merge commit: `7a615d6` on `main` (feature branch `feature/waitlist`, 24 commits, deleted after merge).
 
 **Deviations from plan (all intentional):**
 - Only one cancellation trigger point in `routes/bookings.ts` — the public cancel. There's no `/merchant/bookings/:id/cancel` endpoint in the codebase; merchant cancellations flow through the same public cancel + `processRefund` path, which is already hooked.
