@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { eq, and, gte, lte } from "drizzle-orm";
-import { db, staff, merchants, bookings, services, clients } from "@glowos/db";
+import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
+import { db, staff, merchants, bookings, services, clients, clientPackages } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -116,6 +116,78 @@ staffPortalRouter.get("/my-bookings", async (c) => {
     .limit(50);
 
   return c.json({ bookings: rows });
+});
+
+function periodBounds(period: string): { start: Date; end: Date } {
+  const now = new Date();
+  if (period === "today") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
+      end:   new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999),
+    };
+  }
+  if (period === "all") {
+    return { start: new Date(0), end: now };
+  }
+  const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+  return { start: new Date(now.getTime() - days * 24 * 60 * 60 * 1000), end: now };
+}
+
+// GET /staff/my-contribution?period=today|7d|30d|90d|all
+staffPortalRouter.get("/my-contribution", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const staffId = c.get("staffId");
+  if (!staffId) {
+    return c.json({ error: "Forbidden", message: "Staff access required" }, 403);
+  }
+  const period = c.req.query("period") ?? "today";
+  if (!["today", "7d", "30d", "90d", "all"].includes(period)) {
+    return c.json({ error: "Bad Request", message: "period must be today|7d|30d|90d|all" }, 400);
+  }
+  const { start, end } = periodBounds(period);
+
+  const [svcRow] = await db
+    .select({ total: sql<string>`COALESCE(SUM(${services.priceSgd}), 0)` })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        eq(bookings.staffId, staffId),
+        inArray(bookings.status, ["completed", "in_progress"]),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end)
+      )
+    );
+  const servicesDelivered = Number(svcRow?.total ?? 0);
+
+  const [pkgRow] = await db
+    .select({ total: sql<string>`COALESCE(SUM(${clientPackages.pricePaidSgd}), 0)` })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.merchantId, merchantId),
+        eq(clientPackages.soldByStaffId, staffId),
+        gte(clientPackages.purchasedAt, start),
+        lte(clientPackages.purchasedAt, end)
+      )
+    );
+  const packagesSold = Number(pkgRow?.total ?? 0);
+
+  const [staffRow] = await db
+    .select({ name: staff.name })
+    .from(staff)
+    .where(eq(staff.id, staffId))
+    .limit(1);
+
+  return c.json({
+    period,
+    staffId,
+    staffName: staffRow?.name ?? null,
+    servicesDelivered: servicesDelivered.toFixed(2),
+    packagesSold: packagesSold.toFixed(2),
+    total: (servicesDelivered + packagesSold).toFixed(2),
+  });
 });
 
 export { staffPortalRouter };
