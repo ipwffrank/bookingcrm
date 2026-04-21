@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
 import { DayTimelineStrip } from './components/DayTimelineStrip';
+import { WaitlistCard } from './components/WaitlistCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -448,6 +449,8 @@ function DashboardPageInner() {
           </div>
         )}
       </Link>
+
+      <WaitlistCard />
 
       {lowRatings.length > 0 && (
         <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
