@@ -33,7 +33,14 @@ export function WaitlistCard({ entries, onEntriesChange }: Props) {
     onEntriesChange(entries.filter((e) => e.id !== id));
   }
 
-  if (entries.length === 0) return null;
+  if (entries.length === 0) {
+    return (
+      <div className="mb-4 bg-white rounded-xl border border-gray-200 p-4">
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">📋 Waitlist</h2>
+        <p className="text-xs text-gray-400 italic">No one on the waitlist right now.</p>
+      </div>
+    );
+  }
 
   const shown = expanded ? entries : entries.slice(0, 5);
   const more = entries.length - shown.length;

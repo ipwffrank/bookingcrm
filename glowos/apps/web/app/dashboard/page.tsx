@@ -421,9 +421,8 @@ function DashboardPageInner() {
         <button
           type="button"
           onClick={handleWaitlistTileClick}
-          disabled={waitlistEntries.length === 0}
-          className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200 transition-shadow hover:shadow-sm disabled:opacity-60 disabled:hover:shadow-none"
-          aria-label={waitlistEntries.length > 0 ? 'Scroll to waitlist details' : 'No waitlist entries'}
+          className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200 transition-shadow hover:shadow-sm"
+          aria-label="Scroll to waitlist details"
         >
           <p className="text-2xl font-bold">{waitlistEntries.length}</p>
           <p className="text-xs font-medium mt-0.5 opacity-80">Waitlist</p>
