@@ -99,7 +99,7 @@ async function loadBookingWithDetails(bookingId: string) {
 async function logNotification(params: {
   merchantId: string;
   clientId: string | null;
-  bookingId: string;
+  bookingId: string | null;
   type: string;
   channel: string;
   recipient: string;
@@ -111,7 +111,7 @@ async function logNotification(params: {
     await db.insert(notificationLog).values({
       merchantId: params.merchantId,
       clientId: params.clientId ?? undefined,
-      bookingId: params.bookingId,
+      bookingId: params.bookingId ?? undefined,
       type: params.type,
       channel: params.channel,
       recipient: params.recipient,
@@ -913,6 +913,93 @@ async function handleWaitlistExpireStale(): Promise<void> {
   console.log("[WaitlistExpire] swept past-date entries", { todayStr });
 }
 
+// ─── Waitlist notification handlers ───────────────────────────────────────────
+
+interface WaitlistConfirmationData { waitlist_id: string; }
+interface WaitlistSlotOpenedData   { waitlist_id: string; }
+
+async function loadWaitlistWithDetails(id: string) {
+  const { waitlist } = await import("@glowos/db");
+  const [row] = await db
+    .select({
+      w: waitlist,
+      merchant: merchants,
+      service: services,
+      staffMember: staff,
+      client: clients,
+    })
+    .from(waitlist)
+    .innerJoin(merchants, eq(waitlist.merchantId, merchants.id))
+    .innerJoin(services, eq(waitlist.serviceId, services.id))
+    .innerJoin(staff, eq(waitlist.staffId, staff.id))
+    .innerJoin(clients, eq(waitlist.clientId, clients.id))
+    .where(eq(waitlist.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promise<void> {
+  const row = await loadWaitlistWithDetails(data.waitlist_id);
+  if (!row) return;
+  const cancelUrl = `${config.frontendUrl}/${row.merchant.slug}/waitlist/cancel?id=${row.w.id}&token=${row.w.cancelToken}`;
+  const message = [
+    `Hi ${row.client.name ?? "there"}! You're on the waitlist at ${row.merchant.name}.`,
+    `${row.service.name} with ${row.staffMember.name}`,
+    `📅 ${row.w.targetDate} between ${row.w.windowStart}–${row.w.windowEnd}`,
+    `We'll WhatsApp you if a slot opens. Cancel: ${cancelUrl}`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  await logNotification({
+    merchantId: row.merchant.id,
+    clientId: row.client.id,
+    bookingId: null,
+    type: "waitlist_confirmation",
+    channel: "whatsapp",
+    recipient: row.client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+  if (!sid && row.client.email) {
+    await sendEmail({
+      to: row.client.email,
+      subject: `You're on the waitlist at ${row.merchant.name}`,
+      html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+    });
+  }
+}
+
+async function handleWaitlistSlotOpened(data: WaitlistSlotOpenedData): Promise<void> {
+  const row = await loadWaitlistWithDetails(data.waitlist_id);
+  if (!row) return;
+  const confirmUrl = `${config.frontendUrl}/${row.merchant.slug}/confirm-waitlist?waitlist=${row.w.id}&token=${row.w.cancelToken}`;
+  const message = [
+    `Slot opened! ${row.staffMember.name} has an opening on ${row.w.targetDate}.`,
+    `Confirm within 10 min: ${confirmUrl}`,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  await logNotification({
+    merchantId: row.merchant.id,
+    clientId: row.client.id,
+    bookingId: null,
+    type: "waitlist_slot_opened",
+    channel: "whatsapp",
+    recipient: row.client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+  if (!sid && row.client.email) {
+    await sendEmail({
+      to: row.client.email,
+      subject: `A slot opened — confirm within 10 min`,
+      html: `<p>${message.replace(/\n/g, "<br/>")}</p>`,
+    });
+  }
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -995,6 +1082,14 @@ export function createNotificationWorker(): Worker {
         }
         case "waitlist_expire_stale": {
           await handleWaitlistExpireStale();
+          break;
+        }
+        case "waitlist_confirmation": {
+          await handleWaitlistConfirmation(job.data as WaitlistConfirmationData);
+          break;
+        }
+        case "waitlist_slot_opened": {
+          await handleWaitlistSlotOpened(job.data as WaitlistSlotOpenedData);
           break;
         }
         default:
