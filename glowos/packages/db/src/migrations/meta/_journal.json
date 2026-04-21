@@ -5,78 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1775815593157,
-      "tag": "0000_flat_deathbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1776009867322,
-      "tag": "0001_lush_ken_ellis",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1776327644674,
-      "tag": "0002_milky_speed",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1776328109718,
-      "tag": "0003_magenta_husk",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1776328960209,
-      "tag": "0004_goofy_captain_universe",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1776433691023,
-      "tag": "0005_white_johnny_storm",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1776496602527,
-      "tag": "0006_third_riptide",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1776504469249,
-      "tag": "0007_late_molten_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1776615250383,
-      "tag": "0008_merchants_country",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1776618367764,
-      "tag": "0009_bookings_first_timer_flag",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1776618739435,
-      "tag": "0010_brave_bloodstorm",
+      "when": 1776781779668,
+      "tag": "0000_silly_wong",
       "breakpoints": true
     }
   ]
