@@ -727,4 +727,96 @@ analyticsRouter.get("/today-revenue", requireMerchant, async (c) => {
   });
 });
 
+// ─── GET /merchant/analytics/staff-contribution ──────────────────────────────
+
+function periodBounds(period: string): { start: Date; end: Date } {
+  const now = new Date();
+  if (period === "today") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
+      end:   new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999),
+    };
+  }
+  if (period === "all") {
+    return { start: new Date(0), end: now };
+  }
+  const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 30;
+  return { start: new Date(now.getTime() - days * 24 * 60 * 60 * 1000), end: now };
+}
+
+analyticsRouter.get("/staff-contribution", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const period = c.req.query("period") ?? "today";
+  if (!["today", "7d", "30d", "90d", "all"].includes(period)) {
+    return c.json({ error: "Bad Request", message: "period must be today|7d|30d|90d|all" }, 400);
+  }
+  const { start, end } = periodBounds(period);
+
+  const allStaff = await db
+    .select({ id: staff.id, name: staff.name })
+    .from(staff)
+    .where(and(eq(staff.merchantId, merchantId), eq(staff.isActive, true)));
+
+  if (allStaff.length === 0) {
+    return c.json({ period, rows: [] });
+  }
+
+  const staffIds = allStaff.map((s) => s.id);
+
+  const svcRows = await db
+    .select({
+      staffId: bookings.staffId,
+      total: sql<string>`COALESCE(SUM(${services.priceSgd}), 0)`,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        inArray(bookings.staffId, staffIds),
+        inArray(bookings.status, ["completed", "in_progress"]),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end)
+      )
+    )
+    .groupBy(bookings.staffId);
+  const svcMap = new Map(svcRows.map((r) => [r.staffId, Number(r.total)]));
+
+  const pkgRows = await db
+    .select({
+      staffId: clientPackages.soldByStaffId,
+      total: sql<string>`COALESCE(SUM(${clientPackages.pricePaidSgd}), 0)`,
+    })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.merchantId, merchantId),
+        inArray(clientPackages.soldByStaffId, staffIds),
+        gte(clientPackages.purchasedAt, start),
+        lte(clientPackages.purchasedAt, end)
+      )
+    )
+    .groupBy(clientPackages.soldByStaffId);
+  const pkgMap = new Map(pkgRows.map((r) => [r.staffId!, Number(r.total)]));
+
+  const rows = allStaff.map((s) => {
+    const svc = svcMap.get(s.id) ?? 0;
+    const pkg = pkgMap.get(s.id) ?? 0;
+    return {
+      staffId: s.id,
+      staffName: s.name,
+      servicesDelivered: svc.toFixed(2),
+      packagesSold: pkg.toFixed(2),
+      total: (svc + pkg).toFixed(2),
+    };
+  });
+
+  rows.sort((a, b) => {
+    const d = Number(b.total) - Number(a.total);
+    return d !== 0 ? d : a.staffName.localeCompare(b.staffName);
+  });
+
+  return c.json({ period, rows });
+});
+
 export { analyticsRouter };
