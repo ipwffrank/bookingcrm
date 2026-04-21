@@ -128,6 +128,16 @@ export default function ClientProfilePage() {
   const [clientReviews, setClientReviews] = useState<ClientReview[]>([]);
   const [treatmentLog, setTreatmentLog] = useState<Array<{ id: string; staffName: string | null; content: string; createdAt: string }>>([]);
   const [clientPackagesData, setClientPackagesData] = useState<any[]>([]);
+  const [waitlistHistory, setWaitlistHistory] = useState<Array<{
+    id: string;
+    targetDate: string;
+    windowStart: string;
+    windowEnd: string;
+    serviceName: string;
+    staffName: string;
+    status: string;
+    createdAt: string;
+  }>>([]);
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
   const [addingNote, setAddingNote] = useState(false);
@@ -203,6 +213,14 @@ export default function ClientProfilePage() {
     if (!data?.client?.id) return;
     apiFetch(`/merchant/packages/client/${data.client.id}`)
       .then((d: any) => setClientPackagesData(d.packages ?? []))
+      .catch(() => {});
+  }, [data?.client?.id]);
+
+  // Fetch waitlist history once client data is available
+  useEffect(() => {
+    if (!data?.client?.id) return;
+    apiFetch(`/merchant/clients/${data.client.id}/waitlist-history`)
+      .then((d: any) => setWaitlistHistory((d as { entries: typeof waitlistHistory }).entries ?? []))
       .catch(() => {});
   }, [data?.client?.id]);
 
@@ -459,6 +477,26 @@ export default function ClientProfilePage() {
                     ? `Bought ${e.packageName} · S$${e.pricePaid}`
                     : `Redeemed session${e.serviceName ? ` · ${e.serviceName}` : ''}${e.staffName ? ` · ${e.staffName}` : ''}`}
                 </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Waitlist History ── */}
+      {waitlistHistory.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h2 className="text-sm font-semibold text-gray-900 mb-2">Waitlist history</h2>
+          <ul className="space-y-1">
+            {waitlistHistory.map((w) => (
+              <li key={w.id} className="text-xs text-gray-700">
+                <span className="text-gray-500">{new Date(w.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}</span>
+                {' · '}
+                <span>{w.serviceName} · {w.staffName}</span>
+                {' · '}
+                <span className="text-gray-500">{w.targetDate} {w.windowStart}–{w.windowEnd}</span>
+                {' · '}
+                <span className="capitalize text-gray-600">{w.status}</span>
               </li>
             ))}
           </ul>
