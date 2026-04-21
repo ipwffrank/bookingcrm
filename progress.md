@@ -24,6 +24,7 @@ Per-staff revenue visibility for both merchant and individual staff. Two paralle
 
 Design doc: [docs/superpowers/specs/2026-04-21-staff-revenue-attribution-design.md](docs/superpowers/specs/2026-04-21-staff-revenue-attribution-design.md)
 Implementation plan: [docs/superpowers/plans/2026-04-21-staff-revenue-attribution.md](docs/superpowers/plans/2026-04-21-staff-revenue-attribution.md)
+Merge commit: `f789a41` on `main` (feature branch `feature/staff-contribution`, 12 commits, deleted after merge).
 
 ---
 
