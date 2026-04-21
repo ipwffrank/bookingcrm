@@ -14,10 +14,24 @@ Closed the tracking gap open since Session 13. `pnpm db:migrate` now works as do
 - **Trade-off accepted:** the incremental migration history is now only in git log, not in the `migrations/` folder. Any future dev DB that runs `pnpm db:migrate` from scratch gets built in one shot from the current schema snapshot — which is what you'd want anyway.
 - **Going forward:** `pnpm db:generate` after schema changes produces numbered migrations via drizzle-kit, which updates `_journal.json`. `pnpm db:migrate` applies them and records the hash. Hand-written migration scripts (the Session 14/15/16/17 pattern) should be retired.
 
-### Next up (Session 19)
-- Optional: `no_show_refund_pct` merchant setting to replace the Session 15 hardcoded 50%.
-- Optional: team leaderboard on staff view.
-- Optional: deprecate the `node -e "pg.Client..."` ad-hoc migration scripts in favor of `pnpm db:migrate` now that the tooling works.
+### Roadmap — options for Session 19+
+
+**Quick wins (single session each):**
+- CSV export (bookings / revenue / commission) for accounting.
+- Review reply — merchants reply to low-star reviews inline on the Session 15 dashboard card.
+- `no_show_refund_pct` merchant setting (replace the hardcoded 50% from Session 15).
+- Deprecate the `node -e "pg.Client..."` ad-hoc migration scripts now that `pnpm db:migrate` works; update CLAUDE.md / plan templates to use drizzle-kit.
+- Team leaderboard on staff view (Option B from Session 17 brainstorm; shipped as self-only).
+
+**Meaty (1–2 sessions):**
+- Commission / payout report — real money-out math per staff, completing the Session 17 money-in loop.
+- Rostering — proper staff shifts + leave + patterns. Calendar has duties but it's thin.
+- Client self-service portal — logged-in clients see history, upcoming, and reschedule themselves.
+
+**Strategic (multi-session):**
+- Marketing automation — loyalty points, birthday reminders, win-back campaigns.
+- Mobile responsiveness audit — salons run on iPads/phones; dashboard + BookingForm need a pass.
+- Onboarding wizard — new merchant first-run (services, staff, hours, branding) as a guided flow.
 
 ---
 
