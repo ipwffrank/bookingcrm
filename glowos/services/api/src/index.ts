@@ -25,6 +25,7 @@ import { closuresRouter, publicClosuresRouter } from "./routes/closures.js";
 import { publicReviewRouter, merchantReviewRouter } from "./routes/reviews.js";
 import { packagesRouter, publicPackagesRouter } from "./routes/packages.js";
 import { bookingGroupsRouter } from "./routes/booking-groups.js";
+import { waitlistRouter, merchantWaitlistRouter } from "./routes/waitlist.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -85,6 +86,8 @@ app.route("/review", publicReviewRouter);
 app.route("/merchant/reviews", merchantReviewRouter);
 app.route("/merchant/packages", packagesRouter);
 app.route("/booking", publicPackagesRouter);
+app.route("/waitlist", waitlistRouter);
+app.route("/merchant/waitlist", merchantWaitlistRouter);
 
 // Health check
 app.get("/health", (c) => {
