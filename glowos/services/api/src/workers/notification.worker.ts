@@ -897,6 +897,22 @@ async function handleWaitlistHoldExpire(data: WaitlistHoldExpireData): Promise<v
   }
 }
 
+async function handleWaitlistExpireStale(): Promise<void> {
+  const { waitlist } = await import("@glowos/db");
+  const { and, inArray, lt } = await import("drizzle-orm");
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  await db
+    .update(waitlist)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(
+      inArray(waitlist.status, ["pending", "notified"]),
+      lt(waitlist.targetDate, todayStr)
+    ));
+  console.log("[WaitlistExpire] swept past-date entries", { todayStr });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -975,6 +991,10 @@ export function createNotificationWorker(): Worker {
         }
         case "waitlist_hold_expire": {
           await handleWaitlistHoldExpire(job.data as WaitlistHoldExpireData);
+          break;
+        }
+        case "waitlist_expire_stale": {
+          await handleWaitlistExpireStale();
           break;
         }
         default:
