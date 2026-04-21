@@ -1,2 +1,0 @@
-CREATE INDEX IF NOT EXISTS "staff_duties_staff_date_idx" ON "staff_duties" ("staff_id","date");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "staff_duties_merchant_date_idx" ON "staff_duties" ("merchant_id","date");

@@ -1,5 +1,23 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 21 April 2026 (Session 17)**
+**Last updated: 21 April 2026 (Session 18)**
+
+---
+
+## What's Completed (Session 18 — 21 April 2026)
+
+### Drizzle migrations reset ✅
+Closed the tracking gap open since Session 13. `pnpm db:migrate` now works as documented. No schema changes — production DB is untouched; only the migration bookkeeping was rebuilt.
+
+- **Root cause:** every migration 0000 → 0013 had been applied by hand via `node -e "pg.Client..."` scripts, bypassing drizzle-kit. `drizzle.__drizzle_migrations` was empty. Running `pnpm db:migrate` would have tried to re-apply every migration and failed on the very first `CREATE TABLE` (already exists).
+- **Bonus gap fixed:** `drizzle.config.ts` was missing `./src/schema/waitlist.ts` in its schema array (Session 16 oversight). Without it, drizzle-kit would have missed the waitlist table when generating.
+- **Approach (Option A — reset history):** deleted all 14 incremental migrations + their snapshots, ran `pnpm db:generate` to produce one fresh `0000_silly_wong.sql` that represents today's full schema. Computed its SHA-256 (`ef99d80…fe8d6`), INSERTed one row into `drizzle.__drizzle_migrations` with the journal's `when` timestamp. `pnpm db:migrate` is now idempotent — runs in seconds, does nothing, ledger stays at 1 row.
+- **Trade-off accepted:** the incremental migration history is now only in git log, not in the `migrations/` folder. Any future dev DB that runs `pnpm db:migrate` from scratch gets built in one shot from the current schema snapshot — which is what you'd want anyway.
+- **Going forward:** `pnpm db:generate` after schema changes produces numbered migrations via drizzle-kit, which updates `_journal.json`. `pnpm db:migrate` applies them and records the hash. Hand-written migration scripts (the Session 14/15/16/17 pattern) should be retired.
+
+### Next up (Session 19)
+- Optional: `no_show_refund_pct` merchant setting to replace the Session 15 hardcoded 50%.
+- Optional: team leaderboard on staff view.
+- Optional: deprecate the `node -e "pg.Client..."` ad-hoc migration scripts in favor of `pnpm db:migrate` now that the tooling works.
 
 ---
 

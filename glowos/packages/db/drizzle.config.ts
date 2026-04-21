@@ -24,6 +24,7 @@ export default {
     "./src/schema/client-notes.ts",
     "./src/schema/packages.ts",
     "./src/schema/booking-groups.ts",
+    "./src/schema/waitlist.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
