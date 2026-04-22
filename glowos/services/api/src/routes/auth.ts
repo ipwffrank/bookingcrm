@@ -1,13 +1,23 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
-import { db, merchants, merchantUsers, groupUsers, groups } from "@glowos/db";
+import { db, merchants, merchantUsers, groupUsers, groups, passwordResetTokens, superAdminAuditLog } from "@glowos/db";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken, generateGroupAccessToken } from "../lib/jwt.js";
 import { generateSlug, ensureUniqueSlug } from "../lib/slug.js";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
+import { sendEmail, passwordResetEmail } from "../lib/email.js";
+import { config, isSuperAdminEmail } from "../lib/config.js";
 import type { AppVariables } from "../lib/types.js";
+
+const RESET_TOKEN_TTL_MINUTES = 30;
+const RESET_TOKEN_BYTES = 32;
+
+function hashToken(plain: string): string {
+  return createHash("sha256").update(plain).digest("hex");
+}
 
 const auth = new Hono<{ Variables: AppVariables }>();
 
@@ -139,11 +149,13 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
 
     await db.update(merchantUsers).set({ lastLoginAt: new Date() }).where(eq(merchantUsers.id, user.id));
 
+    const superAdmin = isSuperAdminEmail(user.email);
     const accessToken = generateAccessToken({
       userId: user.id,
       merchantId: merchant.id,
       role: user.role,
       ...(user.staffId ? { staffId: user.staffId } : {}),
+      ...(superAdmin ? { superAdmin: true } : {}),
     });
     const refreshToken = generateRefreshToken({ userId: user.id });
     const { passwordHash: _pw, ...safeUser } = user;
@@ -155,10 +167,18 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
         userType: 'staff',
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
         merchant: { id: merchant.id, name: merchant.name, slug: merchant.slug },
+        ...(superAdmin ? { superAdmin: true } : {}),
       });
     }
 
-    return c.json({ userType: "merchant", user: safeUser, merchant, access_token: accessToken, refresh_token: refreshToken });
+    return c.json({
+      userType: "merchant",
+      user: safeUser,
+      merchant,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      ...(superAdmin ? { superAdmin: true } : {}),
+    });
   }
 
   // ── Fall back to group user ────────────────────────────────────────────────
@@ -225,17 +245,212 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
 
   const { user, merchant } = row;
 
+  const superAdmin = isSuperAdminEmail(user.email);
   const accessToken = generateAccessToken({
     userId: user.id,
     merchantId: merchant.id,
     role: user.role,
     ...(user.staffId ? { staffId: user.staffId } : {}),
+    ...(superAdmin ? { superAdmin: true } : {}),
   });
   const refreshToken = generateRefreshToken({ userId: user.id });
 
   return c.json({
     access_token: accessToken,
     refresh_token: refreshToken,
+  });
+});
+
+// ─── POST /auth/forgot-password ────────────────────────────────────────────────
+// Always returns 200 with a generic message, even if the email is unknown,
+// to prevent user enumeration. If the email matches a merchant_user or
+// group_user, we invalidate any outstanding tokens and email a fresh one.
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email("Invalid email address"),
+});
+
+auth.post("/forgot-password", zValidator(forgotPasswordSchema), async (c) => {
+  const body = c.get("body") as z.infer<typeof forgotPasswordSchema>;
+  const genericResponse = {
+    message:
+      "If an account exists for that email, we've sent a reset link. Check your inbox and spam folder.",
+  };
+
+  type Match = { userType: "merchant_user" | "group_user"; userId: string; name: string; email: string };
+  let match: Match | null = null;
+
+  const [mu] = await db
+    .select({ id: merchantUsers.id, name: merchantUsers.name, email: merchantUsers.email, isActive: merchantUsers.isActive })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.email, body.email))
+    .limit(1);
+
+  if (mu && mu.isActive) {
+    match = { userType: "merchant_user", userId: mu.id, name: mu.name, email: mu.email };
+  } else {
+    const [gu] = await db
+      .select({ id: groupUsers.id, name: groupUsers.name, email: groupUsers.email })
+      .from(groupUsers)
+      .where(eq(groupUsers.email, body.email))
+      .limit(1);
+    if (gu) match = { userType: "group_user", userId: gu.id, name: gu.name, email: gu.email };
+  }
+
+  if (!match) {
+    return c.json(genericResponse);
+  }
+
+  // Invalidate any outstanding unused tokens for this user, then issue a fresh one.
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(passwordResetTokens.userType, match.userType),
+        eq(passwordResetTokens.userId, match.userId),
+        isNull(passwordResetTokens.usedAt),
+      ),
+    );
+
+  const plainToken = randomBytes(RESET_TOKEN_BYTES).toString("base64url");
+  const tokenHash = hashToken(plainToken);
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000);
+
+  await db.insert(passwordResetTokens).values({
+    userType: match.userType,
+    userId: match.userId,
+    tokenHash,
+    expiresAt,
+    requestedIp: c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? null,
+  });
+
+  const resetUrl = `${config.frontendUrl}/reset-password?token=${plainToken}`;
+  await sendEmail({
+    to: match.email,
+    subject: "Reset your GlowOS password",
+    html: passwordResetEmail({
+      name: match.name,
+      resetUrl,
+      expiryMinutes: RESET_TOKEN_TTL_MINUTES,
+    }),
+  });
+
+  return c.json(genericResponse);
+});
+
+// ─── POST /auth/reset-password ─────────────────────────────────────────────────
+// Validates the token, updates the matching user's password, marks the token used.
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(20, "Invalid token"),
+  new_password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+auth.post("/reset-password", zValidator(resetPasswordSchema), async (c) => {
+  const body = c.get("body") as z.infer<typeof resetPasswordSchema>;
+  const tokenHash = hashToken(body.token);
+
+  const [row] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.tokenHash, tokenHash),
+        isNull(passwordResetTokens.usedAt),
+        gt(passwordResetTokens.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    return c.json(
+      { error: "Unauthorized", message: "This reset link is invalid or has expired. Request a new one." },
+      401,
+    );
+  }
+
+  const newHash = await bcrypt.hash(body.new_password, 10);
+
+  if (row.userType === "merchant_user") {
+    const [updated] = await db
+      .update(merchantUsers)
+      .set({ passwordHash: newHash })
+      .where(eq(merchantUsers.id, row.userId))
+      .returning({ id: merchantUsers.id, isActive: merchantUsers.isActive });
+
+    if (!updated || !updated.isActive) {
+      return c.json({ error: "Forbidden", message: "Account is no longer active" }, 403);
+    }
+  } else {
+    const [updated] = await db
+      .update(groupUsers)
+      .set({ passwordHash: newHash })
+      .where(eq(groupUsers.id, row.userId))
+      .returning({ id: groupUsers.id });
+
+    if (!updated) {
+      return c.json({ error: "Not Found", message: "Account not found" }, 404);
+    }
+  }
+
+  await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(passwordResetTokens.id, row.id));
+
+  return c.json({ success: true, message: "Password updated. You can now sign in." });
+});
+
+// ─── POST /auth/end-impersonation ──────────────────────────────────────────────
+// Re-issues a self-mode superadmin token for the original actor. Lives on
+// /auth (not /super) because it's the one endpoint that must be callable
+// WHILE impersonating — /super/* is locked out during impersonation.
+
+auth.post("/end-impersonation", requireMerchant, async (c) => {
+  const actorUserId = c.get("actorUserId");
+  const impersonating = c.get("impersonating");
+  if (!impersonating || !actorUserId) {
+    return c.json({ error: "Conflict", message: "Not currently impersonating" }, 409);
+  }
+
+  const [actor] = await db
+    .select({
+      id: merchantUsers.id,
+      email: merchantUsers.email,
+      merchantId: merchantUsers.merchantId,
+      role: merchantUsers.role,
+      staffId: merchantUsers.staffId,
+      isActive: merchantUsers.isActive,
+    })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, actorUserId))
+    .limit(1);
+
+  if (!actor || !actor.isActive || !isSuperAdminEmail(actor.email)) {
+    return c.json({ error: "Forbidden", message: "Actor account invalid" }, 403);
+  }
+
+  const accessToken = generateAccessToken({
+    userId: actor.id,
+    merchantId: actor.merchantId,
+    role: actor.role,
+    ...(actor.staffId ? { staffId: actor.staffId } : {}),
+    superAdmin: true,
+  });
+  const refreshToken = generateRefreshToken({ userId: actor.id });
+
+  await db.insert(superAdminAuditLog).values({
+    actorUserId: actor.id,
+    actorEmail: actor.email,
+    action: "impersonate_end",
+    targetMerchantId: c.get("merchantId") ?? null,
+  });
+
+  return c.json({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    userType: "merchant",
   });
 });
 

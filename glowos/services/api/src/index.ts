@@ -26,6 +26,7 @@ import { publicReviewRouter, merchantReviewRouter } from "./routes/reviews.js";
 import { packagesRouter, publicPackagesRouter } from "./routes/packages.js";
 import { bookingGroupsRouter } from "./routes/booking-groups.js";
 import { waitlistRouter, merchantWaitlistRouter } from "./routes/waitlist.js";
+import { superRouter } from "./routes/super.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -52,6 +53,7 @@ app.use(
 app.route("/webhooks", webhooksRouter);
 
 app.route("/auth", auth);
+app.route("/super", superRouter);
 app.route("/merchant", merchantRouter);
 app.route("/merchant/services", servicesRouter);
 app.route("/merchant/staff", staffRouter);

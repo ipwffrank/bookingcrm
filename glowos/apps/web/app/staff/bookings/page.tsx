@@ -38,8 +38,14 @@ interface Closure {
   endTime: string | null;
 }
 
+// Single-palette chrome: ink for duties, sage for other staff's bookings
+// (so the current staff member's context is still scannable), danger-tint
+// for closures. Identity lives in the event title text, not the hue.
 const DUTY_BG = '#1a2313';
-const COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const BOOKING_BG = '#6b8e5a';
+const UNASSIGNED_BG = 'rgba(26, 35, 19, 0.55)';
+const CLOSURE_BG = 'rgba(184, 64, 58, 0.08)';
+const CLOSURE_BORDER = 'rgba(184, 64, 58, 0.25)';
 
 function localDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -64,8 +70,6 @@ export default function StaffAllBookingsPage() {
   const [dutyError, setDutyError]             = useState<string | null>(null);
   const [dutySaving, setDutySaving]           = useState(false);
   const [deleting, setDeleting]               = useState(false);
-  const [staffColorMap]                       = useState<Record<string, string>>({});
-  const [colorIdx]                            = useState({ value: 0 });
 
   const loadEvents = useCallback(async (start: string, end: string) => {
     const from = start.slice(0, 10);
@@ -89,21 +93,17 @@ export default function StaffAllBookingsPage() {
         editable:        true,
       }));
 
-      const bookingEvents: EventInput[] = ((bookingsData.bookings ?? []) as Booking[]).map((b) => {
-        if (b.staffId && !staffColorMap[b.staffId]) {
-          staffColorMap[b.staffId] = COLORS[colorIdx.value++ % COLORS.length]!;
-        }
-        return {
-          id:              `booking-${b.id}`,
-          title:           `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
-          start:           b.startTime,
-          end:             b.endTime,
-          backgroundColor: b.staffId ? (staffColorMap[b.staffId] ?? '#64748b') : '#64748b',
-          borderColor:     'transparent',
-          extendedProps:   { type: 'booking', booking: b },
-          editable:        false,
-        };
-      });
+      const bookingEvents: EventInput[] = ((bookingsData.bookings ?? []) as Booking[]).map((b) => ({
+        id:              `booking-${b.id}`,
+        title:           `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
+        start:           b.startTime,
+        end:             b.endTime,
+        backgroundColor: b.staffId ? BOOKING_BG : UNASSIGNED_BG,
+        borderColor:     'transparent',
+        textColor:       '#ffffff',
+        extendedProps:   { type: 'booking', booking: b },
+        editable:        false,
+      }));
 
       const closureEvents: EventInput[] = ((closuresData.closures ?? []) as Closure[]).map((cl) => {
         if (cl.isFullDay) {
@@ -113,8 +113,8 @@ export default function StaffAllBookingsPage() {
             start: cl.date,
             allDay: true,
             display: 'background',
-            backgroundColor: '#fef2f2',
-            borderColor: '#fecaca',
+            backgroundColor: CLOSURE_BG,
+            borderColor: CLOSURE_BORDER,
             extendedProps: { type: 'closure' },
           };
         }
@@ -124,15 +124,15 @@ export default function StaffAllBookingsPage() {
           start: `${cl.date}T${cl.startTime}`,
           end: `${cl.date}T${cl.endTime}`,
           display: 'background',
-          backgroundColor: '#fef2f2',
-          borderColor: '#fecaca',
+          backgroundColor: CLOSURE_BG,
+          borderColor: CLOSURE_BORDER,
           extendedProps: { type: 'closure' },
         };
       });
 
       setEvents([...closureEvents, ...dutyEvents, ...bookingEvents]);
     } catch { /* silent fail */ }
-  }, [staffColorMap, colorIdx]);
+  }, []);
 
   async function handleEventDrop(info: EventDropArg) {
     if (info.event.extendedProps.type !== 'duty') { info.revert(); return; }
@@ -229,7 +229,7 @@ export default function StaffAllBookingsPage() {
 
   function renderEventContent(eventInfo: { event: { extendedProps: Record<string, unknown>; title: string }; timeText: string }) {
     if (eventInfo.event.extendedProps.type === 'closure') {
-      return <div className="text-xs text-red-400 font-medium px-1">{eventInfo.event.title}</div>;
+      return <div className="text-xs text-semantic-danger font-medium px-1">{eventInfo.event.title}</div>;
     }
     return (
       <div className="text-xs px-1 truncate">
@@ -243,23 +243,23 @@ export default function StaffAllBookingsPage() {
     <div className="space-y-4 font-manrope">
       <style>{`
         .fc { font-family: var(--font-body, 'Manrope', sans-serif); }
-        .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: #111827; }
+        .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: var(--color-tone-ink); }
         .fc .fc-button { font-size: 13px; font-weight: 500; }
-        .fc .fc-col-header-cell-cushion { font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.025em; }
-        .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: #374151; }
-        .fc .fc-timegrid-slot { border-bottom-color: #d1d5db; }
-        .fc .fc-timegrid-slot-minor { border-top: 1px dashed #e5e7eb !important; }
-        .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #374151; }
-        .fc .fc-timegrid-slot-label.fc-timegrid-slot-minor { font-size: 9px; font-weight: 400; color: #9ca3af; }
-        .fc .fc-timegrid-col { border-right: 1px solid #e5e7eb; }
+        .fc .fc-col-header-cell-cushion { font-size: 12px; font-weight: 600; color: var(--color-grey-75); text-transform: uppercase; letter-spacing: 0.025em; }
+        .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: var(--color-grey-75); }
+        .fc .fc-timegrid-slot { border-bottom-color: var(--color-grey-15); }
+        .fc .fc-timegrid-slot-minor { border-top: 1px dashed var(--color-grey-5) !important; }
+        .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: var(--color-grey-75); }
+        .fc .fc-timegrid-slot-label.fc-timegrid-slot-minor { font-size: 9px; font-weight: 400; color: var(--color-grey-45); }
+        .fc .fc-timegrid-col { border-right: 1px solid var(--color-grey-15); }
         .fc .fc-event { border-radius: 6px; }
         .fc-direction-ltr .fc-daygrid-event.fc-event-end, .fc-direction-ltr .fc-daygrid-event.fc-event-start { margin-left: 2px; margin-right: 2px; }
       `}</style>
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">All Bookings</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Dark blocks = your schedule &nbsp;·&nbsp; Coloured = firm bookings</p>
+          <h1 className="text-xl font-semibold text-tone-ink">All Bookings</h1>
+          <p className="text-xs text-grey-45 mt-0.5">Dark blocks = your schedule &nbsp;·&nbsp; Coloured = firm bookings</p>
         </div>
         <button
           onClick={() => {
@@ -274,7 +274,7 @@ export default function StaffAllBookingsPage() {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-4">
         <FullCalendar
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView="timeGridWeek"
@@ -300,40 +300,40 @@ export default function StaffAllBookingsPage() {
       {/* ── Duty modal ── */}
       {showDutyModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4 font-manrope">
-            <h2 className="text-base font-semibold text-gray-900">{editDuty ? 'Edit Block' : 'Add Block'}</h2>
+          <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-md p-6 space-y-4 font-manrope">
+            <h2 className="text-base font-semibold text-tone-ink">{editDuty ? 'Edit Block' : 'Add Block'}</h2>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-              <input type="date" value={dutyForm.date} onChange={e => setDutyForm(f => ({ ...f, date: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30" />
+              <label className="block text-xs font-medium text-grey-75 mb-1">Date</label>
+              <input type="date" value={dutyForm.date} onChange={e => setDutyForm(f => ({ ...f, date: e.target.value }))} className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
-                <input type="time" value={dutyForm.startTime} onChange={e => setDutyForm(f => ({ ...f, startTime: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30" />
+                <label className="block text-xs font-medium text-grey-75 mb-1">Start</label>
+                <input type="time" value={dutyForm.startTime} onChange={e => setDutyForm(f => ({ ...f, startTime: e.target.value }))} className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
-                <input type="time" value={dutyForm.endTime} onChange={e => setDutyForm(f => ({ ...f, endTime: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30" />
+                <label className="block text-xs font-medium text-grey-75 mb-1">End</label>
+                <input type="time" value={dutyForm.endTime} onChange={e => setDutyForm(f => ({ ...f, endTime: e.target.value }))} className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30" />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
-              <input type="text" value={dutyForm.notes} onChange={e => setDutyForm(f => ({ ...f, notes: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30" placeholder="e.g. Lunch break" />
+              <label className="block text-xs font-medium text-grey-75 mb-1">Notes (optional)</label>
+              <input type="text" value={dutyForm.notes} onChange={e => setDutyForm(f => ({ ...f, notes: e.target.value }))} className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30" placeholder="e.g. Lunch break" />
             </div>
-            {dutyError && <p className="text-xs text-red-600">{dutyError}</p>}
+            {dutyError && <p className="text-xs text-semantic-danger">{dutyError}</p>}
             {editDuty && !isFutureDuty(editDuty.date, editDuty.startTime) && (
-              <p className="text-xs text-gray-400">Past blocks cannot be edited or deleted.</p>
+              <p className="text-xs text-grey-45">Past blocks cannot be edited or deleted.</p>
             )}
             <div className="flex gap-2">
               <button onClick={handleSaveDuty} disabled={dutySaving || (!!editDuty && !isFutureDuty(editDuty.date, editDuty.startTime))} className="flex-1 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] disabled:opacity-50 transition-colors">
                 {dutySaving ? 'Saving…' : 'Save'}
               </button>
               {editDuty && isFutureDuty(editDuty.date, editDuty.startTime) && (
-                <button onClick={handleDeleteDuty} disabled={deleting} className="py-2 px-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+                <button onClick={handleDeleteDuty} disabled={deleting} className="py-2 px-4 bg-semantic-danger/5 text-semantic-danger text-sm font-medium rounded-lg hover:bg-semantic-danger/10 disabled:opacity-50 transition-colors">
                   {deleting ? '…' : 'Delete'}
                 </button>
               )}
-              <button onClick={() => setShowDutyModal(false)} className="py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">Cancel</button>
+              <button onClick={() => setShowDutyModal(false)} className="py-2 px-4 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors">Cancel</button>
             </div>
           </div>
         </div>
@@ -342,9 +342,9 @@ export default function StaffAllBookingsPage() {
       {/* ── Booking detail modal ── */}
       {selectedBooking && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-3 font-manrope">
-            <h2 className="text-base font-semibold text-gray-900">Booking Details</h2>
-            <div className="divide-y divide-gray-50">
+          <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-3 font-manrope">
+            <h2 className="text-base font-semibold text-tone-ink">Booking Details</h2>
+            <div className="divide-y divide-grey-5">
               {([
                 ['Client',  selectedBooking.clientName ?? '—'],
                 ['Service', selectedBooking.serviceName ?? '—'],
@@ -353,12 +353,12 @@ export default function StaffAllBookingsPage() {
                 ['Status',  selectedBooking.status.replace('_', ' ')],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label} className="flex justify-between py-2.5 text-sm">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>
-                  <span className="text-gray-900 font-medium capitalize">{value}</span>
+                  <span className="text-xs font-medium text-grey-45 uppercase tracking-wide">{label}</span>
+                  <span className="text-tone-ink font-medium capitalize">{value}</span>
                 </div>
               ))}
             </div>
-            <button onClick={() => setSelectedBooking(null)} className="w-full py-2 bg-gray-100 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors">Close</button>
+            <button onClick={() => setSelectedBooking(null)} className="w-full py-2 bg-grey-15 text-sm font-semibold rounded-lg hover:bg-grey-15 transition-colors">Close</button>
           </div>
         </div>
       )}

@@ -83,105 +83,105 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-tone-surface-warm flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="text-2xl font-bold text-indigo-600">
+          <Link href="/" className="text-2xl font-bold text-tone-sage">
             GlowOS
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-2">Get started with GlowOS</h1>
-          <p className="text-gray-500 text-sm">14-day free trial. No credit card required.</p>
+          <h1 className="text-2xl font-bold text-tone-ink mt-4 mb-2">Get started with GlowOS</h1>
+          <p className="text-grey-60 text-sm">14-day free trial. No credit card required.</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl shadow-gray-100 border border-gray-100 p-8">
+        <div className="bg-tone-surface rounded-2xl shadow-xl shadow-gray-100 border border-grey-5 p-8">
           {apiError && (
-            <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+            <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">
               {apiError}
             </div>
           )}
 
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Full name</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => field('name', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.name ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.name ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
                 placeholder="Jane Tan"
               />
-              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+              {errors.name && <p className="text-xs text-semantic-danger mt-1">{errors.name}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Email</label>
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => field('email', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.email ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.email ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
                 placeholder="jane@mybusiness.com"
               />
-              {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+              {errors.email && <p className="text-xs text-semantic-danger mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mobile number</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Mobile number</label>
               <input
                 type="tel"
                 value={form.phone}
                 onChange={(e) => field('phone', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.phone ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.phone ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
                 placeholder="+65 9123 4567"
               />
-              {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+              {errors.phone && <p className="text-xs text-semantic-danger mt-1">{errors.phone}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Password</label>
               <input
                 type="password"
                 value={form.password}
                 onChange={(e) => field('password', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.password ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.password ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
                 placeholder="Min. 8 characters"
               />
-              {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
+              {errors.password && <p className="text-xs text-semantic-danger mt-1">{errors.password}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Business name</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Business name</label>
               <input
                 type="text"
                 value={form.salon_name}
                 onChange={(e) => field('salon_name', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.salon_name ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.salon_name ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
                 placeholder="e.g. Glow Wellness, Ristorante Sole"
               />
               {errors.salon_name && (
-                <p className="text-xs text-red-500 mt-1">{errors.salon_name}</p>
+                <p className="text-xs text-semantic-danger mt-1">{errors.salon_name}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-grey-75 mb-1">
                 Business category
               </label>
               <select
                 value={form.salon_category}
                 onChange={(e) => field('salon_category', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.salon_category ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition ${
+                  errors.salon_category ? 'border-red-400 bg-semantic-danger/5' : 'border-grey-30'
                 }`}
               >
                 <option value="">Select a category…</option>
@@ -192,24 +192,24 @@ export default function SignupPage() {
                 ))}
               </select>
               {errors.salon_category && (
-                <p className="text-xs text-red-500 mt-1">{errors.salon_category}</p>
+                <p className="text-xs text-semantic-danger mt-1">{errors.salon_category}</p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mt-2"
+              className="w-full rounded-xl bg-tone-ink py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors mt-2"
             >
               {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-grey-60 mt-6">
             Already have an account?{' '}
             <Link
               href="/login"
-              className="text-indigo-600 font-medium hover:underline"
+              className="text-tone-sage font-medium hover:underline"
             >
               Log in
             </Link>

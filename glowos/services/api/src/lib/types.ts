@@ -8,5 +8,10 @@ export type AppVariables = {
   userRole: string;
   groupId?: string;
   staffId?: string;  // set for staff role tokens
+  // Superadmin claims forwarded from the JWT for audit + /super/* gating.
+  superAdmin?: boolean;
+  impersonating?: boolean;
+  actorUserId?: string;
+  actorEmail?: string;
   body: unknown;
 };

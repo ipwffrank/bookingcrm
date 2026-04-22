@@ -17,3 +17,5 @@ export * from "./client-notes.js";
 export * from "./packages.js";
 export * from "./booking-groups.js";
 export * from "./waitlist.js";
+export * from "./password-reset-tokens.js";
+export * from "./super-admin.js";

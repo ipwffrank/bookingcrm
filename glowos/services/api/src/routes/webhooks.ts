@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type Stripe from "stripe";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, gt } from "drizzle-orm";
+import twilioPkg from "twilio";
 import {
   db,
   merchants,
@@ -9,6 +10,8 @@ import {
   bookings,
   clients,
   clientProfiles,
+  notificationLog,
+  whatsappInboundLog,
 } from "@glowos/db";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
@@ -444,6 +447,126 @@ webhooksRouter.post("/stripe", async (c) => {
   }
 
   return c.json({ received: true });
+});
+
+// ─── POST /webhooks/twilio/whatsapp-inbound ───────────────────────────────────
+//
+// Twilio posts application/x-www-form-urlencoded with (at minimum):
+//   From       - e.g. "whatsapp:+6591234567"
+//   Body       - the reply text
+//   MessageSid - unique Twilio message id
+//
+// We validate the signature against the auth token, normalize the phone,
+// attribute to the merchant whose last outbound we sent this number, and
+// insert into whatsapp_inbound_log. Response is an empty TwiML body so
+// Twilio doesn't auto-reply on our behalf.
+//
+// Signature algorithm (Twilio docs): HMAC-SHA1 of url + sorted(POST params)
+// with the account auth token as key, base64-encoded. The twilio SDK wraps
+// that as `validateRequest`.
+
+const ATTRIBUTION_WINDOW_HOURS = 72;
+
+webhooksRouter.post("/twilio/whatsapp-inbound", async (c) => {
+  // Body parsing — Twilio sends form-urlencoded.
+  const body = await c.req.parseBody();
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (typeof v === "string") params[k] = v;
+  }
+
+  // Signature validation. In dev we may not have Twilio configured — skip
+  // validation cleanly rather than 403'ing local test requests.
+  if (config.twilioAuthToken && config.nodeEnv === "production") {
+    const signature = c.req.header("x-twilio-signature") ?? "";
+    // Build the public URL Twilio signed against. We honor x-forwarded-proto
+    // because the API sits behind Vercel/Neon-edge.
+    const proto = c.req.header("x-forwarded-proto") ?? "https";
+    const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? "";
+    const url = `${proto}://${host}${c.req.path}`;
+
+    const valid = twilioPkg.validateRequest(
+      config.twilioAuthToken,
+      signature,
+      url,
+      params,
+    );
+    if (!valid) {
+      console.warn("[Webhook] Twilio signature invalid", { url });
+      return c.text("Invalid signature", 403);
+    }
+  }
+
+  const rawFrom = params.From ?? "";
+  const sid = params.MessageSid ?? "";
+  const text = params.Body ?? "";
+
+  // Strip "whatsapp:" prefix. Everything else should be E.164.
+  const fromPhone = normalizePhone(rawFrom.replace(/^whatsapp:/i, ""));
+  if (!fromPhone || !sid) {
+    // Twilio expects a 2xx so it doesn't retry; log and swallow.
+    console.warn("[Webhook] whatsapp-inbound missing From/MessageSid", { rawFrom, sid });
+    return c.text("<Response/>", 200, { "content-type": "text/xml" });
+  }
+
+  // Idempotency — if Twilio retries we'd otherwise double-insert. The
+  // twilio_message_sid column is UNIQUE; catching the duplicate and returning
+  // early is cheaper than a SELECT first.
+  const existing = await db
+    .select({ id: whatsappInboundLog.id })
+    .from(whatsappInboundLog)
+    .where(eq(whatsappInboundLog.twilioMessageSid, sid))
+    .limit(1);
+  if (existing.length > 0) {
+    return c.text("<Response/>", 200, { "content-type": "text/xml" });
+  }
+
+  // Attribute the inbound to the merchant whose most recent outbound WhatsApp
+  // we sent to this phone within ATTRIBUTION_WINDOW_HOURS. Outside the window,
+  // attribution is ambiguous and we store merchant_id = null.
+  const windowStart = new Date(
+    Date.now() - ATTRIBUTION_WINDOW_HOURS * 60 * 60 * 1000,
+  );
+  const [lastOutbound] = await db
+    .select({
+      merchantId: notificationLog.merchantId,
+      clientId: notificationLog.clientId,
+    })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.channel, "whatsapp"),
+        eq(notificationLog.recipient, fromPhone),
+        gt(notificationLog.sentAt, windowStart),
+      ),
+    )
+    .orderBy(desc(notificationLog.sentAt))
+    .limit(1);
+
+  let matchedClientId: string | null = lastOutbound?.clientId ?? null;
+  const merchantId: string | null = lastOutbound?.merchantId ?? null;
+
+  // Fallback: if attribution didn't surface a client_id on the outbound log
+  // row, look up the client by phone. The clients table has a global unique
+  // phone, so this is a direct lookup — one client per E.164 number.
+  if (!matchedClientId) {
+    const [clientMatch] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(eq(clients.phone, fromPhone))
+      .limit(1);
+    matchedClientId = clientMatch?.id ?? null;
+  }
+
+  await db.insert(whatsappInboundLog).values({
+    merchantId,
+    fromPhone,
+    body: text,
+    matchedClientId,
+    twilioMessageSid: sid,
+  });
+
+  return c.text("<Response/>", 200, { "content-type": "text/xml" });
 });
 
 export { webhooksRouter };

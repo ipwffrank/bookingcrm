@@ -34,8 +34,8 @@ function Inner() {
     return (
       <div className="p-6 max-w-md mx-auto">
         <h1 className="text-lg font-semibold mb-2">Slot unavailable</h1>
-        <p className="text-sm text-gray-600 mb-4">{errMsg || 'This link has expired or the slot was taken.'}</p>
-        <a href={`/${slug}`} className="text-indigo-600 underline text-sm">Book a different time →</a>
+        <p className="text-sm text-grey-75 mb-4">{errMsg || 'This link has expired or the slot was taken.'}</p>
+        <a href={`/${slug}`} className="text-tone-sage underline text-sm">Book a different time →</a>
       </div>
     );
   }
@@ -44,7 +44,7 @@ function Inner() {
     return (
       <div className="p-6 max-w-md mx-auto">
         <h1 className="text-lg font-semibold mb-2">You&apos;re booked!</h1>
-        <p className="text-sm text-gray-600">Redirecting…</p>
+        <p className="text-sm text-grey-75">Redirecting…</p>
       </div>
     );
   }
@@ -52,11 +52,11 @@ function Inner() {
   return (
     <div className="p-6 max-w-md mx-auto">
       <h1 className="text-lg font-semibold mb-2">Confirm your slot</h1>
-      <p className="text-sm text-gray-600 mb-4">Tap Confirm to take the freed slot. You have 10 minutes from the time you were notified.</p>
+      <p className="text-sm text-grey-75 mb-4">Tap Confirm to take the freed slot. You have 10 minutes from the time you were notified.</p>
       <button
         onClick={confirm}
         disabled={state === 'confirming'}
-        className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg disabled:opacity-60"
+        className="px-4 py-2 bg-tone-ink text-white text-sm font-semibold rounded-lg disabled:opacity-60"
       >
         {state === 'confirming' ? 'Confirming…' : 'Confirm booking'}
       </button>

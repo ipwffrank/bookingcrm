@@ -58,7 +58,7 @@ const DEFAULT_HOURS: WorkingHour[] = DAYS.map((_, i) => ({
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-tone-sage/30 border-t-tone-ink rounded-full animate-spin" />
     </div>
   );
 }
@@ -209,13 +209,13 @@ function StaffModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 z-10 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">
+      <div className="relative bg-tone-surface rounded-2xl shadow-2xl w-full max-w-xl p-6 z-10 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-tone-ink mb-4">
           {initial ? 'Edit Staff Member' : 'Add Staff Member'}
         </h2>
 
         {apiError && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+          <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">
             {apiError}
           </div>
         )}
@@ -224,47 +224,47 @@ function StaffModal({
           {/* Basic info */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Name</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
                 placeholder="Jane"
               />
-              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+              {errors.name && <p className="text-xs text-semantic-danger mt-1">{errors.name}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Title</label>
               <input
                 type="text"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
                 placeholder="e.g. Senior Therapist, Head Chef"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Photo URL (optional)</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Photo URL (optional)</label>
             <input
               type="url"
               value={form.photo_url}
               onChange={(e) => setForm({ ...form, photo_url: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               placeholder="https://..."
             />
           </div>
 
           {/* Bio */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Bio</label>
             <textarea
               value={form.bio}
               onChange={(e) => setForm({ ...form, bio: e.target.value })}
               rows={3}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               placeholder="Brief introduction for clients..."
               maxLength={1000}
             />
@@ -272,26 +272,26 @@ function StaffModal({
 
           {/* Specialty Tags */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Specialty Tags <span className="text-gray-400 font-normal">(comma-separated)</span>
+            <label className="block text-sm font-medium text-grey-75 mb-1">
+              Specialty Tags <span className="text-grey-45 font-normal">(comma-separated)</span>
             </label>
             <input
               type="text"
               value={form.specialty_tags}
               onChange={(e) => setForm({ ...form, specialty_tags: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               placeholder="e.g. Laser, Acne Treatment, Anti-ageing"
             />
           </div>
 
           {/* Credentials */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Credentials</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Credentials</label>
             <input
               type="text"
               value={form.credentials}
               onChange={(e) => setForm({ ...form, credentials: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               placeholder="e.g. MBBS, NUS Dermatology Cert"
               maxLength={500}
             />
@@ -304,9 +304,9 @@ function StaffModal({
               id="is_publicly_visible"
               checked={form.is_publicly_visible}
               onChange={(e) => setForm({ ...form, is_publicly_visible: e.target.checked })}
-              className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+              className="w-4 h-4 text-tone-sage rounded border-grey-30 focus:ring-tone-sage"
             />
-            <label htmlFor="is_publicly_visible" className="text-sm text-gray-700">
+            <label htmlFor="is_publicly_visible" className="text-sm text-grey-75">
               Show profile on public booking page
             </label>
           </div>
@@ -317,18 +317,18 @@ function StaffModal({
               id="any-available"
               checked={form.is_any_available}
               onChange={(e) => setForm({ ...form, is_any_available: e.target.checked })}
-              className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+              className="w-4 h-4 text-tone-sage rounded border-grey-30 focus:ring-tone-sage"
             />
-            <label htmlFor="any-available" className="text-sm text-gray-700">
+            <label htmlFor="any-available" className="text-sm text-grey-75">
               Available as &ldquo;Any available staff&rdquo;
             </label>
           </div>
 
           {/* Services multi-select */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Services</label>
+            <label className="block text-sm font-medium text-grey-75 mb-2">Assigned Services</label>
             {services.length === 0 ? (
-              <p className="text-sm text-gray-400 italic">No services available. Add services first.</p>
+              <p className="text-sm text-grey-45 italic">No services available. Add services first.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {services.map((s) => {
@@ -340,8 +340,8 @@ function StaffModal({
                       onClick={() => toggleService(s.id)}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                         selected
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                          ? 'bg-tone-ink text-white border-tone-ink'
+                          : 'bg-tone-surface text-grey-75 border-grey-30 hover:border-tone-sage'
                       }`}
                     >
                       {s.name}
@@ -354,7 +354,7 @@ function StaffModal({
 
           {/* Working hours grid */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Working Hours</label>
+            <label className="block text-sm font-medium text-grey-75 mb-2">Working Hours</label>
             <div className="space-y-2">
               {form.working_hours.map((wh) => (
                 <div key={wh.day_of_week} className="flex items-center gap-3">
@@ -363,9 +363,9 @@ function StaffModal({
                       type="checkbox"
                       checked={wh.is_working}
                       onChange={(e) => updateHour(wh.day_of_week, 'is_working', e.target.checked)}
-                      className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 flex-shrink-0"
+                      className="w-4 h-4 text-tone-sage rounded border-grey-30 focus:ring-tone-sage flex-shrink-0"
                     />
-                    <span className={`text-xs font-medium ${wh.is_working ? 'text-gray-900' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-medium ${wh.is_working ? 'text-tone-ink' : 'text-grey-45'}`}>
                       {DAYS[wh.day_of_week]?.slice(0, 3)}
                     </span>
                   </div>
@@ -374,15 +374,15 @@ function StaffModal({
                     value={wh.start_time}
                     disabled={!wh.is_working}
                     onChange={(e) => updateHour(wh.day_of_week, 'start_time', e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-40 disabled:bg-gray-50"
+                    className="rounded-lg border border-grey-30 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-tone-sage disabled:opacity-40 disabled:bg-grey-5"
                   />
-                  <span className="text-xs text-gray-400">to</span>
+                  <span className="text-xs text-grey-45">to</span>
                   <input
                     type="time"
                     value={wh.end_time}
                     disabled={!wh.is_working}
                     onChange={(e) => updateHour(wh.day_of_week, 'end_time', e.target.value)}
-                    className="rounded-lg border border-gray-300 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-40 disabled:bg-gray-50"
+                    className="rounded-lg border border-grey-30 px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-tone-sage disabled:opacity-40 disabled:bg-grey-5"
                   />
                 </div>
               ))}
@@ -390,10 +390,10 @@ function StaffModal({
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition-colors">
               {saving ? 'Saving...' : (initial ? 'Save Changes' : 'Add Staff')}
             </button>
           </div>
@@ -427,37 +427,37 @@ function StaffCard({
   const assignedServices = services.filter((s) => member.service_ids.includes(s.id));
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-5 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start gap-4 mb-3">
         {member.photoUrl ? (
           <img src={member.photoUrl} alt={member.name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
         ) : (
           <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-xl font-bold text-indigo-600">{member.name.charAt(0).toUpperCase()}</span>
+            <span className="text-xl font-bold text-tone-sage">{member.name.charAt(0).toUpperCase()}</span>
           </div>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900 truncate">{member.name}</h3>
-            <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${member.isActive ? 'bg-green-50 text-green-600 border-green-200' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>
+            <h3 className="font-semibold text-tone-ink truncate">{member.name}</h3>
+            <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${member.isActive ? 'bg-tone-sage/5 text-tone-sage border-tone-sage/30' : 'bg-grey-15 text-grey-45 border-grey-15'}`}>
               {member.isActive ? 'Active' : 'Inactive'}
             </span>
           </div>
           {member.title && (
-            <p className="text-sm text-gray-500 mt-0.5">{member.title}</p>
+            <p className="text-sm text-grey-60 mt-0.5">{member.title}</p>
           )}
           {member.isAnyAvailable && (
-            <p className="text-xs text-indigo-600 mt-1">Available as &ldquo;Any staff&rdquo;</p>
+            <p className="text-xs text-tone-sage mt-1">Available as &ldquo;Any staff&rdquo;</p>
           )}
           {/* Login badge / Create Login button */}
           {loginEmail ? (
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+              <span className="text-xs text-tone-sage bg-tone-sage/5 px-2 py-0.5 rounded-full border border-tone-sage/30">
                 Login: {loginEmail}
               </span>
               <button
                 onClick={onResetPassword}
-                className="text-xs text-gray-500 hover:text-gray-700 underline"
+                className="text-xs text-grey-60 hover:text-grey-75 underline"
               >
                 Reset Password
               </button>
@@ -465,7 +465,7 @@ function StaffCard({
           ) : (
             <button
               onClick={onCreateLogin}
-              className="mt-1 text-xs text-indigo-600 hover:text-indigo-700 underline"
+              className="mt-1 text-xs text-tone-sage hover:text-tone-sage underline"
             >
               + Create Login
             </button>
@@ -475,10 +475,10 @@ function StaffCard({
 
       {assignedServices.length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-gray-500 mb-1.5">Services</p>
+          <p className="text-xs text-grey-60 mb-1.5">Services</p>
           <div className="flex flex-wrap gap-1.5">
             {assignedServices.map((s) => (
-              <span key={s.id} className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs border border-indigo-200">
+              <span key={s.id} className="px-2 py-0.5 rounded-full bg-tone-sage/10 text-tone-sage text-xs border border-tone-sage/30">
                 {s.name}
               </span>
             ))}
@@ -487,13 +487,13 @@ function StaffCard({
       )}
 
       <div className="flex gap-2">
-        <button onClick={onEdit} className="flex-1 py-2 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onClick={onEdit} className="flex-1 py-2 rounded-lg border border-grey-30 text-xs font-medium text-grey-75 hover:bg-grey-5 transition-colors">
           Edit
         </button>
         <button
           onClick={onDelete}
           disabled={deleting || !member.isActive}
-          className="flex-1 py-2 rounded-lg border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 py-2 rounded-lg border border-semantic-danger/30 text-xs font-medium text-semantic-danger hover:bg-semantic-danger/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {deleting ? 'Removing...' : (member.isActive ? 'Deactivate' : 'Inactive')}
         </button>
@@ -591,12 +591,12 @@ export default function StaffPage() {
     <>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Staff</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{staffList.length} team member{staffList.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-tone-ink">Staff</h1>
+          <p className="text-sm text-grey-60 mt-0.5">{staffList.length} team member{staffList.length !== 1 ? 's' : ''}</p>
         </div>
         <button
           onClick={() => { setEditing(null); setModalOpen(true); }}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0"
+          className="flex items-center gap-2 rounded-xl bg-tone-ink px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-colors shadow-sm flex-shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -608,11 +608,11 @@ export default function StaffPage() {
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium mb-3">{error}</p>
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium mb-3">{error}</p>
           <button
             onClick={() => { setError(''); setLoading(true); fetchStaff().finally(() => setLoading(false)); }}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            className="px-4 py-2 rounded-lg bg-semantic-danger text-white text-sm font-medium hover:bg-semantic-danger transition-colors"
           >
             Retry
           </button>
@@ -620,11 +620,11 @@ export default function StaffPage() {
       )}
 
       {!loading && !error && staffList.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
           <div className="text-4xl mb-3">👥</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">No staff yet</h3>
-          <p className="text-sm text-gray-500 mb-4">Add your first staff member to start managing bookings.</p>
-          <button onClick={() => { setEditing(null); setModalOpen(true); }} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors">
+          <h3 className="text-lg font-semibold text-tone-ink mb-1">No staff yet</h3>
+          <p className="text-sm text-grey-60 mb-4">Add your first staff member to start managing bookings.</p>
+          <button onClick={() => { setEditing(null); setModalOpen(true); }} className="px-4 py-2 rounded-xl bg-tone-ink text-white text-sm font-semibold hover:opacity-90 transition-colors">
             Add Staff
           </button>
         </div>
@@ -662,35 +662,35 @@ export default function StaffPage() {
 
       {loginModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold">
               {staffLogins[loginModal.staffId] ? 'Reset Password' : 'Create Login'} — {loginModal.name}
             </h2>
             {!staffLogins[loginModal.staffId] && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Email</label>
                 <input
                   type="email"
                   value={loginForm.email}
                   onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-full border border-grey-30 rounded-lg px-3 py-2 text-sm"
                   placeholder="staff@example.com"
                 />
               </div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-grey-75 mb-1">
                 {staffLogins[loginModal.staffId] ? 'New Password' : 'Temporary Password'}
               </label>
               <input
                 type="password"
                 value={loginForm.password}
                 onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full border border-grey-30 rounded-lg px-3 py-2 text-sm"
                 placeholder="Minimum 8 characters"
               />
             </div>
-            {loginError && <p className="text-xs text-red-600">{loginError}</p>}
+            {loginError && <p className="text-xs text-semantic-danger">{loginError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={async () => {
@@ -713,11 +713,11 @@ export default function StaffPage() {
                     setLoginError(err instanceof Error ? err.message : 'Failed');
                   }
                 }}
-                className="flex-1 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700"
+                className="flex-1 py-2 bg-tone-ink text-white text-sm font-semibold rounded-lg hover:opacity-90"
               >
                 Save
               </button>
-              <button onClick={() => setLoginModal(null)} className="py-2 px-4 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg">Cancel</button>
+              <button onClick={() => setLoginModal(null)} className="py-2 px-4 bg-grey-15 text-grey-75 text-sm font-semibold rounded-lg">Cancel</button>
             </div>
           </div>
         </div>

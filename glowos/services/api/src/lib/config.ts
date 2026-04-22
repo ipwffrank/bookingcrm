@@ -33,5 +33,16 @@ export const config = {
 
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
 
+  // Comma-separated allowlist of emails granted superadmin at login.
+  // See docs/superpowers/specs/2026-04-22-superadmin-design.md.
+  superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;
+
+export function isSuperAdminEmail(email: string): boolean {
+  return config.superAdminEmails.includes(email.trim().toLowerCase());
+}

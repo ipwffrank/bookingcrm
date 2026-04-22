@@ -55,14 +55,14 @@ const CATEGORIES: { value: Category; label: string }[] = [
 ];
 
 const CATEGORY_COLORS: Record<Category, string> = {
-  hair:    'bg-pink-100 text-pink-700 border-pink-200',
-  nails:   'bg-purple-100 text-purple-700 border-purple-200',
-  face:    'bg-blue-100 text-blue-700 border-blue-200',
-  body:    'bg-green-100 text-green-700 border-green-200',
-  massage: 'bg-amber-100 text-amber-700 border-amber-200',
-  dining:  'bg-orange-100 text-orange-700 border-orange-200',
-  medical: 'bg-teal-100 text-teal-700 border-teal-200',
-  other:   'bg-gray-100 text-gray-600 border-gray-200',
+  hair:    'bg-grey-15 text-grey-75 border-grey-15',
+  nails:   'bg-grey-15 text-grey-75 border-grey-15',
+  face:    'bg-grey-15 text-tone-ink border-grey-15',
+  body:    'bg-tone-sage/10 text-tone-sage border-tone-sage/30',
+  massage: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30',
+  dining:  'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30',
+  medical: 'bg-grey-15 text-grey-75 border-grey-15',
+  other:   'bg-grey-15 text-grey-75 border-grey-15',
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-tone-sage/30 border-t-tone-ink rounded-full animate-spin" />
     </div>
   );
 }
@@ -195,33 +195,33 @@ function ServiceModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 z-10 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">
+      <div className="relative bg-tone-surface rounded-2xl shadow-2xl w-full max-w-lg p-6 z-10 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-tone-ink mb-4">
           {initial ? 'Edit Service' : 'Add Service'}
         </h2>
 
         {apiError && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+          <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">
             {apiError}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Service Name</label>
-            <input type="text" {...field('name')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. Balayage Treatment" />
-            {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+            <label className="block text-sm font-medium text-grey-75 mb-1">Service Name</label>
+            <input type="text" {...field('name')} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage" placeholder="e.g. Balayage Treatment" />
+            {errors.name && <p className="text-xs text-semantic-danger mt-1">{errors.name}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea {...field('description')} rows={2} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="Brief description of the service..." />
-            {errors.description && <p className="text-xs text-red-500 mt-1">{errors.description}</p>}
+            <label className="block text-sm font-medium text-grey-75 mb-1">Description</label>
+            <textarea {...field('description')} rows={2} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage resize-none" placeholder="Brief description of the service..." />
+            {errors.description && <p className="text-xs text-semantic-danger mt-1">{errors.description}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-            <select {...field('category')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+            <label className="block text-sm font-medium text-grey-75 mb-1">Category</label>
+            <select {...field('category')} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage">
               {CATEGORIES.map((c) => (
                 <option key={c.value} value={c.value}>{c.label}</option>
               ))}
@@ -230,17 +230,17 @@ function ServiceModal({
 
           {/* Booking Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Booking Type</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Booking Type</label>
             <select
               value={form.slot_type}
               onChange={(e) => setForm({ ...form, slot_type: e.target.value as 'standard' | 'consult' | 'treatment' })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
             >
               <option value="standard">Standard — book directly</option>
               <option value="consult">Consultation — assess client first</option>
               <option value="treatment">Treatment — requires prior consult</option>
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-grey-60 mt-1">
               &quot;Consultation&quot; slots let staff assess the client before recommending a treatment.
               &quot;Treatment&quot; slots can be linked to require a consult booking first.
             </p>
@@ -257,19 +257,19 @@ function ServiceModal({
                   onChange={(e) => setForm({ ...form, requires_consult_first: e.target.checked })}
                   className="w-4 h-4 rounded"
                 />
-                <label htmlFor="requires_consult_first" className="text-sm text-gray-700">
+                <label htmlFor="requires_consult_first" className="text-sm text-grey-75">
                   Require consultation booking before this treatment
                 </label>
               </div>
               {form.requires_consult_first && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-grey-75 mb-1">
                     Consultation service (optional)
                   </label>
                   <select
                     value={form.consult_service_id}
                     onChange={(e) => setForm({ ...form, consult_service_id: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
                   >
                     <option value="">— any consultation —</option>
                     {services
@@ -285,29 +285,29 @@ function ServiceModal({
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
-              <input type="number" min="1" {...field('duration_minutes')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-              {errors.duration_minutes && <p className="text-xs text-red-500 mt-1">{errors.duration_minutes}</p>}
+              <label className="block text-sm font-medium text-grey-75 mb-1">Duration (min)</label>
+              <input type="number" min="1" {...field('duration_minutes')} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage" />
+              {errors.duration_minutes && <p className="text-xs text-semantic-danger mt-1">{errors.duration_minutes}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Buffer (min)</label>
-              <input type="number" min="0" {...field('buffer_minutes')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-              {errors.buffer_minutes && <p className="text-xs text-red-500 mt-1">{errors.buffer_minutes}</p>}
+              <label className="block text-sm font-medium text-grey-75 mb-1">Buffer (min)</label>
+              <input type="number" min="0" {...field('buffer_minutes')} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage" />
+              {errors.buffer_minutes && <p className="text-xs text-semantic-danger mt-1">{errors.buffer_minutes}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Price (S$)</label>
-              <input type="number" min="0.01" step="0.01" {...field('price_sgd')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
-              {errors.price_sgd && <p className="text-xs text-red-500 mt-1">{errors.price_sgd}</p>}
+              <label className="block text-sm font-medium text-grey-75 mb-1">Price (S$)</label>
+              <input type="number" min="0.01" step="0.01" {...field('price_sgd')} className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage" placeholder="0.00" />
+              {errors.price_sgd && <p className="text-xs text-semantic-danger mt-1">{errors.price_sgd}</p>}
             </div>
           </div>
 
           {/* Discount */}
-          <div className="border-t border-gray-100 pt-4 mt-4">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Discount</h4>
+          <div className="border-t border-grey-5 pt-4 mt-4">
+            <h4 className="text-xs font-semibold text-grey-60 uppercase tracking-wide mb-3">Discount</h4>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Discount (%)</label>
+                <label className="block text-sm font-medium text-grey-75 mb-1">Discount (%)</label>
                 <input
                   type="number"
                   min="0"
@@ -315,7 +315,7 @@ function ServiceModal({
                   value={form.discount_pct}
                   onChange={e => setForm({ ...form, discount_pct: e.target.value })}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
                 />
               </div>
               <div className="flex items-end pb-2">
@@ -324,16 +324,16 @@ function ServiceModal({
                     type="checkbox"
                     checked={form.discount_show_online}
                     onChange={e => setForm({ ...form, discount_show_online: e.target.checked })}
-                    className="rounded border-gray-300 text-indigo-600"
+                    className="rounded border-grey-30 text-tone-sage"
                   />
-                  <span className="text-sm text-gray-700">Show on booking page</span>
+                  <span className="text-sm text-grey-75">Show on booking page</span>
                 </label>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">First-timer discount (%)</label>
+                <label className="block text-sm font-medium text-grey-75 mb-1">First-timer discount (%)</label>
                 <input
                   type="number"
                   min="0"
@@ -341,7 +341,7 @@ function ServiceModal({
                   value={form.first_timer_discount_pct}
                   onChange={e => setForm({ ...form, first_timer_discount_pct: e.target.value })}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
                 />
               </div>
               <div className="flex items-end pb-2">
@@ -350,19 +350,19 @@ function ServiceModal({
                     type="checkbox"
                     checked={form.first_timer_discount_enabled}
                     onChange={e => setForm({ ...form, first_timer_discount_enabled: e.target.checked })}
-                    className="rounded border-gray-300 text-indigo-600"
+                    className="rounded border-grey-30 text-tone-sage"
                   />
-                  <span className="text-sm text-gray-700">Enable for first-timers</span>
+                  <span className="text-sm text-grey-75">Enable for first-timers</span>
                 </label>
               </div>
             </div>
           </div>
 
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition-colors">
               {saving ? 'Saving...' : (initial ? 'Save Changes' : 'Add Service')}
             </button>
           </div>
@@ -434,12 +434,12 @@ export default function ServicesPage() {
     <>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Services</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{services.length} service{services.length !== 1 ? 's' : ''} configured</p>
+          <h1 className="text-2xl font-bold text-tone-ink">Services</h1>
+          <p className="text-sm text-grey-60 mt-0.5">{services.length} service{services.length !== 1 ? 's' : ''} configured</p>
         </div>
         <button
           onClick={() => { setEditing(null); setModalOpen(true); }}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0"
+          className="flex items-center gap-2 rounded-xl bg-tone-ink px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-colors shadow-sm flex-shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -451,20 +451,20 @@ export default function ServicesPage() {
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium mb-3">{error}</p>
-          <button onClick={() => { setError(''); setLoading(true); fetchServices().finally(() => setLoading(false)); }} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors">
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium mb-3">{error}</p>
+          <button onClick={() => { setError(''); setLoading(true); fetchServices().finally(() => setLoading(false)); }} className="px-4 py-2 rounded-lg bg-semantic-danger text-white text-sm font-medium hover:bg-semantic-danger transition-colors">
             Retry
           </button>
         </div>
       )}
 
       {!loading && !error && services.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
           <div className="text-4xl mb-3">✂️</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">No services yet</h3>
-          <p className="text-sm text-gray-500 mb-4">Add your first service to start accepting bookings.</p>
-          <button onClick={() => { setEditing(null); setModalOpen(true); }} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors">
+          <h3 className="text-lg font-semibold text-tone-ink mb-1">No services yet</h3>
+          <p className="text-sm text-grey-60 mb-4">Add your first service to start accepting bookings.</p>
+          <button onClick={() => { setEditing(null); setModalOpen(true); }} className="px-4 py-2 rounded-xl bg-tone-ink text-white text-sm font-semibold hover:opacity-90 transition-colors">
             Add Service
           </button>
         </div>
@@ -473,48 +473,48 @@ export default function ServicesPage() {
       {!loading && !error && services.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {services.map((service) => (
-            <div key={service.id} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+            <div key={service.id} className="bg-tone-surface rounded-xl border border-grey-15 p-5 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-gray-900 truncate">{service.name}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{service.description}</p>
+                  <h3 className="font-semibold text-tone-ink truncate">{service.name}</h3>
+                  <p className="text-xs text-grey-60 mt-0.5 line-clamp-2">{service.description}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${CATEGORY_COLORS[service.category]}`}>
                     {service.category}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${service.isActive ? 'bg-green-50 text-green-600 border-green-200' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${service.isActive ? 'bg-tone-sage/5 text-tone-sage border-tone-sage/30' : 'bg-grey-15 text-grey-45 border-grey-15'}`}>
                     {service.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="bg-gray-50 rounded-lg p-2 text-center">
-                  <p className="text-xs text-gray-500">Duration</p>
-                  <p className="text-sm font-semibold text-gray-900">{service.durationMinutes}m</p>
+                <div className="bg-grey-5 rounded-lg p-2 text-center">
+                  <p className="text-xs text-grey-60">Duration</p>
+                  <p className="text-sm font-semibold text-tone-ink">{service.durationMinutes}m</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-2 text-center">
-                  <p className="text-xs text-gray-500">Buffer</p>
-                  <p className="text-sm font-semibold text-gray-900">{service.bufferMinutes}m</p>
+                <div className="bg-grey-5 rounded-lg p-2 text-center">
+                  <p className="text-xs text-grey-60">Buffer</p>
+                  <p className="text-sm font-semibold text-tone-ink">{service.bufferMinutes}m</p>
                 </div>
-                <div className="bg-indigo-50 rounded-lg p-2 text-center">
-                  <p className="text-xs text-indigo-500">Price</p>
-                  <p className="text-sm font-bold text-indigo-700">S${parseFloat(service.priceSgd).toFixed(2)}</p>
+                <div className="bg-tone-sage/10 rounded-lg p-2 text-center">
+                  <p className="text-xs text-tone-sage">Price</p>
+                  <p className="text-sm font-bold text-tone-sage">S${parseFloat(service.priceSgd).toFixed(2)}</p>
                 </div>
               </div>
 
               <div className="flex gap-2">
                 <button
                   onClick={() => { setEditing(service); setModalOpen(true); }}
-                  className="flex-1 py-2 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  className="flex-1 py-2 rounded-lg border border-grey-30 text-xs font-medium text-grey-75 hover:bg-grey-5 transition-colors"
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(service.id)}
                   disabled={deleting === service.id || !service.isActive}
-                  className="flex-1 py-2 rounded-lg border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 py-2 rounded-lg border border-semantic-danger/30 text-xs font-medium text-semantic-danger hover:bg-semantic-danger/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {deleting === service.id ? 'Removing...' : (service.isActive ? 'Deactivate' : 'Inactive')}
                 </button>

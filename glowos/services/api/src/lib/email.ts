@@ -106,6 +106,29 @@ export function postServiceReceiptEmail(params: {
   </body></html>`;
 }
 
+export function passwordResetEmail(params: {
+  name: string;
+  resetUrl: string;
+  expiryMinutes: number;
+}): string {
+  const { name, resetUrl, expiryMinutes } = params;
+  return `<!DOCTYPE html><html><body style="${baseStyle}">
+    <div style="${cardStyle}">
+      <div style="${headerStyle}">
+        <p style="color:#c4a778;font-size:12px;letter-spacing:2px;margin:0 0 4px;text-transform:uppercase">Reset your password</p>
+        <h1 style="color:#fff;margin:0;font-size:22px">GlowOS</h1>
+      </div>
+      <div style="${bodyStyle}">
+        <p style="margin:0 0 16px">Hi ${name},</p>
+        <p style="margin:0 0 20px;color:#555">We received a request to reset your password. Click the button below to set a new one. This link expires in ${expiryMinutes} minutes.</p>
+        <div style="text-align:center"><a href="${resetUrl}" style="${btnStyle}">Reset password →</a></div>
+        <p style="margin-top:24px;font-size:12px;color:#888">If you didn't request this, you can safely ignore this email — your password will not change.</p>
+        <p style="margin-top:12px;font-size:12px;color:#aaa;word-break:break-all">Or paste this URL into your browser:<br>${resetUrl}</p>
+      </div>
+    </div>
+  </body></html>`;
+}
+
 export function rebookCtaEmail(params: {
   clientName: string;
   merchantName: string;

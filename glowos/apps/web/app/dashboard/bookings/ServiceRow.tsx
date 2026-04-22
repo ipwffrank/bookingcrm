@@ -114,12 +114,12 @@ export function ServiceRow({
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 p-3 space-y-2 bg-gray-50">
+    <div className="rounded-xl border border-grey-15 p-3 space-y-2 bg-grey-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select
           value={row.serviceId}
           onChange={(e) => handleServiceChange(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         >
           <option value="">Select service...</option>
           {services.map((s) => (
@@ -129,7 +129,7 @@ export function ServiceRow({
         <select
           value={row.staffId}
           onChange={(e) => onChange({ staffId: e.target.value })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         >
           <option value="">Select staff...</option>
           {staff.map((s) => {
@@ -149,7 +149,7 @@ export function ServiceRow({
           type="datetime-local"
           value={toLocalInput(row.startTime)}
           onChange={(e) => onChange({ startTime: new Date(e.target.value).toISOString() })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         />
         <input
           type="number"
@@ -157,11 +157,11 @@ export function ServiceRow({
           min="0"
           value={row.priceSgd}
           onChange={(e) => onChange({ priceSgd: e.target.value, priceTouched: true })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         />
       </div>
       {selectedBusyUntil !== null && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-semantic-warn">
           ⚠ Selected staff is busy until {fmtTime(selectedBusyUntil)}.
         </p>
       )}
@@ -174,8 +174,8 @@ export function ServiceRow({
               disabled={Boolean(row.useNewPackage)}
               className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
                 row.usePackage
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                  ? 'bg-tone-ink text-white border-tone-ink'
+                  : 'bg-tone-surface text-tone-sage border-tone-sage/30 hover:bg-tone-sage/10'
               }`}
             >
               {row.usePackage ? '✓ Using package' : 'Use package'}
@@ -203,8 +203,8 @@ export function ServiceRow({
               disabled={!canToggleNewPackage}
               className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
                 row.useNewPackage
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                  ? 'bg-tone-sage text-white border-tone-sage'
+                  : 'bg-tone-surface text-tone-sage border-tone-sage/30 hover:bg-tone-sage/5'
               }`}
             >
               {row.useNewPackage
@@ -219,13 +219,13 @@ export function ServiceRow({
           type="button"
           onClick={onRemove}
           disabled={!canRemove}
-          className="text-sm text-red-600 disabled:opacity-30"
+          className="text-sm text-semantic-danger disabled:opacity-30"
           aria-label="Remove service"
         >
           ×
         </button>
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-semantic-danger">{error}</p>}
     </div>
   );
 }

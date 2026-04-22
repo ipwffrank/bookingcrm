@@ -52,11 +52,11 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
     data = await apiFetch(`/booking/${slug}`, { cache: 'no-store' });
   } catch {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-grey-5 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="text-6xl mb-4">🔍</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Business not found</h1>
-          <p className="text-gray-500">
+          <h1 className="text-2xl font-bold text-tone-ink mb-2">Business not found</h1>
+          <p className="text-grey-60">
             We couldn&apos;t find a business at this address. Double-check the link and try again.
           </p>
         </div>
@@ -67,9 +67,9 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
   const { merchant, services, staff } = data;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-grey-5">
       {/* Business Header */}
-      <div className="bg-white border-b border-gray-100">
+      <div className="bg-tone-surface border-b border-grey-5">
         {merchant.coverPhotoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -85,16 +85,16 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
               <img
                 src={merchant.logoUrl}
                 alt={merchant.name}
-                className="w-16 h-16 rounded-xl object-cover border border-gray-100 shadow-sm flex-shrink-0"
+                className="w-16 h-16 rounded-xl object-cover border border-grey-5 shadow-sm flex-shrink-0"
               />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+              <div className="w-16 h-16 rounded-xl bg-tone-ink flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
                 {merchant.name.charAt(0)}
               </div>
             )}
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{merchant.name}</h1>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-sm text-gray-500">
+              <h1 className="text-2xl font-bold text-tone-ink">{merchant.name}</h1>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-sm text-grey-60">
                 <span>⭐</span>
                 <span className="capitalize">Service Business</span>
                 {merchant.addressLine1 && (
@@ -108,7 +108,7 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
                 )}
               </div>
               {merchant.description && (
-                <p className="text-sm text-gray-600 mt-2 leading-relaxed">{merchant.description}</p>
+                <p className="text-sm text-grey-75 mt-2 leading-relaxed">{merchant.description}</p>
               )}
             </div>
           </div>

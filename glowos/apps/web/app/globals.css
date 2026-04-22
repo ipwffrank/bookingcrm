@@ -19,6 +19,33 @@
   --color-surface-container-highest: #e4e3d8;
   --color-outline-variant: #c6c7be;
   --color-outline: #767870;
+
+  /* ─── Dashboard palette (Session 19 — 3-tone + semantic pair) ───────────
+     See docs/superpowers/specs/2026-04-22-palette-hierarchy-redesign.md
+     Restricted palette for admin + staff dashboards. Booking widget and
+     landing page are out of scope for this system.
+   ─────────────────────────────────────────────────────────────────────── */
+
+  /* 3 tones — aligned with the landing page brand system (see app/page.tsx).
+     Ink matches `--color-primary`; surface-warm matches `--color-surface`;
+     sage matches `--color-secondary` (muted teal, not green). */
+  --color-tone-ink: #1a2313;
+  --color-tone-surface: #ffffff;
+  --color-tone-surface-warm: #fcfaef;
+  --color-tone-sage: #456466;
+
+  /* 2 semantic signals — reserved for genuinely critical state */
+  --color-semantic-danger: #b8403a;
+  --color-semantic-warn: #c48a2f;
+
+  /* Grey ramp — identity/variety without hue. Opacity variants of ink. */
+  --color-grey-5: color-mix(in srgb, #1a2313 5%, #ffffff);
+  --color-grey-15: color-mix(in srgb, #1a2313 15%, #ffffff);
+  --color-grey-30: color-mix(in srgb, #1a2313 30%, #ffffff);
+  --color-grey-45: color-mix(in srgb, #1a2313 45%, #ffffff);
+  --color-grey-60: color-mix(in srgb, #1a2313 60%, #ffffff);
+  --color-grey-75: color-mix(in srgb, #1a2313 75%, #ffffff);
+  --color-grey-90: color-mix(in srgb, #1a2313 90%, #ffffff);
   /* Font families — consolidated two-font system
      Display (serif):  Cormorant Garamond  →  font-serif  (class: font-serif)
      Body (sans):      Manrope             →  font-sans   (class: font-sans)
@@ -89,6 +116,57 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.2em;
+}
+
+/* ─── Dashboard state utilities (Session 19) ──────────────────────────────
+ *  Typographic encoding of booking/item state. Replaces colored status pills.
+ *  Apply to the text node directly — no wrapping pill needed.
+ *  See: docs/superpowers/specs/2026-04-22-palette-hierarchy-redesign.md
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.state-default {
+  font-weight: 500;
+  color: var(--color-tone-ink);
+}
+
+.state-active {
+  font-weight: 600;
+  color: var(--color-tone-ink);
+}
+
+.state-notified {
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  color: var(--color-semantic-warn);
+}
+
+.state-completed {
+  font-weight: 400;
+  color: var(--color-grey-60);
+}
+
+.state-cancelled {
+  font-weight: 400;
+  text-decoration: line-through;
+  color: var(--color-grey-45);
+}
+
+.state-no-show {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-semantic-danger);
+}
+
+.state-urgent {
+  font-weight: 600;
+  font-style: italic;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-semantic-warn);
 }
 
 /* ─── Scroll-triggered animations ────────────────────────────────────────── */

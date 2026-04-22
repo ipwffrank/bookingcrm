@@ -33,18 +33,18 @@ export function EditHistoryPanel({ bookingId }: { bookingId: string }) {
       <button
         type="button"
         onClick={toggle}
-        className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+        className="text-xs font-medium text-tone-sage hover:text-tone-sage"
       >
         {open ? 'Hide history' : 'View history'}
       </button>
       {open && rows && (
-        <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs space-y-1">
+        <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-grey-15 bg-grey-5 p-2 text-xs space-y-1">
           {rows.length === 0 ? (
-            <p className="text-gray-500">No edits yet.</p>
+            <p className="text-grey-60">No edits yet.</p>
           ) : (
             rows.map((e) => (
               <div key={e.id} className="flex items-baseline gap-2">
-                <span className="text-gray-400">
+                <span className="text-grey-45">
                   {new Date(e.createdAt).toLocaleString('en-SG')}
                 </span>
                 <span className="font-medium">{e.editedByRole}</span>

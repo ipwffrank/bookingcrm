@@ -59,10 +59,10 @@ export default function StaffDashboard() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <h1 className="text-lg font-semibold mb-1 text-gray-900">
+      <h1 className="text-lg font-semibold mb-1 text-tone-ink">
         Hi {today?.staffName ?? ''}
       </h1>
-      <p className="text-xs text-gray-500 mb-4">Your contribution at a glance.</p>
+      <p className="text-xs text-grey-60 mb-4">Your contribution at a glance.</p>
 
       {!showCollapsed && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -87,8 +87,8 @@ export default function StaffDashboard() {
               onClick={() => pickPeriod(p)}
               className={`px-2.5 py-1 text-xs font-medium rounded-full border ${
                 selected
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                  ? 'bg-tone-ink text-white border-tone-ink'
+                  : 'bg-tone-surface text-grey-75 border-grey-15 hover:bg-grey-5'
               }`}
             >
               {PERIOD_LABEL[p]}
@@ -98,10 +98,10 @@ export default function StaffDashboard() {
       </div>
 
       <div className="space-y-2">
-        <Link href="/staff/bookings" className="block text-sm text-indigo-600 hover:underline">
+        <Link href="/staff/bookings" className="block text-sm text-tone-sage hover:underline">
           &#8594; Your upcoming bookings
         </Link>
-        <Link href="/staff/clients" className="block text-sm text-indigo-600 hover:underline">
+        <Link href="/staff/clients" className="block text-sm text-tone-sage hover:underline">
           &#8594; Your clients
         </Link>
       </div>
@@ -111,13 +111,13 @@ export default function StaffDashboard() {
 
 function ContributionCard({ title, c }: { title: string; c: Contribution | null }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <p className="text-xs font-medium text-gray-500 mb-0.5">{title}</p>
-      <p className="text-2xl font-bold text-gray-900">
+    <div className="bg-tone-surface border border-grey-15 rounded-xl p-4">
+      <p className="text-xs font-medium text-grey-60 mb-0.5">{title}</p>
+      <p className="text-2xl font-bold text-tone-ink">
         {c ? `S$${Number(c.total).toFixed(2)}` : '—'}
       </p>
       {c && (
-        <div className="mt-2 space-y-0.5 text-xs text-gray-600">
+        <div className="mt-2 space-y-0.5 text-xs text-grey-75">
           <div className="flex justify-between"><span>Services</span><span className="tabular-nums">S${Number(c.servicesDelivered).toFixed(2)}</span></div>
           <div className="flex justify-between"><span>Packages</span><span className="tabular-nums">S${Number(c.packagesSold).toFixed(2)}</span></div>
         </div>

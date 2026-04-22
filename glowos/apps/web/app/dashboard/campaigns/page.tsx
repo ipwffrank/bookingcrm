@@ -130,10 +130,10 @@ const CAMPAIGN_TYPES: {
 ];
 
 const STATUS_CONFIG: Record<CampaignStatus, { label: string; className: string }> = {
-  draft:     { label: 'Draft',     className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  scheduled: { label: 'Scheduled', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-  sent:      { label: 'Sent',      className: 'bg-green-100 text-green-700 border-green-200' },
-  completed: { label: 'Completed', className: 'bg-purple-100 text-purple-700 border-purple-200' },
+  draft:     { label: 'Draft',     className: 'bg-grey-15 text-grey-75 border-grey-15' },
+  scheduled: { label: 'Scheduled', className: 'bg-grey-15 text-tone-ink border-grey-15' },
+  sent:      { label: 'Sent',      className: 'bg-tone-sage/10 text-tone-sage border-tone-sage/30' },
+  completed: { label: 'Completed', className: 'bg-grey-15 text-grey-75 border-grey-15' },
 };
 
 const TYPE_LABELS: Record<CampaignType, string> = {
@@ -180,13 +180,13 @@ function pct(numerator: number, denominator: number): string {
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-tone-sage/30 border-t-tone-ink rounded-full animate-spin" />
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: CampaignStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, className: 'bg-gray-100 text-gray-600 border-gray-200' };
+  const cfg = STATUS_CONFIG[status] ?? { label: status, className: 'bg-grey-15 text-grey-75 border-grey-15' };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.className}`}>
       {cfg.label}
@@ -197,7 +197,7 @@ function StatusBadge({ status }: { status: CampaignStatus }) {
 function TypeBadge({ type }: { type: CampaignType }) {
   const typeInfo = CAMPAIGN_TYPES.find((t) => t.value === type);
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-tone-sage/10 text-tone-sage border border-tone-sage/30">
       {typeInfo?.emoji} {TYPE_LABELS[type]}
     </span>
   );
@@ -325,13 +325,13 @@ function CreateCampaignModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-10">
+      <div className="relative bg-tone-surface rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-10">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
-          <h2 className="text-lg font-bold text-gray-900">Create Campaign</h2>
+        <div className="sticky top-0 bg-tone-surface border-b border-grey-5 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+          <h2 className="text-lg font-bold text-tone-ink">Create Campaign</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -341,26 +341,26 @@ function CreateCampaignModal({
 
         <div className="p-6 space-y-6">
           {apiError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+            <div className="rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">
               {apiError}
             </div>
           )}
 
           {/* Campaign Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Campaign Name</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               placeholder="e.g. April Win-back Campaign"
             />
           </div>
 
           {/* Campaign Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Campaign Type</label>
+            <label className="block text-sm font-medium text-grey-75 mb-2">Campaign Type</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {CAMPAIGN_TYPES.map((t) => (
                 <button
@@ -369,13 +369,13 @@ function CreateCampaignModal({
                   onClick={() => handleTypeSelect(t.value)}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     form.type === t.value
-                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
-                      : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
+                      ? 'border-tone-sage bg-tone-sage/10 ring-1 ring-tone-sage'
+                      : 'border-grey-15 hover:border-tone-sage/50 hover:bg-grey-5'
                   }`}
                 >
                   <div className="text-xl mb-1">{t.emoji}</div>
-                  <div className="text-sm font-medium text-gray-900">{t.label}</div>
-                  <div className="text-xs text-gray-500 mt-0.5 leading-tight">{t.description}</div>
+                  <div className="text-sm font-medium text-tone-ink">{t.label}</div>
+                  <div className="text-xs text-grey-60 mt-0.5 leading-tight">{t.description}</div>
                 </button>
               ))}
             </div>
@@ -383,11 +383,11 @@ function CreateCampaignModal({
 
           {/* Audience Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Audience Filter</label>
-            <div className="rounded-xl border border-gray-200 p-4 space-y-4 bg-gray-50">
+            <label className="block text-sm font-medium text-grey-75 mb-2">Audience Filter</label>
+            <div className="rounded-xl border border-grey-15 p-4 space-y-4 bg-grey-5">
               {/* VIP Tiers */}
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">VIP Tier</p>
+                <p className="text-xs font-medium text-grey-75 mb-2">VIP Tier</p>
                 <div className="flex flex-wrap gap-2">
                   {VIP_TIERS.map((tier) => (
                     <button
@@ -396,8 +396,8 @@ function CreateCampaignModal({
                       onClick={() => toggleVipTier(tier)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                         form.vip_tiers.includes(tier)
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                          ? 'bg-tone-ink text-white border-tone-ink'
+                          : 'bg-tone-surface text-grey-75 border-grey-30 hover:border-tone-sage'
                       }`}
                     >
                       {tier.charAt(0).toUpperCase() + tier.slice(1)}
@@ -405,13 +405,13 @@ function CreateCampaignModal({
                   ))}
                 </div>
                 {form.vip_tiers.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">No filter — all tiers included</p>
+                  <p className="text-xs text-grey-45 mt-1">No filter — all tiers included</p>
                 )}
               </div>
 
               {/* Overdue Days */}
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">
+                <p className="text-xs font-medium text-grey-75 mb-1">
                   Overdue (days since last visit)
                 </p>
                 <div className="flex items-center gap-3">
@@ -430,12 +430,12 @@ function CreateCampaignModal({
                       min="1"
                       value={form.overdue_days}
                       onChange={(e) => setForm({ ...form, overdue_days: e.target.value })}
-                      className="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full rounded-lg border border-grey-30 px-2 py-1 text-sm text-center outline-none focus:ring-2 focus:ring-tone-sage"
                     />
                   </div>
-                  <span className="text-xs text-gray-500">days</span>
+                  <span className="text-xs text-grey-60">days</span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-grey-45 mt-1">
                   Set to 0 to disable overdue filter
                 </p>
               </div>
@@ -445,11 +445,11 @@ function CreateCampaignModal({
           {/* Message Template */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">Message Template</label>
+              <label className="block text-sm font-medium text-grey-75">Message Template</label>
               <button
                 type="button"
                 onClick={generateTemplate}
-                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                className="text-xs text-tone-sage hover:text-tone-sage font-medium"
               >
                 Generate from type
               </button>
@@ -458,21 +458,21 @@ function CreateCampaignModal({
               value={form.message_template}
               onChange={(e) => setForm({ ...form, message_template: e.target.value })}
               rows={4}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage resize-none"
               placeholder="Write your message..."
             />
-            <p className="text-xs text-gray-400 mt-1">
-              Variables: <code className="bg-gray-100 px-1 rounded">{'{first_name}'}</code>{' '}
-              <code className="bg-gray-100 px-1 rounded">{'{last_service}'}</code>{' '}
-              <code className="bg-gray-100 px-1 rounded">{'{merchant_name}'}</code>
+            <p className="text-xs text-grey-45 mt-1">
+              Variables: <code className="bg-grey-15 px-1 rounded">{'{first_name}'}</code>{' '}
+              <code className="bg-grey-15 px-1 rounded">{'{last_service}'}</code>{' '}
+              <code className="bg-grey-15 px-1 rounded">{'{merchant_name}'}</code>
             </p>
 
             {/* Preview */}
             {form.message_template && (
-              <div className="mt-3 rounded-xl bg-green-50 border border-green-200 p-3">
-                <p className="text-xs font-medium text-green-700 mb-1">Preview</p>
-                <div className="bg-white rounded-lg p-3 shadow-sm">
-                  <p className="text-sm text-gray-800 leading-relaxed">
+              <div className="mt-3 rounded-xl bg-tone-sage/5 border border-tone-sage/30 p-3">
+                <p className="text-xs font-medium text-tone-sage mb-1">Preview</p>
+                <div className="bg-tone-surface rounded-lg p-3 shadow-sm">
+                  <p className="text-sm text-grey-90 leading-relaxed">
                     {form.message_template
                       .replace('{first_name}', 'Sarah')
                       .replace('{last_service}', 'Gel Manicure')
@@ -486,29 +486,29 @@ function CreateCampaignModal({
 
           {/* Promo Code */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Promo Code <span className="text-gray-400 font-normal">(optional)</span>
+            <label className="block text-sm font-medium text-grey-75 mb-1">
+              Promo Code <span className="text-grey-45 font-normal">(optional)</span>
             </label>
             <input
               type="text"
               value={form.promo_code}
               onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage font-mono"
               placeholder="e.g. WELCOME10"
             />
           </div>
 
           {/* Schedule */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Schedule</label>
+            <label className="block text-sm font-medium text-grey-75 mb-2">Schedule</label>
             <div className="flex gap-3 mb-3">
               <button
                 type="button"
                 onClick={() => setForm({ ...form, schedule_type: 'now' })}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                   form.schedule_type === 'now'
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                    ? 'bg-tone-ink text-white border-tone-ink'
+                    : 'bg-tone-surface text-grey-75 border-grey-30 hover:border-tone-sage'
                 }`}
               >
                 Send Now
@@ -518,8 +518,8 @@ function CreateCampaignModal({
                 onClick={() => setForm({ ...form, schedule_type: 'later' })}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                   form.schedule_type === 'later'
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-400'
+                    ? 'bg-tone-ink text-white border-tone-ink'
+                    : 'bg-tone-surface text-grey-75 border-grey-30 hover:border-tone-sage'
                 }`}
               >
                 Schedule
@@ -530,7 +530,7 @@ function CreateCampaignModal({
                 type="datetime-local"
                 value={form.scheduled_at}
                 onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
               />
             )}
           </div>
@@ -540,7 +540,7 @@ function CreateCampaignModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5 transition-colors"
             >
               Cancel
             </button>
@@ -549,7 +549,7 @@ function CreateCampaignModal({
                 type="button"
                 onClick={() => handleSend(false)}
                 disabled={saving}
-                className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition-colors"
               >
                 {saving ? 'Scheduling...' : 'Schedule Campaign'}
               </button>
@@ -558,7 +558,7 @@ function CreateCampaignModal({
                 type="button"
                 onClick={() => handleSend(true)}
                 disabled={saving}
-                className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60 transition-colors"
               >
                 {saving ? 'Sending...' : 'Send Campaign'}
               </button>
@@ -620,10 +620,10 @@ function CampaignResults({
   }, [campaign.id, router]);
 
   const funnelSteps = [
-    { label: 'Sent', value: stats.sent, color: 'bg-indigo-500' },
-    { label: 'Delivered', value: stats.delivered, color: 'bg-blue-500' },
-    { label: 'Clicked', value: stats.clicked, color: 'bg-green-500' },
-    { label: 'Converted', value: stats.converted, color: 'bg-purple-500' },
+    { label: 'Sent', value: stats.sent, color: 'bg-tone-ink' },
+    { label: 'Delivered', value: stats.delivered, color: 'bg-grey-75' },
+    { label: 'Clicked', value: stats.clicked, color: 'bg-tone-sage' },
+    { label: 'Converted', value: stats.converted, color: 'bg-grey-75' },
   ];
   const maxVal = Math.max(stats.sent, 1);
 
@@ -633,7 +633,7 @@ function CampaignResults({
       <div className="mb-6 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-grey-60 hover:text-grey-75 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -644,21 +644,21 @@ function CampaignResults({
 
       <div className="mb-6">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
+          <h1 className="text-2xl font-bold text-tone-ink">{campaign.name}</h1>
           <TypeBadge type={campaign.type} />
           <StatusBadge status={campaign.status} />
         </div>
-        <p className="text-sm text-gray-500 mt-1">Sent {formatDateTime(campaign.sentAt)}</p>
+        <p className="text-sm text-grey-60 mt-1">Sent {formatDateTime(campaign.sentAt)}</p>
       </div>
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         {[
-          { label: 'Sent',       value: stats.sent,              color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
-          { label: 'Delivered',  value: stats.delivered,         color: 'text-blue-600 bg-blue-50 border-blue-200' },
-          { label: 'Clicked',    value: stats.clicked,           color: 'text-green-600 bg-green-50 border-green-200' },
-          { label: 'Converted',  value: stats.converted,         color: 'text-purple-600 bg-purple-50 border-purple-200' },
-          { label: 'Revenue',    value: `S$${stats.revenueAttributed.toFixed(2)}`, color: 'text-amber-600 bg-amber-50 border-amber-200' },
+          { label: 'Sent',       value: stats.sent,              color: 'text-tone-sage bg-tone-sage/10 border-tone-sage/30' },
+          { label: 'Delivered',  value: stats.delivered,         color: 'text-tone-ink bg-grey-5 border-grey-15' },
+          { label: 'Clicked',    value: stats.clicked,           color: 'text-tone-sage bg-tone-sage/5 border-tone-sage/30' },
+          { label: 'Converted',  value: stats.converted,         color: 'text-grey-75 bg-grey-5 border-grey-15' },
+          { label: 'Revenue',    value: `S$${stats.revenueAttributed.toFixed(2)}`, color: 'text-semantic-warn bg-semantic-warn/5 border-semantic-warn/30' },
         ].map((s) => (
           <div key={s.label} className={`rounded-xl border p-4 ${s.color}`}>
             <p className="text-2xl font-bold">{s.value}</p>
@@ -668,18 +668,18 @@ function CampaignResults({
       </div>
 
       {/* Conversion Funnel */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">Conversion Funnel</h3>
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5 mb-6">
+        <h3 className="text-sm font-semibold text-grey-75 mb-4">Conversion Funnel</h3>
         <div className="space-y-3">
           {funnelSteps.map((step) => (
             <div key={step.label}>
               <div className="flex items-center justify-between text-xs mb-1">
-                <span className="font-medium text-gray-600">{step.label}</span>
-                <span className="text-gray-500">
+                <span className="font-medium text-grey-75">{step.label}</span>
+                <span className="text-grey-60">
                   {step.value} ({pct(step.value, stats.sent)})
                 </span>
               </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-3 bg-grey-15 rounded-full overflow-hidden">
                 <div
                   className={`h-full ${step.color} rounded-full transition-all duration-700`}
                   style={{ width: `${(step.value / maxVal) * 100}%` }}
@@ -694,46 +694,46 @@ function CampaignResults({
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium">{error}</p>
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium">{error}</p>
         </div>
       )}
 
       {!loading && !error && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-700">Recipients</h3>
+        <div className="bg-tone-surface rounded-xl border border-grey-15 overflow-hidden">
+          <div className="px-5 py-3 border-b border-grey-5">
+            <h3 className="text-sm font-semibold text-grey-75">Recipients</h3>
           </div>
           {messages.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 text-sm">No messages sent yet</div>
+            <div className="p-8 text-center text-grey-45 text-sm">No messages sent yet</div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-grey-5">
               {messages.map((m) => (
                 <div key={m.message.id} className="px-5 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                    <p className="text-sm font-medium text-tone-ink truncate">
                       {m.client.name ?? 'Unknown'}
                     </p>
-                    <p className="text-xs text-gray-400">{m.client.phone}</p>
+                    <p className="text-xs text-grey-45">{m.client.phone}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {m.message.convertedAt && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-grey-15 text-grey-75 border border-grey-15">
                         Converted
                       </span>
                     )}
                     {!m.message.convertedAt && m.message.clickedAt && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-tone-sage/10 text-tone-sage border border-tone-sage/30">
                         Clicked
                       </span>
                     )}
                     {!m.message.clickedAt && m.message.deliveredAt && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-grey-15 text-tone-ink border border-grey-15">
                         Delivered
                       </span>
                     )}
                     {!m.message.deliveredAt && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-grey-15 text-grey-75 border border-grey-15">
                         {m.message.status}
                       </span>
                     )}
@@ -761,7 +761,7 @@ function CampaignRow({
 
   return (
     <div
-      className={`bg-white rounded-xl border border-gray-200 p-4 shadow-sm transition-shadow ${
+      className={`bg-tone-surface rounded-xl border border-grey-15 p-4 shadow-sm transition-shadow ${
         canView ? 'hover:shadow-md cursor-pointer' : ''
       }`}
       onClick={canView ? () => onView(campaign) : undefined}
@@ -769,11 +769,11 @@ function CampaignRow({
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <span className="text-base font-semibold text-gray-900 truncate">{campaign.name}</span>
+            <span className="text-base font-semibold text-tone-ink truncate">{campaign.name}</span>
             <TypeBadge type={campaign.type} />
             <StatusBadge status={campaign.status} />
           </div>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-grey-45">
             {campaign.sentAt
               ? `Sent ${formatDate(campaign.sentAt)}`
               : campaign.scheduledAt
@@ -792,12 +792,12 @@ function CampaignRow({
               { label: 'Converted',  value: campaign.convertedCount ?? 0 },
             ].map((s) => (
               <div key={s.label} className="hidden sm:block">
-                <p className="text-sm font-semibold text-gray-900">{s.value}</p>
-                <p className="text-xs text-gray-400">{s.label}</p>
+                <p className="text-sm font-semibold text-tone-ink">{s.value}</p>
+                <p className="text-xs text-grey-45">{s.label}</p>
               </div>
             ))}
             <div className="flex items-center">
-              <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className="w-4 h-4 text-grey-30" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
               </svg>
             </div>
@@ -876,14 +876,14 @@ export default function CampaignsPage() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-2xl font-bold text-tone-ink">Campaigns</h1>
+          <p className="text-sm text-grey-60 mt-0.5">
             Reach your clients with targeted WhatsApp messages
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0"
+          className="flex items-center gap-2 rounded-xl bg-tone-ink px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-colors shadow-sm flex-shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -895,9 +895,9 @@ export default function CampaignsPage() {
       {/* Summary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {[
-          { label: 'Campaigns Sent', value: totalSent,       color: 'text-indigo-600 bg-indigo-50 border-indigo-200' },
-          { label: 'Total Reached',  value: totalRecipients, color: 'text-green-600 bg-green-50 border-green-200' },
-          { label: 'Conversions',    value: totalConverted,  color: 'text-purple-600 bg-purple-50 border-purple-200' },
+          { label: 'Campaigns Sent', value: totalSent,       color: 'text-tone-sage bg-tone-sage/10 border-tone-sage/30' },
+          { label: 'Total Reached',  value: totalRecipients, color: 'text-tone-sage bg-tone-sage/5 border-tone-sage/30' },
+          { label: 'Conversions',    value: totalConverted,  color: 'text-grey-75 bg-grey-5 border-grey-15' },
         ].map((s) => (
           <div key={s.label} className={`rounded-xl border p-4 ${s.color}`}>
             <p className="text-2xl font-bold">{s.value}</p>
@@ -909,11 +909,11 @@ export default function CampaignsPage() {
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium mb-3">{error}</p>
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium mb-3">{error}</p>
           <button
             onClick={() => { setError(''); void fetchCampaigns(); }}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            className="px-4 py-2 rounded-lg bg-semantic-danger text-white text-sm font-medium hover:bg-semantic-danger transition-colors"
           >
             Retry
           </button>
@@ -921,15 +921,15 @@ export default function CampaignsPage() {
       )}
 
       {!loading && !error && campaigns.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
           <div className="text-4xl mb-3">📣</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">No campaigns yet</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="text-lg font-semibold text-tone-ink mb-1">No campaigns yet</h3>
+          <p className="text-sm text-grey-60 mb-4">
             Create your first campaign to re-engage clients and drive bookings.
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+            className="px-4 py-2 rounded-xl bg-tone-ink text-white text-sm font-semibold hover:opacity-90 transition-colors"
           >
             Create Campaign
           </button>

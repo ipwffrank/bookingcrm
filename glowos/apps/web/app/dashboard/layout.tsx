@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
+import { ImpersonationBanner } from './components/ImpersonationBanner';
 
 interface Merchant {
   id: string;
@@ -206,14 +207,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const Sidebar = ({ collapsed = false }: { collapsed?: boolean }) => (
     <nav className="flex flex-col h-full font-manrope">
-      <div className={`${collapsed ? 'px-3 py-5 flex justify-center' : 'px-6 py-5'} border-b border-gray-100`}>
+      <div className={`${collapsed ? 'px-3 py-5 flex justify-center' : 'px-6 py-5'} border-b border-grey-5`}>
         {collapsed ? (
           <Link href="/" className="font-newsreader text-lg font-semibold text-[#1a2313] hover:text-[#456466] transition-colors" title="GlowOS">G</Link>
         ) : (
           <>
             <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
             {merchant && (
-              <p className="font-inter text-[11px] text-gray-400 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
+              <p className="font-inter text-[11px] text-grey-45 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
             )}
           </>
         )}
@@ -230,17 +231,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               title={collapsed ? item.label : undefined}
               className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? 'bg-[#1a2313]/8 text-[#1a2313]'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                  ? 'bg-tone-ink/8 text-[#1a2313]'
+                  : 'text-grey-60 hover:bg-grey-5 hover:text-grey-90'
               }`}
             >
-              <Icon className={`w-4.5 h-4.5 flex-shrink-0 ${active ? 'text-[#1a2313]' : 'text-gray-400'}`} />
+              <Icon className={`w-4.5 h-4.5 flex-shrink-0 ${active ? 'text-[#1a2313]' : 'text-grey-45'}`} />
               {!collapsed && item.label}
             </Link>
           );
         })}
       </div>
-      <div className={`${collapsed ? 'px-2' : 'px-3'} py-4 border-t border-gray-100 space-y-0.5`}>
+      <div className={`${collapsed ? 'px-2' : 'px-3'} py-4 border-t border-grey-5 space-y-0.5`}>
         {(() => {
           const settingsHref = '/dashboard/settings';
           const settingsActive = isActive(settingsHref);
@@ -251,11 +252,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               title={collapsed ? 'Settings' : undefined}
               className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 settingsActive
-                  ? 'bg-[#1a2313]/8 text-[#1a2313]'
-                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                  ? 'bg-tone-ink/8 text-[#1a2313]'
+                  : 'text-grey-60 hover:bg-grey-5 hover:text-grey-90'
               }`}
             >
-              <SettingsIcon className={`w-4.5 h-4.5 flex-shrink-0 ${settingsActive ? 'text-[#1a2313]' : 'text-gray-400'}`} />
+              <SettingsIcon className={`w-4.5 h-4.5 flex-shrink-0 ${settingsActive ? 'text-[#1a2313]' : 'text-grey-45'}`} />
               {!collapsed && 'Settings'}
             </Link>
           );
@@ -263,9 +264,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <button
           onClick={handleLogout}
           title={collapsed ? 'Logout' : undefined}
-          className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors`}
+          className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-grey-60 hover:bg-grey-5 hover:text-grey-75 transition-colors`}
         >
-          <svg className="w-4.5 h-4.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="w-4.5 h-4.5 text-grey-45 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
           </svg>
           {!collapsed && 'Logout'}
@@ -274,7 +275,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <button
           onClick={toggleCollapse}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className={`hidden lg:flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors`}
+          className={`hidden lg:flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 w-full rounded-lg text-sm font-medium text-grey-45 hover:bg-grey-5 hover:text-grey-75 transition-colors`}
         >
           <svg className="w-4.5 h-4.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             {collapsed
@@ -294,10 +295,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex font-manrope">
+    <div className="min-h-screen bg-tone-surface-warm flex font-manrope">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30 transition-all duration-200 ${
+        className={`hidden lg:flex flex-col bg-tone-surface border-r border-grey-15 fixed inset-y-0 left-0 z-30 transition-all duration-200 ${
           sidebarCollapsed ? 'w-14' : 'w-60'
         }`}
       >
@@ -311,11 +312,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             className="fixed inset-0 bg-black/30"
             onClick={() => setSidebarOpen(false)}
           />
-          <aside className="relative z-50 flex flex-col w-64 bg-white shadow-xl">
+          <aside className="relative z-50 flex flex-col w-64 bg-tone-surface shadow-xl">
             <div className="absolute top-4 right-4">
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="p-1 rounded-md text-gray-400 hover:text-gray-600"
+                className="p-1 rounded-md text-grey-45 hover:text-grey-75"
               >
                 <XIcon className="w-5 h-5" />
               </button>
@@ -332,22 +333,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }`}
       >
         {/* Top bar (mobile only) */}
-        <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+        <header className="lg:hidden bg-tone-surface border-b border-grey-15 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-md text-gray-500 hover:bg-gray-100"
+            className="p-2 rounded-md text-grey-60 hover:bg-grey-15"
           >
             <MenuIcon className="w-5 h-5" />
           </button>
           <Link href="/" className="font-newsreader text-lg font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
           <button
             onClick={handleLogout}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-grey-60 hover:text-grey-75"
           >
             Logout
           </button>
         </header>
 
+        <ImpersonationBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">
           {children}
         </main>

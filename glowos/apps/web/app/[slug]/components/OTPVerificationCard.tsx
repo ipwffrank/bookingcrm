@@ -120,16 +120,16 @@ export function OTPVerificationCard({
   }
 
   return (
-    <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+    <div className="rounded-lg border border-grey-15 bg-grey-5 p-4">
       <div className="font-medium">{title}</div>
-      {subtitle && <div className="text-sm text-gray-600 mt-1">{subtitle}</div>}
+      {subtitle && <div className="text-sm text-grey-75 mt-1">{subtitle}</div>}
       {stage === 'send' ? (
         <div className="mt-3 space-y-2">
           <button
             type="button"
             onClick={() => sendCode('whatsapp')}
             disabled={loading || secondsLeft > 0}
-            className="w-full rounded bg-green-600 text-white py-2 text-sm font-medium disabled:opacity-50"
+            className="w-full rounded bg-tone-sage text-white py-2 text-sm font-medium disabled:opacity-50"
           >
             {loading
               ? 'Sending…'
@@ -142,7 +142,7 @@ export function OTPVerificationCard({
               type="button"
               onClick={() => sendCode('email')}
               disabled={loading || secondsLeft > 0}
-              className="w-full rounded border border-gray-300 py-2 text-sm disabled:opacity-50"
+              className="w-full rounded border border-grey-30 py-2 text-sm disabled:opacity-50"
             >
               {secondsLeft > 0 ? `Try again in ${formatMMSS(secondsLeft)}` : 'Use email instead'}
             </button>
@@ -151,33 +151,33 @@ export function OTPVerificationCard({
             <button
               type="button"
               onClick={onSwitchToGoogle}
-              className="w-full text-xs text-gray-500 underline"
+              className="w-full text-xs text-grey-60 underline"
             >
               Use Google instead
             </button>
           )}
           {onSkip && (
-            <button type="button" onClick={onSkip} className="w-full text-xs text-gray-500 underline">
+            <button type="button" onClick={onSkip} className="w-full text-xs text-grey-60 underline">
               Skip discount and continue
             </button>
           )}
         </div>
       ) : (
         <div className="mt-3 space-y-2">
-          <div className="text-xs text-gray-600">Code sent to {maskedDestination}</div>
+          <div className="text-xs text-grey-75">Code sent to {maskedDestination}</div>
           <input
             inputMode="numeric"
             maxLength={6}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
             placeholder="6-digit code"
-            className="w-full rounded border-gray-300 py-2 px-3 text-center tracking-widest"
+            className="w-full rounded border-grey-30 py-2 px-3 text-center tracking-widest"
           />
           <button
             type="button"
             onClick={verify}
             disabled={loading || code.length !== 6}
-            className="w-full rounded bg-purple-600 text-white py-2 text-sm font-medium disabled:opacity-50"
+            className="w-full rounded bg-tone-ink text-white py-2 text-sm font-medium disabled:opacity-50"
           >
             {loading ? 'Verifying…' : 'Verify'}
           </button>
@@ -187,7 +187,7 @@ export function OTPVerificationCard({
               setStage('send');
               setCode('');
             }}
-            className="w-full text-xs text-gray-500 underline"
+            className="w-full text-xs text-grey-60 underline"
           >
             Didn&apos;t receive it? Send again
           </button>
@@ -195,19 +195,19 @@ export function OTPVerificationCard({
             <button
               type="button"
               onClick={onSwitchToGoogle}
-              className="w-full text-xs text-gray-500 underline"
+              className="w-full text-xs text-grey-60 underline"
             >
               Use Google instead
             </button>
           )}
           {onSkip && (
-            <button type="button" onClick={onSkip} className="w-full text-xs text-gray-500 underline">
+            <button type="button" onClick={onSkip} className="w-full text-xs text-grey-60 underline">
               Skip discount and continue
             </button>
           )}
         </div>
       )}
-      {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+      {error && <div className="mt-2 text-sm text-semantic-danger">{error}</div>}
     </div>
   );
 }

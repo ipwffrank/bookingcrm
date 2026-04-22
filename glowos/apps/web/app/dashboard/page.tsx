@@ -46,40 +46,40 @@ function formatDateLong(dateStr: string) {
   return d.toLocaleDateString('en-SG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-// ─── Status Badge ──────────────────────────────────────────────────────────────
+// ─── Status Badge — typographic state (no colored pill) ──────────────────────
 
-const STATUS_CONFIG: Record<BookingStatus, { label: string; className: string }> = {
-  confirmed:   { label: 'Confirmed',   className: 'bg-green-100 text-green-700 border-green-200' },
-  in_progress: { label: 'In Progress', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-  completed:   { label: 'Completed',   className: 'bg-gray-100 text-gray-600 border-gray-200' },
-  cancelled:   { label: 'Cancelled',   className: 'bg-red-100 text-red-600 border-red-200' },
-  no_show:     { label: 'No Show',     className: 'bg-orange-100 text-orange-700 border-orange-200' },
+const STATUS_CONFIG: Record<BookingStatus, { label: string; stateClass: string }> = {
+  confirmed:   { label: 'Confirmed',   stateClass: 'state-default' },
+  in_progress: { label: 'In Progress', stateClass: 'state-active' },
+  completed:   { label: 'Completed',   stateClass: 'state-completed' },
+  cancelled:   { label: 'Cancelled',   stateClass: 'state-cancelled' },
+  no_show:     { label: 'No Show',     stateClass: 'state-no-show' },
 };
 
 function StatusBadge({ status }: { status: BookingStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, className: 'bg-gray-100 text-gray-600 border-gray-200' };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.className}`}>
-      {cfg.label}
-    </span>
-  );
+  const cfg = STATUS_CONFIG[status] ?? { label: status, stateClass: 'state-completed' };
+  return <span className={`text-xs ${cfg.stateClass}`}>{cfg.label}</span>;
 }
 
-// ─── VIP Badge ─────────────────────────────────────────────────────────────────
+// ─── VIP Badge — star count (no colored pill) ─────────────────────────────────
 
-const VIP_CONFIG: Record<NonNullable<VipTier>, { emoji: string; className: string }> = {
-  platinum: { emoji: '💎', className: 'bg-purple-100 text-purple-700 border-purple-200' },
-  gold:     { emoji: '🥇', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  silver:   { emoji: '🥈', className: 'bg-slate-100 text-slate-600 border-slate-200' },
-  bronze:   { emoji: '🥉', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+const VIP_STAR_COUNT: Record<NonNullable<VipTier>, number> = {
+  bronze:   1,
+  silver:   2,
+  gold:     3,
+  platinum: 4,
 };
 
 function VipBadge({ tier }: { tier: VipTier }) {
   if (!tier) return null;
-  const cfg = VIP_CONFIG[tier];
+  const stars = VIP_STAR_COUNT[tier];
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.className}`}>
-      {cfg.emoji} {tier.charAt(0).toUpperCase() + tier.slice(1)}
+    <span
+      className="inline-flex items-center gap-0.5 text-xs font-medium text-tone-ink"
+      aria-label={`${tier} tier`}
+      title={tier.charAt(0).toUpperCase() + tier.slice(1)}
+    >
+      {'★'.repeat(stars)}
     </span>
   );
 }
@@ -89,7 +89,7 @@ function VipBadge({ tier }: { tier: VipTier }) {
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-grey-15 border-t-tone-ink rounded-full animate-spin" />
     </div>
   );
 }
@@ -122,32 +122,32 @@ function BookingCard({
   const canNoShow = booking.status === 'confirmed' || booking.status === 'in_progress';
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-4 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-base font-semibold text-gray-900">
+            <span className="text-base font-semibold text-tone-ink">
               {formatTime(booking.startTime)} – {formatTime(booking.endTime)}
             </span>
             <StatusBadge status={booking.status} />
           </div>
-          <p className="text-sm font-medium text-gray-800 truncate">{client.name ?? 'Unknown'}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{client.phone}</p>
+          <p className="text-sm font-medium text-grey-90 truncate">{client.name ?? 'Unknown'}</p>
+          <p className="text-xs text-grey-60 mt-0.5">{client.phone}</p>
         </div>
         <div className="text-right flex-shrink-0">
-          <p className="text-sm font-semibold text-gray-900">S${parseFloat(booking.priceSgd).toFixed(2)}</p>
-          <p className="text-xs text-gray-400 capitalize">{booking.paymentMethod ?? 'N/A'}</p>
+          <p className="text-sm font-semibold text-tone-ink">S${parseFloat(booking.priceSgd).toFixed(2)}</p>
+          <p className="text-xs text-grey-45 capitalize">{booking.paymentMethod ?? 'N/A'}</p>
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+      <div className="mt-3 pt-3 border-t border-grey-5 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs text-gray-600 truncate">
+          <p className="text-xs text-grey-75 truncate">
             <span className="font-medium">{service.name}</span>
-            <span className="text-gray-400"> · {staffMember.name}</span>
+            <span className="text-grey-45"> · {staffMember.name}</span>
           </p>
           {booking.clientNotes && (
-            <p className="text-xs text-gray-400 mt-0.5 truncate italic">&ldquo;{booking.clientNotes}&rdquo;</p>
+            <p className="text-xs text-grey-45 mt-0.5 truncate italic">&ldquo;{booking.clientNotes}&rdquo;</p>
           )}
         </div>
 
@@ -155,7 +155,7 @@ function BookingCard({
           <div className="flex gap-1.5 flex-shrink-0">
             <button
               onClick={() => onEdit(booking.id)}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200"
+              className="px-2.5 py-1 rounded-lg text-xs font-medium text-tone-ink bg-grey-5 hover:bg-grey-15 border border-grey-15 transition-colors"
               aria-label="Edit booking"
             >
               Edit
@@ -164,7 +164,7 @@ function BookingCard({
               <button
                 onClick={() => handleAction('check-in')}
                 disabled={acting !== null}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors border border-green-200"
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-surface bg-tone-sage hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {acting === 'check-in' ? '...' : 'Check In'}
               </button>
@@ -173,7 +173,7 @@ function BookingCard({
               <button
                 onClick={() => handleAction('complete')}
                 disabled={acting !== null}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors border border-blue-200"
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-surface bg-tone-ink hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {acting === 'complete' ? '...' : 'Complete'}
               </button>
@@ -182,7 +182,7 @@ function BookingCard({
               <button
                 onClick={() => handleAction('no-show')}
                 disabled={acting !== null}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-50 transition-colors border border-orange-200"
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
               >
                 {acting === 'no-show' ? '...' : 'No-Show'}
               </button>
@@ -378,12 +378,12 @@ function DashboardPageInner() {
     <>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Today&apos;s Bookings</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{formatDateLong(date)}</p>
+          <h1 className="text-2xl font-bold text-tone-ink">Today&apos;s Bookings</h1>
+          <p className="text-sm text-grey-60 mt-0.5">{formatDateLong(date)}</p>
         </div>
         <button
           onClick={() => setShowWalkIn(true)}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm flex-shrink-0"
+          className="flex items-center gap-2 rounded-xl bg-tone-ink px-4 py-2.5 text-sm font-semibold text-tone-surface hover:opacity-90 transition-opacity shadow-sm flex-shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -395,12 +395,18 @@ function DashboardPageInner() {
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         {[
-          { key: 'confirmed' as const,   label: 'Confirmed',   value: confirmed.length,   color: 'text-green-600 bg-green-50 border-green-200' },
-          { key: 'in_progress' as const, label: 'In Progress', value: inProgress.length,  color: 'text-blue-600 bg-blue-50 border-blue-200' },
-          { key: 'completed' as const,   label: 'Completed',   value: completed.length,   color: 'text-gray-600 bg-gray-50 border-gray-200' },
-          { key: 'no_show' as const,     label: 'No Show',     value: noShow.length,      color: 'text-orange-600 bg-orange-50 border-orange-200' },
+          { key: 'confirmed' as const,   label: 'Confirmed',   value: confirmed.length,  tone: 'neutral' as const },
+          { key: 'in_progress' as const, label: 'In Progress', value: inProgress.length, tone: 'neutral' as const },
+          { key: 'completed' as const,   label: 'Completed',   value: completed.length,  tone: 'muted' as const },
+          { key: 'no_show' as const,     label: 'No Show',     value: noShow.length,     tone: 'danger' as const },
         ].map((stat) => {
           const selected = statusFilter === stat.key;
+          const toneClass =
+            stat.tone === 'danger'
+              ? 'text-semantic-danger border-semantic-danger/30 bg-semantic-danger/5'
+              : stat.tone === 'muted'
+                ? 'text-grey-60 border-grey-15 bg-tone-surface'
+                : 'text-tone-ink border-grey-15 bg-tone-surface';
           return (
             <button
               key={stat.key}
@@ -411,7 +417,7 @@ function DashboardPageInner() {
                 else next.set('status', stat.key);
                 router.replace(`/dashboard${next.toString() ? `?${next}` : ''}`);
               }}
-              className={`text-left rounded-xl border p-4 transition-shadow ${stat.color} ${selected ? 'ring-2 ring-indigo-400 shadow' : 'hover:shadow-sm'}`}
+              className={`text-left rounded-xl border p-4 transition-shadow ${toneClass} ${selected ? 'ring-2 ring-tone-sage shadow' : 'hover:shadow-sm'}`}
               aria-pressed={selected}
             >
               <p className="text-2xl font-bold">{stat.value}</p>
@@ -422,7 +428,7 @@ function DashboardPageInner() {
         <button
           type="button"
           onClick={handleWaitlistTileClick}
-          className="text-left rounded-xl border p-4 text-indigo-600 bg-indigo-50 border-indigo-200 transition-shadow hover:shadow-sm"
+          className="text-left rounded-xl border p-4 text-tone-sage bg-tone-sage/5 border-tone-sage/30 transition-shadow hover:shadow-sm"
           aria-label="Scroll to waitlist details"
         >
           <p className="text-2xl font-bold">{waitlistEntries.length}</p>
@@ -430,12 +436,12 @@ function DashboardPageInner() {
         </button>
       </div>
       {statusFilter && (
-        <div className="mb-4 -mt-2 flex items-center gap-2 text-xs text-gray-600">
+        <div className="mb-4 -mt-2 flex items-center gap-2 text-xs text-grey-75">
           <span>Filtering by <strong className="capitalize">{statusFilter.replace('_', ' ')}</strong></span>
           <button
             type="button"
             onClick={() => router.replace('/dashboard')}
-            className="underline hover:text-gray-900"
+            className="underline hover:text-tone-ink"
           >
             Clear
           </button>
@@ -458,22 +464,22 @@ function DashboardPageInner() {
 
       <Link
         href="/dashboard/analytics?period=today"
-        className="block mb-4 bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow"
+        className="block mb-4 bg-tone-surface rounded-xl border border-grey-15 p-4 hover:shadow-sm transition-shadow"
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium text-gray-500">Today&apos;s Revenue</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">
+            <p className="text-xs font-medium text-grey-60">Today&apos;s Revenue</p>
+            <p className="text-2xl font-bold text-tone-ink mt-0.5">
               S${revenue ? Number(revenue.total).toFixed(2) : '—'}
             </p>
           </div>
         </div>
         {revenue && (
-          <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-y-1 gap-x-4 text-xs">
-            <div className="flex justify-between"><span className="text-gray-500">Services completed</span><span className="text-gray-900 tabular-nums">S${Number(revenue.completedRevenue).toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Cancellations retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.cancelledRetained).toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">No-shows retained</span><span className="text-gray-900 tabular-nums">S${Number(revenue.noShowRetained).toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Packages sold</span><span className="text-gray-900 tabular-nums">S${Number(revenue.packageRevenue).toFixed(2)}</span></div>
+          <div className="mt-3 pt-3 border-t border-grey-5 grid grid-cols-2 gap-y-1 gap-x-4 text-xs">
+            <div className="flex justify-between"><span className="text-grey-60">Services completed</span><span className="text-tone-ink tabular-nums">S${Number(revenue.completedRevenue).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-grey-60">Cancellations retained</span><span className="text-tone-ink tabular-nums">S${Number(revenue.cancelledRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-grey-60">No-shows retained</span><span className="text-tone-ink tabular-nums">S${Number(revenue.noShowRetained).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-grey-60">Packages sold</span><span className="text-tone-ink tabular-nums">S${Number(revenue.packageRevenue).toFixed(2)}</span></div>
           </div>
         )}
       </Link>
@@ -482,36 +488,36 @@ function DashboardPageInner() {
 
       <div
         ref={waitlistRef}
-        className={`rounded-xl transition-shadow ${flashWaitlist ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
+        className={`rounded-xl transition-shadow ${flashWaitlist ? 'ring-2 ring-tone-sage shadow-md' : ''}`}
       >
         <WaitlistCard entries={waitlistEntries} onEntriesChange={setWaitlistEntries} />
       </div>
 
       {lowRatings.length > 0 && (
-        <div className="mb-4 bg-white rounded-xl border border-red-200 p-4">
+        <div className="mb-4 bg-tone-surface rounded-xl border border-semantic-warn/30 p-4">
           <div className="flex items-center gap-2 mb-2">
-            <span>⚠</span>
-            <h2 className="text-sm font-semibold text-gray-900">Recent low ratings (last 7 days)</h2>
+            <span className="text-semantic-warn">⚠</span>
+            <h2 className="text-sm font-semibold text-tone-ink">Recent low ratings (last 7 days)</h2>
           </div>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-grey-15">
             {lowRatings.map((r) => (
               <li key={r.id}>
                 <Link
                   href={`/dashboard/clients/${r.clientId}`}
-                  className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-md hover:bg-gray-50"
+                  className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-md hover:bg-grey-5"
                 >
-                  <span className="text-amber-500 text-sm shrink-0">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                  <span className="text-semantic-warn text-sm shrink-0">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-gray-900 truncate">
+                    <p className="text-xs text-tone-ink truncate">
                       <span className="font-medium">{r.serviceName}</span>
-                      <span className="text-gray-500"> · {r.staffName}</span>
-                      {r.comment && <span className="text-gray-600"> · &ldquo;{r.comment}&rdquo;</span>}
+                      <span className="text-grey-60"> · {r.staffName}</span>
+                      {r.comment && <span className="text-grey-75"> · &ldquo;{r.comment}&rdquo;</span>}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className="text-xs text-grey-60 truncate">
                       {r.clientName ?? 'Unknown'}{r.clientPhone ? ` · ${r.clientPhone}` : ''}
                     </p>
                   </div>
-                  <span className="text-gray-400 text-xs">→</span>
+                  <span className="text-grey-45 text-xs">→</span>
                 </Link>
               </li>
             ))}
@@ -522,11 +528,11 @@ function DashboardPageInner() {
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium mb-3">{error}</p>
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium mb-3">{error}</p>
           <button
             onClick={() => { setError(''); void fetchBookings(); }}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            className="px-4 py-2 rounded-lg bg-semantic-danger text-tone-surface text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Retry
           </button>
@@ -534,13 +540,13 @@ function DashboardPageInner() {
       )}
 
       {!loading && !error && bookings.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
           <div className="text-4xl mb-3">📅</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">No bookings today</h3>
-          <p className="text-sm text-gray-500 mb-4">Add a walk-in or share your booking link to get started.</p>
+          <h3 className="text-lg font-semibold text-tone-ink mb-1">No bookings today</h3>
+          <p className="text-sm text-grey-60 mb-4">Add a walk-in or share your booking link to get started.</p>
           <button
             onClick={() => setShowWalkIn(true)}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors"
+            className="px-4 py-2 rounded-xl bg-tone-ink text-tone-surface text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             Add Walk-in
           </button>
@@ -553,7 +559,7 @@ function DashboardPageInner() {
             <div
               key={row.booking.id}
               ref={(el) => { bookingRefs.current[row.booking.id] = el; }}
-              className={`rounded-xl transition-shadow ${flashBookingId === row.booking.id ? 'ring-2 ring-indigo-400 shadow-md' : ''}`}
+              className={`rounded-xl transition-shadow ${flashBookingId === row.booking.id ? 'ring-2 ring-tone-sage shadow-md' : ''}`}
             >
               <BookingCard row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
             </div>

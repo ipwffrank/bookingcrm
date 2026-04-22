@@ -58,7 +58,7 @@ export function JoinWaitlistCard(props: Props) {
 
   if (result?.ok) {
     return (
-      <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
+      <div className="mt-4 rounded-xl bg-tone-sage/5 border border-tone-sage/30 px-4 py-3 text-sm text-tone-sage">
         {result.msg}
       </div>
     );
@@ -69,7 +69,7 @@ export function JoinWaitlistCard(props: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-4 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+        className="mt-4 px-4 py-2 bg-tone-ink text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-colors"
       >
         Join waitlist instead
       </button>
@@ -77,8 +77,8 @@ export function JoinWaitlistCard(props: Props) {
   }
 
   return (
-    <div className="mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 text-left">
-      <p className="text-xs font-semibold text-gray-900 mb-2">
+    <div className="mt-4 bg-tone-surface border border-grey-15 rounded-xl px-4 py-3 text-left">
+      <p className="text-xs font-semibold text-tone-ink mb-2">
         Notify me if {props.staffName} has an opening on {props.targetDate}
       </p>
       <div className="grid grid-cols-2 gap-2 mb-2">
@@ -86,14 +86,14 @@ export function JoinWaitlistCard(props: Props) {
           type="time"
           value={windowStart}
           onChange={(e) => setWindowStart(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="rounded-lg border border-grey-30 px-3 py-2 text-sm"
           aria-label="Window start"
         />
         <input
           type="time"
           value={windowEnd}
           onChange={(e) => setWindowEnd(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="rounded-lg border border-grey-30 px-3 py-2 text-sm"
           aria-label="Window end"
         />
       </div>
@@ -102,30 +102,30 @@ export function JoinWaitlistCard(props: Props) {
         placeholder="Your name"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        className="w-full mb-2 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        className="w-full mb-2 rounded-lg border border-grey-30 px-3 py-2 text-sm"
       />
       <input
         type="tel"
         placeholder="Phone (WhatsApp)"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
-        className="w-full mb-2 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        className="w-full mb-2 rounded-lg border border-grey-30 px-3 py-2 text-sm"
       />
       <input
         type="email"
         placeholder="Email (optional)"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="w-full mb-2 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        className="w-full mb-2 rounded-lg border border-grey-30 px-3 py-2 text-sm"
       />
       {result && !result.ok && (
-        <p className="text-xs text-red-600 mb-2">{result.msg}</p>
+        <p className="text-xs text-semantic-danger mb-2">{result.msg}</p>
       )}
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="flex-1 px-3 py-2 border border-gray-300 text-xs font-semibold rounded-lg hover:bg-gray-50"
+          className="flex-1 px-3 py-2 border border-grey-30 text-xs font-semibold rounded-lg hover:bg-grey-5"
         >
           Cancel
         </button>
@@ -133,7 +133,7 @@ export function JoinWaitlistCard(props: Props) {
           type="button"
           onClick={submit}
           disabled={submitting}
-          className="flex-1 px-3 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+          className="flex-1 px-3 py-2 bg-tone-ink text-white text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-60"
         >
           {submitting ? 'Submitting…' : 'Join waitlist'}
         </button>

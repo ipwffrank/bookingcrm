@@ -331,7 +331,7 @@ export function BookingForm(props: BookingFormProps) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-        <div className="relative bg-white rounded-2xl p-6 z-10">Loading…</div>
+        <div className="relative bg-tone-surface rounded-2xl p-6 z-10">Loading…</div>
       </div>
     );
   }
@@ -339,31 +339,31 @@ export function BookingForm(props: BookingFormProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 z-10 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-bold text-gray-900 mb-1">
+      <div className="relative bg-tone-surface rounded-2xl shadow-2xl w-full max-w-2xl p-6 z-10 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-tone-ink mb-1">
           {mode === 'create' ? 'Add Walk-in Booking' : 'Edit Booking'}
         </h2>
-        {lastEditLabel && <p className="text-xs text-gray-500 mb-3">{lastEditLabel}</p>}
+        {lastEditLabel && <p className="text-xs text-grey-60 mb-3">{lastEditLabel}</p>}
         {mode === 'edit' && props.bookingId && <EditHistoryPanel bookingId={props.bookingId} />}
         {completedBanner && (
-          <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
+          <div className="mb-4 rounded-lg bg-semantic-warn/5 border border-semantic-warn/30 px-4 py-2 text-xs text-semantic-warn">
             This booking is completed. Edits will not re-send review requests or recalculate commissions.
           </div>
         )}
         {apiError && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+          <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">
             {apiError}
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Client Name</label>
               <input
                 type="text"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
                 placeholder="Jane Doe"
                 disabled={mode === 'edit'}
               />
@@ -374,13 +374,13 @@ export function BookingForm(props: BookingFormProps) {
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Phone</label>
               <input
                 type="tel"
                 value={clientPhone}
                 onChange={(e) => setClientPhone(e.target.value)}
                 onBlur={() => void maybeLookupClient()}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
                 placeholder="+65 9123 4567"
                 disabled={mode === 'edit'}
               />
@@ -388,9 +388,9 @@ export function BookingForm(props: BookingFormProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Services</label>
+            <label className="block text-sm font-medium text-grey-75 mb-2">Services</label>
             {sellPackageTemplate && (
-              <div className="mb-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+              <div className="mb-2 rounded-lg bg-tone-sage/5 border border-tone-sage/30 px-3 py-2 text-xs text-tone-sage">
                 <p className="font-semibold mb-1">
                   Selling {sellPackageTemplate.name} (S${sellPackageTemplate.priceSgd}):
                 </p>
@@ -430,12 +430,12 @@ export function BookingForm(props: BookingFormProps) {
             <button
               type="button"
               onClick={addServiceRow}
-              className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+              className="mt-2 text-sm font-medium text-tone-sage hover:text-tone-sage"
             >
               + Add service
             </button>
             {scheduleOverlaps.length > 0 && (
-              <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <div className="mt-2 rounded-lg bg-semantic-warn/5 border border-semantic-warn/30 px-3 py-2 text-xs text-semantic-warn">
                 <p className="font-medium mb-0.5">Heads-up: overlapping times</p>
                 <ul className="list-disc pl-4 space-y-0.5">
                   {scheduleOverlaps.map((o) => (
@@ -449,7 +449,7 @@ export function BookingForm(props: BookingFormProps) {
           </div>
 
           {mode === 'create' && packageTemplates.length > 0 && (
-            <div className="rounded-lg border border-dashed border-gray-300 px-3 py-2">
+            <div className="rounded-lg border border-dashed border-grey-30 px-3 py-2">
               <button
                 type="button"
                 onClick={() => {
@@ -461,7 +461,7 @@ export function BookingForm(props: BookingFormProps) {
                   }
                   setSellOpen(!sellOpen);
                 }}
-                className="text-sm font-medium text-indigo-600"
+                className="text-sm font-medium text-tone-sage"
               >
                 {sellOpen ? "− Don't sell a package" : '+ Also sell a package'}
               </button>
@@ -481,7 +481,7 @@ export function BookingForm(props: BookingFormProps) {
                         setSoldByStaffId('');
                       }
                     }}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
                   >
                     <option value="">Select package to sell...</option>
                     {packageTemplates.map((p) => (
@@ -492,11 +492,11 @@ export function BookingForm(props: BookingFormProps) {
                   </select>
                   {sellPackageId && (
                     <div className="mt-2">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Sold by</label>
+                      <label className="block text-xs font-medium text-grey-75 mb-1">Sold by</label>
                       <select
                         value={soldByStaffId}
                         onChange={(e) => setSoldByStaffId(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
                         required
                       >
                         <option value="">Select staff...</option>
@@ -513,11 +513,11 @@ export function BookingForm(props: BookingFormProps) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+              <label className="block text-sm font-medium text-grey-75 mb-1">Payment Method</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
               >
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
@@ -526,26 +526,26 @@ export function BookingForm(props: BookingFormProps) {
               </select>
             </div>
             <div className="flex items-end">
-              <div className="w-full rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm">
+              <div className="w-full rounded-lg bg-grey-5 border border-grey-15 px-3 py-2 text-sm">
                 {sellPackageTemplate ? (
                   <>
-                    <div className="flex justify-between text-xs text-gray-600">
+                    <div className="flex justify-between text-xs text-grey-75">
                       <span>Services:</span>
                       <span>S${totalPrice.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-gray-600">
+                    <div className="flex justify-between text-xs text-grey-75">
                       <span>Package:</span>
                       <span>S${Number(sellPackageTemplate.priceSgd).toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 mt-1 pt-1">
+                    <div className="flex justify-between font-semibold text-tone-ink border-t border-grey-15 mt-1 pt-1">
                       <span>Total:</span>
                       <span>S${(totalPrice + Number(sellPackageTemplate.priceSgd)).toFixed(2)}</span>
                     </div>
                   </>
                 ) : (
                   <>
-                    <span className="text-gray-500">Total: </span>
-                    <span className="font-semibold text-gray-900">S${totalPrice.toFixed(2)}</span>
+                    <span className="text-grey-60">Total: </span>
+                    <span className="font-semibold text-tone-ink">S${totalPrice.toFixed(2)}</span>
                   </>
                 )}
               </div>
@@ -553,12 +553,12 @@ export function BookingForm(props: BookingFormProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+            <label className="block text-sm font-medium text-grey-75 mb-1">Notes (optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
+              className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm resize-none"
               placeholder="Any special requests..."
             />
           </div>
@@ -567,14 +567,14 @@ export function BookingForm(props: BookingFormProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
             >
               {saving ? 'Saving…' : mode === 'create' ? 'Create Booking' : 'Save changes'}
             </button>

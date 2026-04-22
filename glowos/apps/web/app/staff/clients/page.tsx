@@ -38,41 +38,41 @@ export default function StaffClientsPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 font-manrope">
-      <h1 className="text-xl font-semibold text-gray-900">Clients</h1>
+      <h1 className="text-xl font-semibold text-tone-ink">Clients</h1>
 
       <input
         type="text"
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder="Search by name, phone, or email..."
-        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+        className="w-full border border-grey-15 rounded-lg px-4 py-2.5 text-sm text-tone-ink placeholder-grey-45 focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
       />
 
       {loading ? (
-        <div className="text-sm text-gray-400 animate-pulse py-8 text-center">Loading...</div>
+        <div className="text-sm text-grey-45 animate-pulse py-8 text-center">Loading...</div>
       ) : clients.length === 0 ? (
-        <div className="text-sm text-gray-400 py-8 text-center">No clients found.</div>
+        <div className="text-sm text-grey-45 py-8 text-center">No clients found.</div>
       ) : (
         <div className="space-y-2">
           {clients.map(row => (
             <Link
               key={row.profile.id}
               href={`/staff/clients/${row.profile.id}`}
-              className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 hover:bg-gray-50 transition-colors"
+              className="flex items-center justify-between bg-tone-surface border border-grey-15 rounded-xl px-4 py-3 hover:bg-grey-5 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-xs">
+                <div className="w-9 h-9 rounded-full bg-tone-sage/15 flex items-center justify-center text-tone-sage font-semibold text-xs">
                   {(row.client.name ?? '?')[0].toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{row.client.name}</p>
-                  <p className="text-xs text-gray-400">{row.client.phone}</p>
+                  <p className="text-sm font-medium text-tone-ink">{row.client.name}</p>
+                  <p className="text-xs text-grey-45">{row.client.phone}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-500">{row.profile.totalVisits ?? 0} visits</p>
+                <p className="text-xs text-grey-60">{row.profile.totalVisits ?? 0} visits</p>
                 {row.profile.vipTier && (
-                  <span className="text-[10px] font-medium text-purple-600 capitalize">{row.profile.vipTier}</span>
+                  <span className="text-[10px] font-medium text-grey-75 capitalize">{row.profile.vipTier}</span>
                 )}
               </div>
             </Link>

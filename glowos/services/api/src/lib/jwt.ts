@@ -7,6 +7,15 @@ export interface AccessTokenPayload {
   merchantId: string;
   role: string;
   staffId?: string;  // set when role === 'staff'
+  // Superadmin elevation — set only when the authenticated user's email is
+  // in the SUPER_ADMIN_EMAILS allowlist at login time.
+  superAdmin?: boolean;
+  // Impersonation — set when superadmin has "viewed as" a merchant. The
+  // userId/merchantId/role fields reflect the impersonated merchant; the
+  // actor* fields preserve the real caller identity for audit logging.
+  impersonating?: boolean;
+  actorUserId?: string;
+  actorEmail?: string;
 }
 
 export interface RefreshTokenPayload {

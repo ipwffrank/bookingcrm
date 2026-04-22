@@ -62,15 +62,32 @@ interface RawBookingRow {
 interface DragViz { entityId: string; entityType: 'duty' | 'booking'; staffId: string; startMin: number; endMin: number; }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
-const STAFF_COLORS = ['#4f46e5','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'];
-const DUTY_BG = '#1a2313';
+// Event blocks: single ink for bookings, sage for duties, danger-tint for closures.
+// Staff identity in the grid comes from column position + title text, not a per-
+// staff hue — the rainbow palette competed with status signals and pushed the
+// calendar out of the 3-tone system.
+const BOOKING_BG = '#1a2313';
+const DUTY_BG = '#6b8e5a';
+const CLOSURE_BG = 'rgba(184, 64, 58, 0.08)';
+const CLOSURE_BORDER = 'rgba(184, 64, 58, 0.25)';
+const UNASSIGNED_BG = 'rgba(26, 35, 19, 0.55)';
+
+// Staff avatar circles in column headers still benefit from small visual
+// differentiation. A 4-slot ink-opacity ramp gives enough contrast for a quick
+// scan without reintroducing colored chrome.
+const AVATAR_GREYS = [
+  'rgba(26, 35, 19, 0.92)',
+  'rgba(26, 35, 19, 0.72)',
+  'rgba(26, 35, 19, 0.52)',
+  'rgba(26, 35, 19, 0.35)',
+];
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  confirmed:   { label: 'Confirmed',   cls: 'bg-emerald-50 text-emerald-700' },
-  completed:   { label: 'Completed',   cls: 'bg-gray-100 text-gray-600' },
-  cancelled:   { label: 'Cancelled',   cls: 'bg-red-50 text-red-600' },
-  no_show:     { label: 'No Show',     cls: 'bg-orange-50 text-orange-600' },
-  in_progress: { label: 'In Progress', cls: 'bg-blue-50 text-blue-700' },
+  confirmed:   { label: 'Confirmed',   cls: 'bg-tone-sage/5 text-tone-sage' },
+  completed:   { label: 'Completed',   cls: 'bg-grey-15 text-grey-75' },
+  cancelled:   { label: 'Cancelled',   cls: 'bg-semantic-danger/5 text-semantic-danger' },
+  no_show:     { label: 'No Show',     cls: 'bg-semantic-warn/5 text-semantic-warn' },
+  in_progress: { label: 'In Progress', cls: 'bg-grey-5 text-tone-ink' },
 };
 
 // ─── Static helpers (no PX_PER_MIN dependency) ────────────────────────────────
@@ -611,35 +628,35 @@ export default function CalendarPage() {
   function buildCalendarEvents(): EventInput[] {
     const fcEvents: EventInput[] = [];
 
-    // Bookings
+    // Bookings — single ink block, identity via title text.
     bookings.forEach(b => {
-      const staffColor = b.staffId ? STAFF_COLORS[staffList.findIndex(s => s.id === b.staffId) % STAFF_COLORS.length] : '#64748b';
       fcEvents.push({
         id: `booking-${b.id}`,
         title: `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
         start: b.startTime,
         end: b.endTime,
-        backgroundColor: staffColor,
+        backgroundColor: b.staffId ? BOOKING_BG : UNASSIGNED_BG,
         borderColor: 'transparent',
+        textColor: '#fff',
         extendedProps: { type: 'booking', booking: b },
       });
     });
 
-    // Duties
+    // Duties — sage, distinct from bookings without needing a separate hue.
     duties.forEach(d => {
       fcEvents.push({
         id: `duty-${d.id}`,
         title: d.notes ?? 'Duty',
         start: `${d.date}T${d.startTime}`,
         end: `${d.date}T${d.endTime}`,
-        backgroundColor: '#1a2313',
-        borderColor: '#1a2313',
+        backgroundColor: DUTY_BG,
+        borderColor: DUTY_BG,
         textColor: '#fff',
         extendedProps: { type: 'duty', duty: d },
       });
     });
 
-    // Closures (all dates in range)
+    // Closures — semantic-danger tint signals "unavailable".
     allClosures.forEach(cl => {
       if (cl.isFullDay) {
         fcEvents.push({
@@ -648,8 +665,8 @@ export default function CalendarPage() {
           start: cl.date,
           allDay: true,
           display: 'background',
-          backgroundColor: '#fef2f2',
-          borderColor: '#fecaca',
+          backgroundColor: CLOSURE_BG,
+          borderColor: CLOSURE_BORDER,
           extendedProps: { type: 'closure' },
         });
       } else if (cl.startTime && cl.endTime) {
@@ -659,8 +676,8 @@ export default function CalendarPage() {
           start: `${cl.date}T${cl.startTime}`,
           end: `${cl.date}T${cl.endTime}`,
           display: 'background',
-          backgroundColor: '#fef2f2',
-          borderColor: '#fecaca',
+          backgroundColor: CLOSURE_BG,
+          borderColor: CLOSURE_BORDER,
           extendedProps: { type: 'closure' },
         });
       }
@@ -673,30 +690,30 @@ export default function CalendarPage() {
   return (
     <div className="flex flex-col gap-4 font-manrope" style={{ userSelect: 'none' }}>
       {/* Mobile hint — calendar requires a wider screen to use comfortably */}
-      <div className="md:hidden rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+      <div className="md:hidden rounded-xl border border-semantic-warn/30 bg-semantic-warn/5 px-4 py-3 text-sm text-semantic-warn">
         Calendar works best on a tablet or desktop. Scroll horizontally to navigate the grid.
       </div>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex-shrink-0">
-          <h1 className="text-xl font-semibold text-gray-900">Calendar</h1>
-          <p className="text-xs text-gray-400 mt-0.5 hidden lg:block">
+          <h1 className="text-xl font-semibold text-tone-ink">Calendar</h1>
+          <p className="text-xs text-grey-45 mt-0.5 hidden lg:block">
             Click empty slot to add block · Drag to move or reassign
-            <span className="ml-2 text-gray-300">·</span>
-            <span className="ml-2 text-gray-300 font-mono text-[10px]">B</span>
-            <span className="ml-0.5 text-gray-400 text-[10px]"> add block</span>
-            <span className="ml-2 text-gray-300 font-mono text-[10px]">← →</span>
-            <span className="ml-0.5 text-gray-400 text-[10px]"> navigate</span>
-            <span className="ml-2 text-gray-300 font-mono text-[10px]">C</span>
-            <span className="ml-0.5 text-gray-400 text-[10px]"> density</span>
+            <span className="ml-2 text-grey-30">·</span>
+            <span className="ml-2 text-grey-30 font-mono text-[10px]">B</span>
+            <span className="ml-0.5 text-grey-45 text-[10px]"> add block</span>
+            <span className="ml-2 text-grey-30 font-mono text-[10px]">← →</span>
+            <span className="ml-0.5 text-grey-45 text-[10px]"> navigate</span>
+            <span className="ml-2 text-grey-30 font-mono text-[10px]">C</span>
+            <span className="ml-0.5 text-grey-45 text-[10px]"> density</span>
           </p>
         </div>
 
         {/* ── Client search ── */}
         <div ref={searchRef} className="relative flex-1 max-w-xs">
           <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-grey-45 pointer-events-none" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
             </svg>
             <input
@@ -705,10 +722,10 @@ export default function CalendarPage() {
               onChange={e => { handleSearchInput(e.target.value); setShowSearch(true); }}
               onFocus={() => setShowSearch(true)}
               placeholder="Search client…"
-              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30 transition bg-white"
+              className="w-full pl-9 pr-3 py-2 border border-grey-15 rounded-lg text-sm text-tone-ink placeholder-grey-45 focus:outline-none focus:ring-1 focus:ring-tone-ink/30 transition bg-tone-surface"
             />
             {searchQuery && (
-              <button onClick={() => { setSearchQuery(''); setSearchResults([]); setClientBookings(null); setSelectedClient(null); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setSearchQuery(''); setSearchResults([]); setClientBookings(null); setSelectedClient(null); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-grey-45 hover:text-grey-75">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
               </button>
             )}
@@ -716,22 +733,22 @@ export default function CalendarPage() {
 
           {/* Search dropdown */}
           {showSearch && (searchResults.length > 0 || clientBookings || searchLoading) && (
-            <div className="absolute top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-96 overflow-y-auto">
+            <div className="absolute top-full mt-1 left-0 right-0 bg-tone-surface border border-grey-15 rounded-xl shadow-xl z-50 overflow-hidden max-h-96 overflow-y-auto">
               {/* Client autocomplete results */}
               {searchResults.length > 0 && !clientBookings && (
                 <div>
-                  <p className="px-3 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-100">Clients</p>
+                  <p className="px-3 py-2 text-[10px] font-semibold text-grey-45 uppercase tracking-wide border-b border-grey-5">Clients</p>
                   {searchResults.map(r => (
                     <button
                       key={r.id}
                       onClick={() => selectSearchClient(r.clientId, r.name, r.phone)}
-                      className="w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors flex items-center justify-between gap-2"
+                      className="w-full px-3 py-2.5 text-left hover:bg-grey-5 transition-colors flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{r.name ?? 'Unknown'}</p>
-                        <p className="text-xs text-gray-400">{r.phone}</p>
+                        <p className="text-sm font-medium text-tone-ink truncate">{r.name ?? 'Unknown'}</p>
+                        <p className="text-xs text-grey-45">{r.phone}</p>
                       </div>
-                      {r.email && <span className="text-[10px] text-gray-400 flex-shrink-0 truncate max-w-[120px]">{r.email}</span>}
+                      {r.email && <span className="text-[10px] text-grey-45 flex-shrink-0 truncate max-w-[120px]">{r.email}</span>}
                     </button>
                   ))}
                 </div>
@@ -740,22 +757,22 @@ export default function CalendarPage() {
               {/* Loading */}
               {searchLoading && searchResults.length === 0 && (
                 <div className="px-4 py-6 text-center">
-                  <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin mx-auto" />
+                  <div className="w-5 h-5 border-2 border-grey-15 border-t-gray-500 rounded-full animate-spin mx-auto" />
                 </div>
               )}
 
               {/* Client booking results */}
               {clientBookings && selectedClient && (
                 <div>
-                  <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                  <div className="px-3 py-2.5 bg-grey-5 border-b border-grey-5 flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">{selectedClient.name}</p>
-                      <p className="text-[11px] text-gray-400">{selectedClient.phone}</p>
+                      <p className="text-sm font-semibold text-tone-ink">{selectedClient.name}</p>
+                      <p className="text-[11px] text-grey-45">{selectedClient.phone}</p>
                     </div>
-                    <button onClick={() => { setClientBookings(null); setSelectedClient(null); }} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+                    <button onClick={() => { setClientBookings(null); setSelectedClient(null); }} className="text-xs text-grey-45 hover:text-grey-75">Clear</button>
                   </div>
                   {clientBookings.length === 0 ? (
-                    <p className="px-4 py-4 text-sm text-gray-400 text-center">No bookings found</p>
+                    <p className="px-4 py-4 text-sm text-grey-45 text-center">No bookings found</p>
                   ) : (
                     clientBookings.map(b => {
                       const d = new Date(b.startTime);
@@ -764,12 +781,12 @@ export default function CalendarPage() {
                         <button
                           key={b.id}
                           onClick={() => jumpToBooking(b.startTime)}
-                          className="w-full px-3 py-2.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 flex items-center gap-3"
+                          className="w-full px-3 py-2.5 text-left hover:bg-grey-5 transition-colors border-b border-grey-5 last:border-0 flex items-center gap-3"
                         >
-                          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isPast ? 'bg-gray-300' : 'bg-green-400'}`} />
+                          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isPast ? 'bg-grey-30' : 'bg-tone-sage'}`} />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-gray-800 truncate">{b.serviceName}</p>
-                            <p className="text-[11px] text-gray-400">
+                            <p className="text-xs font-medium text-grey-90 truncate">{b.serviceName}</p>
+                            <p className="text-[11px] text-grey-45">
                               {d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
                               {' · '}
                               {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -778,11 +795,11 @@ export default function CalendarPage() {
                             </p>
                           </div>
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize flex-shrink-0 ${
-                            b.status === 'confirmed' ? 'bg-green-50 text-green-700'
-                            : b.status === 'completed' ? 'bg-gray-100 text-gray-500'
-                            : b.status === 'in_progress' ? 'bg-blue-50 text-blue-700'
-                            : b.status === 'no_show' ? 'bg-orange-50 text-orange-600'
-                            : 'bg-red-50 text-red-600'
+                            b.status === 'confirmed' ? 'bg-tone-sage/5 text-tone-sage'
+                            : b.status === 'completed' ? 'bg-grey-15 text-grey-60'
+                            : b.status === 'in_progress' ? 'bg-grey-5 text-tone-ink'
+                            : b.status === 'no_show' ? 'bg-semantic-warn/5 text-semantic-warn'
+                            : 'bg-semantic-danger/5 text-semantic-danger'
                           }`}>{b.status.replace('_', ' ')}</span>
                         </button>
                       );
@@ -796,7 +813,7 @@ export default function CalendarPage() {
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* View mode toggle */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex rounded-lg border border-grey-15 overflow-hidden">
             {(['month', 'week', 'day'] as const).map(mode => (
               <button
                 key={mode}
@@ -804,7 +821,7 @@ export default function CalendarPage() {
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   viewMode === mode
                     ? 'bg-[#1a2313] text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                    : 'bg-tone-surface text-grey-75 hover:bg-grey-5'
                 }`}
               >
                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -815,7 +832,7 @@ export default function CalendarPage() {
           <button
             onClick={() => setDensity(d => d === 'compact' ? 'comfortable' : 'compact')}
             title="Toggle compact/comfortable view (C)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-grey-15 text-xs text-grey-75 hover:bg-grey-5 transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               {density === 'comfortable'
@@ -842,67 +859,72 @@ export default function CalendarPage() {
       <>
       {/* ── Date navigation ── */}
       <div className="flex items-center gap-2">
-        <button onClick={() => nav(-1)} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+        <button onClick={() => nav(-1)} className="p-1.5 rounded-lg border border-grey-15 text-grey-60 hover:bg-grey-5 transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <span className="text-sm font-semibold text-gray-800 min-w-64 text-center">{dateLabel}</span>
-        <button onClick={() => nav(1)} className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+        <span className="text-sm font-semibold text-grey-90 min-w-64 text-center">{dateLabel}</span>
+        <button onClick={() => nav(1)} className="p-1.5 rounded-lg border border-grey-15 text-grey-60 hover:bg-grey-5 transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
         </button>
-        <button onClick={() => setDate(new Date())} className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+        <button onClick={() => setDate(new Date())} className="text-xs px-3 py-1.5 rounded-lg border border-grey-15 text-grey-75 hover:bg-grey-5 transition-colors">
           Today
         </button>
-        {loading && <span className="text-xs text-gray-400 animate-pulse ml-2">Loading…</span>}
+        {loading && <span className="text-xs text-grey-45 animate-pulse ml-2">Loading…</span>}
       </div>
 
       {/* ── Closure banner ── */}
       {closureTitle && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="rounded-xl border border-semantic-danger/30 bg-semantic-danger/5 px-4 py-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-semantic-danger/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-semantic-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
           <div>
-            <p className="text-sm font-semibold text-red-800">Closed — {closureTitle}</p>
-            <p className="text-xs text-red-600 mt-0.5">Online bookings are blocked for this date. <a href="/dashboard/settings?tab=closures" className="underline hover:text-red-800">Manage closures</a></p>
+            <p className="text-sm font-semibold text-semantic-danger">Closed — {closureTitle}</p>
+            <p className="text-xs text-semantic-danger mt-0.5">Online bookings are blocked for this date. <a href="/dashboard/settings?tab=closures" className="underline hover:text-semantic-danger">Manage closures</a></p>
           </div>
         </div>
       )}
 
       {/* ── Resource grid ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 overflow-hidden flex flex-col">
 
         {/* Staff column headers */}
-        <div className="flex border-b border-gray-100 bg-white z-20 shrink-0">
-          <div className="w-16 shrink-0 border-r border-gray-200" />
+        <div className="flex border-b border-grey-5 bg-tone-surface z-20 shrink-0">
+          <div className="w-16 shrink-0 border-r border-grey-15" />
           {staffList.map((s, i) => {
             const { bookedMin, denomMin, pct } = occupancy(s.id);
-            const color = STAFF_COLORS[i % STAFF_COLORS.length]!;
+            const avatarBg = AVATAR_GREYS[i % AVATAR_GREYS.length]!;
             const dutyRostered = duties.some(d => d.staffId === s.id);
             return (
-              <div key={s.id} className="flex-1 min-w-[160px] border-r border-gray-100 last:border-r-0 px-3 py-3">
+              <div key={s.id} className="flex-1 min-w-[160px] border-r border-grey-5 last:border-r-0 px-3 py-3">
                 <div className="flex items-center gap-2">
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-sm"
-                    style={{ backgroundColor: color }}
+                    style={{ backgroundColor: avatarBg }}
                   >
                     {s.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-gray-900 truncate">{s.name}</div>
+                    <div className="text-xs font-semibold text-tone-ink truncate">{s.name}</div>
                     <div className="flex items-center gap-1.5 mt-1">
-                      <div className="h-1 w-14 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-1 w-14 rounded-full bg-grey-15 overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
                             width: `${pct}%`,
-                            backgroundColor: pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : color,
+                            backgroundColor:
+                              pct > 80
+                                ? 'var(--color-semantic-danger)'
+                                : pct > 50
+                                  ? 'var(--color-semantic-warn)'
+                                  : 'var(--color-tone-sage)',
                           }}
                         />
                       </div>
                       <span
-                        className="text-[10px] text-gray-400 tabular-nums"
+                        className="text-[10px] text-grey-45 tabular-nums"
                         title={dutyRostered ? 'Booked vs rostered duty hours' : 'Booked vs salon operating hours (no duty rostered)'}
                       >
                         {fmtHours(bookedMin)} / {fmtHours(denomMin)} · {pct}%
@@ -920,23 +942,24 @@ export default function CalendarPage() {
           <div className="flex" style={{ minHeight: totalPx }}>
 
             {/* Time gutter */}
-            <div className="w-16 shrink-0 border-r border-gray-200 relative bg-white sticky left-0 z-10" style={{ height: totalPx }}>
+            <div className="w-16 shrink-0 border-r border-grey-15 relative bg-tone-surface sticky left-0 z-10" style={{ height: totalPx }}>
               {timeLabels.map(({ min, label }) => (
                 <div key={min} className="absolute right-2 left-0 flex items-center justify-end pr-2" style={{ top: topPx(min) - 9 }}>
-                  <span className="text-[11px] text-gray-500 font-semibold whitespace-nowrap">{label}</span>
+                  <span className="text-[11px] text-grey-60 font-semibold whitespace-nowrap">{label}</span>
                 </div>
               ))}
               {/* 30-min marks in gutter */}
               {timeLabels.slice(0, -1).map(({ min }) => (
                 <div key={`${min}half`} className="absolute right-2 left-0 flex items-center justify-end pr-2" style={{ top: topPx(min + 30) - 7 }}>
-                  <span className="text-[9px] text-gray-400 whitespace-nowrap">:30</span>
+                  <span className="text-[9px] text-grey-45 whitespace-nowrap">:30</span>
                 </div>
               ))}
             </div>
 
             {/* Staff columns */}
             {staffList.map((s, colIdx) => {
-              const color       = STAFF_COLORS[colIdx % STAFF_COLORS.length]!;
+              const color       = BOOKING_BG;
+              void colIdx;
               const staffDuties = duties.filter(d => d.staffId === s.id);
               const staffBooks  = bookings.filter(b => b.staffId === s.id);
               const offRanges   = offDutyRanges(s.id);
@@ -946,7 +969,7 @@ export default function CalendarPage() {
                 <div
                   key={s.id}
                   ref={el => { colRefs.current[s.id] = el; }}
-                  className="flex-1 min-w-[160px] border-r border-gray-100 last:border-r-0 relative cursor-cell"
+                  className="flex-1 min-w-[160px] border-r border-grey-5 last:border-r-0 relative cursor-cell"
                   style={{ height: totalPx }}
                   onClick={e => {
                     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -955,11 +978,11 @@ export default function CalendarPage() {
                 >
                   {/* Hour lines — solid, clearly visible */}
                   {timeLabels.map(({ min }) => (
-                    <div key={min} className="absolute inset-x-0 border-t border-gray-300" style={{ top: topPx(min) }} />
+                    <div key={min} className="absolute inset-x-0 border-t border-grey-30" style={{ top: topPx(min) }} />
                   ))}
                   {/* 30-min sub-lines — dashed, lighter than hour lines */}
                   {timeLabels.slice(0, -1).map(({ min }) => (
-                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-gray-200" style={{ top: topPx(min + 30) }} />
+                    <div key={`${min}h`} className="absolute inset-x-0 border-t border-dashed border-grey-15" style={{ top: topPx(min + 30) }} />
                   ))}
 
                   {/* Off-duty hatching */}
@@ -979,9 +1002,9 @@ export default function CalendarPage() {
                   {/* Now indicator */}
                   {nowMin && nowMin >= DAY_START_H * 60 && nowMin <= DAY_END_H * 60 && (
                     <div className="absolute inset-x-0 z-30 pointer-events-none" style={{ top: topPx(nowMin) }}>
-                      <div className="relative h-0.5 bg-red-400">
+                      <div className="relative h-0.5 bg-semantic-danger">
                         {colIdx === 0 && (
-                          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-400 shadow-sm" style={{ marginLeft: -5 }} />
+                          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-semantic-danger shadow-sm" style={{ marginLeft: -5 }} />
                         )}
                       </div>
                     </div>
@@ -1019,7 +1042,7 @@ export default function CalendarPage() {
                           className="absolute bottom-0 inset-x-0 h-3 cursor-s-resize flex items-center justify-center pointer-events-auto"
                           onMouseDown={e => { e.stopPropagation(); startDrag(e, duty, 'resize'); }}
                         >
-                          <div className="w-6 h-px bg-white/30 hover:bg-white/60 transition-colors" />
+                          <div className="w-6 h-px bg-tone-surface/30 hover:bg-tone-surface/60 transition-colors" />
                         </div>
                       </div>
                     );
@@ -1072,7 +1095,7 @@ export default function CalendarPage() {
                           {canCheckIn && (
                             <button
                               title="Check In"
-                              className="w-5 h-5 rounded flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-grey-75 hover:bg-tone-ink text-white transition-colors"
                               onClick={e => { e.stopPropagation(); bookingAction(b.id, 'check-in'); }}
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" /></svg>
@@ -1081,7 +1104,7 @@ export default function CalendarPage() {
                           {canComplete && (
                             <button
                               title="Mark Complete"
-                              className="w-5 h-5 rounded flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-tone-sage hover:bg-tone-sage text-white transition-colors"
                               onClick={e => { e.stopPropagation(); bookingAction(b.id, 'complete'); }}
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
@@ -1090,7 +1113,7 @@ export default function CalendarPage() {
                           {canNoShow && (
                             <button
                               title="No Show"
-                              className="w-5 h-5 rounded flex items-center justify-center bg-orange-400 hover:bg-orange-500 text-white transition-colors"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-semantic-warn hover:opacity-90 text-white transition-colors"
                               onClick={e => { e.stopPropagation(); bookingAction(b.id, 'no-show'); }}
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1099,8 +1122,8 @@ export default function CalendarPage() {
                         </div>
 
                         <div className="px-2 py-1 pr-1 overflow-hidden" style={{ maxHeight: h - 4 }}>
-                          <div className="text-[11px] font-semibold text-gray-900 truncate leading-tight">{b.clientName ?? 'Client'}</div>
-                          <div className="text-[10px] text-gray-500 truncate mt-0.5">{b.serviceName}</div>
+                          <div className="text-[11px] font-semibold text-tone-ink truncate leading-tight">{b.clientName ?? 'Client'}</div>
+                          <div className="text-[10px] text-grey-60 truncate mt-0.5">{b.serviceName}</div>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             {meta && (
                               <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-sm whitespace-nowrap ${meta.cls}`}>
@@ -1108,17 +1131,17 @@ export default function CalendarPage() {
                               </span>
                             )}
                             {b.priceSgd && (
-                              <span className="text-[9px] font-medium text-gray-400 whitespace-nowrap">
+                              <span className="text-[9px] font-medium text-grey-45 whitespace-nowrap">
                                 ${parseFloat(b.priceSgd).toFixed(0)}
                               </span>
                             )}
                           </div>
                         </div>
                         {/* Hover tooltip with full details */}
-                        <div className="hidden group-hover/card:block absolute left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 p-2.5 pointer-events-none" style={{ top: h + 2 }}>
-                          <div className="text-[11px] font-semibold text-gray-900">{b.clientName ?? 'Client'}</div>
-                          <div className="text-[10px] text-gray-500 mt-0.5">{b.serviceName}</div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">
+                        <div className="hidden group-hover/card:block absolute left-0 right-0 bg-tone-surface border border-grey-15 rounded-lg shadow-lg z-30 p-2.5 pointer-events-none" style={{ top: h + 2 }}>
+                          <div className="text-[11px] font-semibold text-tone-ink">{b.clientName ?? 'Client'}</div>
+                          <div className="text-[10px] text-grey-60 mt-0.5">{b.serviceName}</div>
+                          <div className="text-[10px] text-grey-45 mt-0.5">
                             {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {' – '}
                             {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1130,7 +1153,7 @@ export default function CalendarPage() {
                               </span>
                             )}
                             {b.priceSgd && (
-                              <span className="text-[10px] font-medium text-gray-500">
+                              <span className="text-[10px] font-medium text-grey-60">
                                 SGD {parseFloat(b.priceSgd).toFixed(2)}
                               </span>
                             )}
@@ -1156,83 +1179,81 @@ export default function CalendarPage() {
         </div>
 
         {/* Status bar */}
-        <div className="border-t border-gray-100 bg-gray-50/40 shrink-0">
-          <div className="flex items-center gap-0 divide-x divide-gray-100 px-1 py-2">
+        <div className="border-t border-grey-5 bg-grey-5/40 shrink-0">
+          <div className="flex items-center gap-0 divide-x divide-grey-5 px-1 py-2">
             <div className="flex flex-col items-center px-4">
-              <span className="text-base font-bold text-gray-900 tabular-nums leading-none">{dayStats.total}</span>
-              <span className="text-[10px] text-gray-400 mt-0.5">Bookings</span>
+              <span className="text-base font-bold text-tone-ink tabular-nums leading-none">{dayStats.total}</span>
+              <span className="text-[10px] text-grey-45 mt-0.5">Bookings</span>
             </div>
             {dayStats.confirmed > 0 && (
               <div className="flex flex-col items-center px-4">
-                <span className="text-base font-bold text-emerald-600 tabular-nums leading-none">{dayStats.confirmed}</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Confirmed</span>
+                <span className="text-base font-bold text-tone-sage tabular-nums leading-none">{dayStats.confirmed}</span>
+                <span className="text-[10px] text-grey-45 mt-0.5">Confirmed</span>
               </div>
             )}
             {dayStats.inProgress > 0 && (
               <div className="flex flex-col items-center px-4">
-                <span className="text-base font-bold text-blue-600 tabular-nums leading-none">{dayStats.inProgress}</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">In Progress</span>
+                <span className="text-base font-bold text-tone-ink tabular-nums leading-none">{dayStats.inProgress}</span>
+                <span className="text-[10px] text-grey-45 mt-0.5">In Progress</span>
               </div>
             )}
             {dayStats.completed > 0 && (
               <div className="flex flex-col items-center px-4">
-                <span className="text-base font-bold text-gray-700 tabular-nums leading-none">{dayStats.completed}</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Completed</span>
+                <span className="text-base font-bold text-grey-75 tabular-nums leading-none">{dayStats.completed}</span>
+                <span className="text-[10px] text-grey-45 mt-0.5">Completed</span>
               </div>
             )}
             {dayStats.noShow > 0 && (
               <div className="flex flex-col items-center px-4">
-                <span className="text-base font-bold text-orange-500 tabular-nums leading-none">{dayStats.noShow}</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">No Show</span>
+                <span className="text-base font-bold text-semantic-warn tabular-nums leading-none">{dayStats.noShow}</span>
+                <span className="text-[10px] text-grey-45 mt-0.5">No Show</span>
               </div>
             )}
             {dayStats.cancelled > 0 && (
               <div className="flex flex-col items-center px-4">
-                <span className="text-base font-bold text-red-500 tabular-nums leading-none">{dayStats.cancelled}</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Cancelled</span>
+                <span className="text-base font-bold text-semantic-danger tabular-nums leading-none">{dayStats.cancelled}</span>
+                <span className="text-[10px] text-grey-45 mt-0.5">Cancelled</span>
               </div>
             )}
             <div className="flex flex-col items-center px-4">
               <span className="text-base font-bold text-[#1a2313] tabular-nums leading-none">
                 ${dayStats.revenue.toFixed(0)}
               </span>
-              <span className="text-[10px] text-gray-400 mt-0.5">Est. Revenue</span>
+              <span className="text-[10px] text-grey-45 mt-0.5">Est. Revenue</span>
             </div>
             {/* Legend */}
             <div className="flex items-center gap-3 pl-4 pr-4 ml-auto border-l-0">
-              <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="flex items-center gap-1.5 text-[10px] text-grey-45">
                 <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: DUTY_BG }} />
                 Duty
               </span>
-              {staffList.slice(0, 5).map((s, i) => (
-                <span key={s.id} className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 opacity-60" style={{ backgroundColor: STAFF_COLORS[i % STAFF_COLORS.length] }} />
-                  {s.name.split(' ')[0]}
-                </span>
-              ))}
+              <span className="flex items-center gap-1.5 text-[10px] text-grey-45">
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: BOOKING_BG }} />
+                Booking
+              </span>
             </div>
           </div>
         </div>
       </div>
       </>
       ) : (
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-4">
         <style>{`
           .fc { font-family: var(--font-body, 'Manrope', sans-serif); }
-          .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: #111827; }
+          .fc .fc-toolbar-title { font-size: 16px; font-weight: 600; color: var(--color-tone-ink); }
           .fc .fc-button { font-size: 12px; font-weight: 500; padding: 4px 10px; }
-          .fc .fc-button-primary { background-color: #1a2313; border-color: #1a2313; }
-          .fc .fc-button-primary:hover { background-color: #2f3827; border-color: #2f3827; }
-          .fc .fc-button-primary:not(:disabled).fc-button-active { background-color: #1a2313; border-color: #1a2313; }
-          .fc .fc-col-header-cell-cushion { font-size: 11px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; }
-          .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: #374151; }
-          .fc .fc-timegrid-slot { border-bottom-color: #e5e7eb; }
-          .fc .fc-timegrid-slot-minor { border-top: 1px dashed #f3f4f6 !important; }
-          .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: #6b7280; }
+          .fc .fc-button-primary { background-color: var(--color-tone-ink); border-color: var(--color-tone-ink); }
+          .fc .fc-button-primary:hover { background-color: var(--color-tone-ink); border-color: var(--color-tone-ink); opacity: 0.9; }
+          .fc .fc-button-primary:not(:disabled).fc-button-active { background-color: var(--color-tone-ink); border-color: var(--color-tone-ink); }
+          .fc .fc-col-header-cell-cushion { font-size: 11px; font-weight: 600; color: var(--color-grey-75); text-transform: uppercase; letter-spacing: 0.05em; }
+          .fc .fc-daygrid-day-number { font-size: 13px; font-weight: 500; color: var(--color-grey-75); }
+          .fc .fc-timegrid-slot { border-bottom-color: var(--color-grey-15); }
+          .fc .fc-timegrid-slot-minor { border-top: 1px dashed var(--color-grey-5) !important; }
+          .fc .fc-timegrid-slot-label { font-size: 11px; font-weight: 600; color: var(--color-grey-60); }
           .fc .fc-event { border-radius: 4px; font-size: 11px; }
           .fc .fc-daygrid-event { padding: 1px 4px; }
-          .fc td, .fc th { border-color: #e5e7eb; }
-          .fc .fc-scrollgrid { border-color: #e5e7eb; }
+          .fc td, .fc th { border-color: var(--color-grey-15); }
+          .fc .fc-scrollgrid { border-color: var(--color-grey-15); }
         `}</style>
         <FullCalendar
           key={viewMode}
@@ -1263,21 +1284,21 @@ export default function CalendarPage() {
       {/* ── Duty modal ── */}
       {showDutyModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
+          <div className="bg-tone-surface rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">{editDuty ? 'Edit Schedule Block' : 'New Schedule Block'}</h2>
-              <button onClick={() => setShowDutyModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <h2 className="text-base font-semibold text-tone-ink">{editDuty ? 'Edit Schedule Block' : 'New Schedule Block'}</h2>
+              <button onClick={() => setShowDutyModal(false)} className="text-grey-45 hover:text-grey-75 transition-colors">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
             {!editDuty && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Staff Member</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Staff Member</label>
                 <select
                   value={dutyForm.staffId}
                   onChange={e => setDutyForm(f => ({ ...f, staffId: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
                 >
                   {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -1285,48 +1306,48 @@ export default function CalendarPage() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+              <label className="block text-xs font-medium text-grey-75 mb-1">Date</label>
               <input
                 type="date"
                 value={dutyForm.date}
                 onChange={e => setDutyForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Start</label>
                 <input
                   type="time"
                   value={dutyForm.startTime}
                   onChange={e => setDutyForm(f => ({ ...f, startTime: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">End</label>
                 <input
                   type="time"
                   value={dutyForm.endTime}
                   onChange={e => setDutyForm(f => ({ ...f, endTime: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+              <label className="block text-xs font-medium text-grey-75 mb-1">Notes (optional)</label>
               <input
                 type="text"
                 value={dutyForm.notes}
                 onChange={e => setDutyForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="e.g. Front desk, Facial room"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
               />
             </div>
 
-            {dutyError && <p className="text-xs text-red-600">{dutyError}</p>}
+            {dutyError && <p className="text-xs text-semantic-danger">{dutyError}</p>}
 
             <div className="flex gap-2 pt-1">
               <button
@@ -1340,14 +1361,14 @@ export default function CalendarPage() {
                 <button
                   onClick={deleteDuty}
                   disabled={dutySaving}
-                  className="py-2 px-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
+                  className="py-2 px-4 bg-semantic-danger/5 text-semantic-danger text-sm font-medium rounded-lg hover:bg-semantic-danger/10 disabled:opacity-50 transition-colors"
                 >
                   Delete
                 </button>
               )}
               <button
                 onClick={() => { setShowDutyModal(false); setDutyError(null); }}
-                className="py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                className="py-2 px-4 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors"
               >
                 Cancel
               </button>
@@ -1362,26 +1383,26 @@ export default function CalendarPage() {
           {/* Backdrop */}
           <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} />
           {/* Panel */}
-          <div className="w-full max-w-sm bg-white shadow-2xl flex flex-col font-manrope overflow-hidden">
+          <div className="w-full max-w-sm bg-tone-surface shadow-2xl flex flex-col font-manrope overflow-hidden">
 
             {/* Header */}
-            <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between shrink-0">
+            <div className="px-5 py-4 border-b border-grey-5 flex items-start justify-between shrink-0">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-sm font-semibold text-gray-900">{selBooking.clientName ?? 'Client'}</h2>
+                  <h2 className="text-sm font-semibold text-tone-ink">{selBooking.clientName ?? 'Client'}</h2>
                   {STATUS_META[selBooking.status] && (
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${STATUS_META[selBooking.status]!.cls}`}>
                       {STATUS_META[selBooking.status]!.label}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5">{selBooking.serviceName}</p>
+                <p className="text-xs text-grey-45 mt-0.5">{selBooking.serviceName}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {selBooking.priceSgd && (
                   <span className="text-sm font-semibold text-[#1a2313]">${parseFloat(selBooking.priceSgd).toFixed(2)}</span>
                 )}
-                <button onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                <button onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} className="p-1 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -1397,17 +1418,17 @@ export default function CalendarPage() {
                   ['End',    new Date(selBooking.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</span>
-                    <span className="text-sm font-medium text-gray-800">{value}</span>
+                    <span className="text-[11px] font-medium text-grey-45 uppercase tracking-wide">{label}</span>
+                    <span className="text-sm font-medium text-grey-90">{value}</span>
                   </div>
                 ))}
               </div>
 
               {/* Client profile snippet */}
               <div className="px-5 pb-4">
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-grey-5 pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Client Profile</h3>
+                    <h3 className="text-xs font-semibold text-grey-60 uppercase tracking-wide">Client Profile</h3>
                     {clientSnippet && (
                       <Link
                         href={`/dashboard/clients/${clientSnippet.profileId}`}
@@ -1420,7 +1441,7 @@ export default function CalendarPage() {
 
                   {snippetLoading && (
                     <div className="flex justify-center py-4">
-                      <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" />
+                      <div className="w-5 h-5 border-2 border-grey-15 border-t-gray-500 rounded-full animate-spin" />
                     </div>
                   )}
 
@@ -1429,58 +1450,58 @@ export default function CalendarPage() {
                       {/* Contact info */}
                       <div className="space-y-1.5">
                         {clientSnippet.clientName && (
-                          <p className="text-sm font-semibold text-gray-900">{clientSnippet.clientName}</p>
+                          <p className="text-sm font-semibold text-tone-ink">{clientSnippet.clientName}</p>
                         )}
                         <div className="flex flex-wrap gap-x-4 gap-y-1">
                           {clientSnippet.clientPhone && (
-                            <span className="text-xs text-gray-500">{clientSnippet.clientPhone}</span>
+                            <span className="text-xs text-grey-60">{clientSnippet.clientPhone}</span>
                           )}
                           {clientSnippet.clientEmail && (
-                            <span className="text-xs text-gray-500">{clientSnippet.clientEmail}</span>
+                            <span className="text-xs text-grey-60">{clientSnippet.clientEmail}</span>
                           )}
                         </div>
                       </div>
 
                       {/* Client notes — shown prominently before stats */}
                       {clientSnippet.notes && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                          <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide mb-1">Client Notes</p>
-                          <p className="text-xs text-amber-900 leading-relaxed">{clientSnippet.notes}</p>
+                        <div className="bg-semantic-warn/5 border border-semantic-warn/30 rounded-lg px-3 py-2.5">
+                          <p className="text-[10px] font-semibold text-semantic-warn uppercase tracking-wide mb-1">Client Notes</p>
+                          <p className="text-xs text-semantic-warn leading-relaxed">{clientSnippet.notes}</p>
                         </div>
                       )}
 
                       {/* Stats row */}
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                          <p className="text-base font-bold text-gray-900">{clientSnippet.totalVisits}</p>
-                          <p className="text-[10px] text-gray-400">Visits</p>
+                        <div className="bg-grey-5 rounded-lg p-2.5 text-center">
+                          <p className="text-base font-bold text-tone-ink">{clientSnippet.totalVisits}</p>
+                          <p className="text-[10px] text-grey-45">Visits</p>
                         </div>
-                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                          <p className="text-base font-bold text-gray-900">${parseFloat(clientSnippet.totalSpendSgd).toFixed(0)}</p>
-                          <p className="text-[10px] text-gray-400">Revenue</p>
+                        <div className="bg-grey-5 rounded-lg p-2.5 text-center">
+                          <p className="text-base font-bold text-tone-ink">${parseFloat(clientSnippet.totalSpendSgd).toFixed(0)}</p>
+                          <p className="text-[10px] text-grey-45">Revenue</p>
                         </div>
-                        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
-                          <p className="text-[11px] font-semibold text-gray-900 leading-tight">
+                        <div className="bg-grey-5 rounded-lg p-2.5 text-center">
+                          <p className="text-[11px] font-semibold text-tone-ink leading-tight">
                             {clientSnippet.lastVisitAt ? new Date(clientSnippet.lastVisitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
                           </p>
-                          <p className="text-[10px] text-gray-400">Last Visit</p>
+                          <p className="text-[10px] text-grey-45">Last Visit</p>
                         </div>
                       </div>
 
                       {/* VIP + Marketing badges */}
                       <div className="flex items-center gap-2 flex-wrap">
                         {clientSnippet.vipTier && (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-0.5 capitalize">
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                          <span className="inline-flex items-center gap-1.5 text-xs text-grey-75 bg-grey-5 border border-grey-15 rounded-full px-2.5 py-0.5 capitalize">
+                            <span className="w-1.5 h-1.5 rounded-full bg-grey-45" />
                             {clientSnippet.vipTier}
                           </span>
                         )}
                         <span className={`inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-0.5 ${
                           clientSnippet.marketingOptIn
-                            ? 'bg-green-50 text-green-700 border border-green-200'
-                            : 'bg-gray-100 text-gray-500 border border-gray-200'
+                            ? 'bg-tone-sage/5 text-tone-sage border border-tone-sage/30'
+                            : 'bg-grey-15 text-grey-60 border border-grey-15'
                         }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${clientSnippet.marketingOptIn ? 'bg-green-400' : 'bg-gray-300'}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${clientSnippet.marketingOptIn ? 'bg-tone-sage' : 'bg-grey-30'}`} />
                           {clientSnippet.marketingOptIn ? 'Marketing OK' : 'No marketing'}
                         </span>
                       </div>
@@ -1488,15 +1509,15 @@ export default function CalendarPage() {
                       {/* Service history */}
                       {clientSnippet.serviceHistory.length > 0 && (
                         <div>
-                          <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Past Services</h4>
+                          <h4 className="text-[10px] font-semibold text-grey-45 uppercase tracking-wide mb-2">Past Services</h4>
                           <div className="space-y-1.5 max-h-36 overflow-y-auto">
                             {clientSnippet.serviceHistory.map((sh, i) => (
                               <div key={i} className="flex items-center justify-between gap-2 text-xs">
                                 <div className="min-w-0 flex-1">
-                                  <span className="font-medium text-gray-800 truncate block">{sh.serviceName ?? 'Service'}</span>
-                                  <span className="text-gray-400">{sh.staffName ?? '—'} · {new Date(sh.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                  <span className="font-medium text-grey-90 truncate block">{sh.serviceName ?? 'Service'}</span>
+                                  <span className="text-grey-45">{sh.staffName ?? '—'} · {new Date(sh.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
                                 </div>
-                                <span className="text-gray-600 font-medium flex-shrink-0">${parseFloat(sh.price).toFixed(0)}</span>
+                                <span className="text-grey-75 font-medium flex-shrink-0">${parseFloat(sh.price).toFixed(0)}</span>
                               </div>
                             ))}
                           </div>
@@ -1504,47 +1525,47 @@ export default function CalendarPage() {
                       )}
 
                       {/* Reviews placeholder */}
-                      <div className="bg-gray-50 rounded-lg px-3 py-2">
-                        <p className="text-[10px] text-gray-400 italic">Reviews — coming soon</p>
+                      <div className="bg-grey-5 rounded-lg px-3 py-2">
+                        <p className="text-[10px] text-grey-45 italic">Reviews — coming soon</p>
                       </div>
                     </div>
                   )}
 
                   {!snippetLoading && !clientSnippet && selBooking.clientId && (
-                    <p className="text-xs text-gray-400 italic">No profile on file</p>
+                    <p className="text-xs text-grey-45 italic">No profile on file</p>
                   )}
                 </div>
               </div>
             </div>
 
             {/* Quick actions */}
-            <div className="px-5 py-4 border-t border-gray-100 space-y-2 shrink-0">
+            <div className="px-5 py-4 border-t border-grey-5 space-y-2 shrink-0">
 
               {/* Reschedule form — expands inline when triggered */}
               {showReschedule && (selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
-                <div className="bg-gray-50 rounded-xl p-3 space-y-2 mb-1">
-                  <p className="text-xs font-semibold text-gray-700">Reschedule to</p>
+                <div className="bg-grey-5 rounded-xl p-3 space-y-2 mb-1">
+                  <p className="text-xs font-semibold text-grey-75">Reschedule to</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Date</label>
+                      <label className="block text-[10px] font-medium text-grey-60 mb-0.5">Date</label>
                       <input
                         type="date"
                         value={rescheduleForm.date}
                         onChange={e => setRescheduleForm(f => ({ ...f, date: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                        className="w-full border border-grey-15 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Time</label>
+                      <label className="block text-[10px] font-medium text-grey-60 mb-0.5">Time</label>
                       <input
                         type="time"
                         value={rescheduleForm.time}
                         onChange={e => setRescheduleForm(f => ({ ...f, time: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#1a2313]/30"
+                        className="w-full border border-grey-15 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-tone-ink/30"
                       />
                     </div>
                   </div>
-                  {rescheduleError && <p className="text-[11px] text-red-600">{rescheduleError}</p>}
+                  {rescheduleError && <p className="text-[11px] text-semantic-danger">{rescheduleError}</p>}
                   <div className="flex gap-2 pt-0.5">
                     <button
                       onClick={handleReschedule}
@@ -1555,7 +1576,7 @@ export default function CalendarPage() {
                     </button>
                     <button
                       onClick={() => { setShowReschedule(false); setRescheduleError(null); }}
-                      className="py-1.5 px-3 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                      className="py-1.5 px-3 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-30 transition-colors"
                     >
                       Cancel
                     </button>
@@ -1568,7 +1589,7 @@ export default function CalendarPage() {
                   {selBooking.status === 'confirmed' && (
                     <button
                       onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); setClientSnippet(null); }}
-                      className="flex-1 py-2 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
+                      className="flex-1 py-2 bg-grey-75 text-white text-xs font-semibold rounded-lg hover:bg-tone-ink transition-colors"
                     >
                       Check In
                     </button>
@@ -1576,14 +1597,14 @@ export default function CalendarPage() {
                   {selBooking.status === 'in_progress' && (
                     <button
                       onClick={() => { bookingAction(selBooking.id, 'complete'); setSelBooking(null); setClientSnippet(null); }}
-                      className="flex-1 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-colors"
+                      className="flex-1 py-2 bg-tone-sage text-white text-xs font-semibold rounded-lg hover:bg-tone-sage transition-colors"
                     >
                       Mark Complete
                     </button>
                   )}
                   <button
                     onClick={() => { bookingAction(selBooking.id, 'no-show'); setSelBooking(null); setClientSnippet(null); }}
-                    className="py-2 px-3 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition-colors"
+                    className="py-2 px-3 bg-semantic-warn/5 text-semantic-warn text-xs font-semibold rounded-lg hover:bg-semantic-warn/10 transition-colors"
                   >
                     No Show
                   </button>
@@ -1602,7 +1623,7 @@ export default function CalendarPage() {
                     setShowReschedule(true);
                     setRescheduleError(null);
                   }}
-                  className="w-full py-2 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                  className="w-full py-2 border border-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-5 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/></svg>
                   Reschedule
@@ -1611,7 +1632,7 @@ export default function CalendarPage() {
 
               <button
                 onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }}
-                className="w-full py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                className="w-full py-2.5 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors"
               >
                 Close
               </button>

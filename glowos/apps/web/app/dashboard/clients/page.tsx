@@ -61,16 +61,16 @@ interface ClientDetail {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const VIP_CONFIG: Record<VipTier, { emoji: string; label: string; className: string }> = {
-  platinum: { emoji: '💎', label: 'Platinum', className: 'bg-purple-100 text-purple-700 border-purple-200' },
-  gold:     { emoji: '🥇', label: 'Gold',     className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  silver:   { emoji: '🥈', label: 'Silver',   className: 'bg-slate-100 text-slate-600 border-slate-200' },
-  bronze:   { emoji: '🥉', label: 'Bronze',   className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  platinum: { emoji: '💎', label: 'Platinum', className: 'bg-grey-15 text-grey-75 border-grey-15' },
+  gold:     { emoji: '🥇', label: 'Gold',     className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30' },
+  silver:   { emoji: '🥈', label: 'Silver',   className: 'bg-grey-15 text-grey-75 border-grey-15' },
+  bronze:   { emoji: '🥉', label: 'Bronze',   className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30' },
 };
 
 const CHURN_CONFIG: Record<ChurnRisk, { label: string; className: string }> = {
-  low:    { label: 'Low',    className: 'bg-green-100 text-green-700 border-green-200' },
-  medium: { label: 'Medium', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-  high:   { label: 'High',   className: 'bg-red-100 text-red-700 border-red-200' },
+  low:    { label: 'Low',    className: 'bg-tone-sage/10 text-tone-sage border-tone-sage/30' },
+  medium: { label: 'Medium', className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30' },
+  high:   { label: 'High',   className: 'bg-semantic-danger/10 text-semantic-danger border-semantic-danger/30' },
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ function Spinner({ small = false }: { small?: boolean }) {
   const size = small ? 'w-5 h-5 border-2' : 'w-8 h-8 border-4';
   return (
     <div className={`flex items-center justify-center ${small ? '' : 'py-16'}`}>
-      <div className={`${size} border-indigo-200 border-t-indigo-600 rounded-full animate-spin`} />
+      <div className={`${size} border-tone-sage/30 border-t-tone-ink rounded-full animate-spin`} />
     </div>
   );
 }
@@ -197,10 +197,10 @@ function ClientDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg z-10 max-h-[85vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900">Client Details</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+      <div className="relative bg-tone-surface rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg z-10 max-h-[85vh] overflow-y-auto">
+        <div className="sticky top-0 bg-tone-surface border-b border-grey-5 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-tone-ink">Client Details</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
@@ -218,14 +218,14 @@ function ClientDetailDrawer({
             {/* Header */}
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-xl font-bold text-indigo-600">
+                <span className="text-xl font-bold text-tone-sage">
                   {(detail.client.name ?? '?').charAt(0).toUpperCase()}
                 </span>
               </div>
               <div className="flex-1">
-                <h3 className="font-bold text-gray-900 text-lg">{detail.client.name ?? 'Unknown'}</h3>
-                <p className="text-sm text-gray-500">{detail.client.phone}</p>
-                {detail.client.email && <p className="text-xs text-gray-400 mt-0.5">{detail.client.email}</p>}
+                <h3 className="font-bold text-tone-ink text-lg">{detail.client.name ?? 'Unknown'}</h3>
+                <p className="text-sm text-grey-60">{detail.client.phone}</p>
+                {detail.client.email && <p className="text-xs text-grey-45 mt-0.5">{detail.client.email}</p>}
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <VipBadge tier={detail.profile.vipTier} />
                   <ChurnBadge risk={detail.profile.churnRisk} />
@@ -235,38 +235,38 @@ function ClientDetailDrawer({
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-gray-900">{detail.profile.totalVisits ?? detail.profile.rfmFrequency ?? 0}</p>
-                <p className="text-xs text-gray-500">Visits</p>
+              <div className="bg-grey-5 rounded-xl p-3 text-center">
+                <p className="text-xl font-bold text-tone-ink">{detail.profile.totalVisits ?? detail.profile.rfmFrequency ?? 0}</p>
+                <p className="text-xs text-grey-60">Visits</p>
               </div>
-              <div className="bg-indigo-50 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-indigo-700">
+              <div className="bg-tone-sage/10 rounded-xl p-3 text-center">
+                <p className="text-xl font-bold text-tone-sage">
                   S${parseFloat(detail.profile.totalSpendSgd ?? detail.profile.rfmMonetary ?? '0').toFixed(0)}
                 </p>
-                <p className="text-xs text-indigo-400">Spend</p>
+                <p className="text-xs text-grey-60">Spend</p>
               </div>
-              <div className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xs font-semibold text-gray-900">{formatDate(detail.profile.lastVisitAt ?? detail.profile.lastVisitDate)}</p>
-                <p className="text-xs text-gray-500">Last Visit</p>
+              <div className="bg-grey-5 rounded-xl p-3 text-center">
+                <p className="text-xs font-semibold text-tone-ink">{formatDate(detail.profile.lastVisitAt ?? detail.profile.lastVisitDate)}</p>
+                <p className="text-xs text-grey-60">Last Visit</p>
               </div>
             </div>
 
             {/* Recent bookings */}
             <div>
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Recent Bookings</h4>
+              <h4 className="text-sm font-semibold text-tone-ink mb-2">Recent Bookings</h4>
               {detail.recent_bookings.length === 0 ? (
-                <p className="text-sm text-gray-400 italic">No bookings yet</p>
+                <p className="text-sm text-grey-45 italic">No bookings yet</p>
               ) : (
                 <div className="space-y-2">
                   {detail.recent_bookings.map((entry) => (
-                    <div key={entry.booking.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
+                    <div key={entry.booking.id} className="flex items-center justify-between bg-grey-5 rounded-lg px-3 py-2.5">
                       <div>
-                        <p className="text-xs font-medium text-gray-900">{entry.service.name}</p>
-                        <p className="text-xs text-gray-500">{entry.staffMember.name} · {formatDate(entry.booking.startTime)}</p>
+                        <p className="text-xs font-medium text-tone-ink">{entry.service.name}</p>
+                        <p className="text-xs text-grey-60">{entry.staffMember.name} · {formatDate(entry.booking.startTime)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs font-semibold text-gray-900">S${parseFloat(entry.booking.priceSgd).toFixed(2)}</p>
-                        <p className="text-xs text-gray-400 capitalize">{entry.booking.status.replace('_', ' ')}</p>
+                        <p className="text-xs font-semibold text-tone-ink">S${parseFloat(entry.booking.priceSgd).toFixed(2)}</p>
+                        <p className="text-xs text-grey-45 capitalize">{entry.booking.status.replace('_', ' ')}</p>
                       </div>
                     </div>
                   ))}
@@ -277,10 +277,10 @@ function ClientDetailDrawer({
             {/* Treatment Log */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-gray-900">Treatment Log</h4>
+                <h4 className="text-sm font-semibold text-tone-ink">Treatment Log</h4>
                 <button
                   onClick={() => setShowAddNote(true)}
-                  className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                  className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors"
                 >
                   + Add Entry
                 </button>
@@ -294,20 +294,20 @@ function ClientDetailDrawer({
                     onChange={e => setNewNoteContent(e.target.value)}
                     rows={3}
                     placeholder="Treatment details, client preferences, observations..."
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 resize-none"
+                    className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
                     autoFocus
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={handleAddNote}
                       disabled={!newNoteContent.trim() || addingNote}
-                      className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                      className="px-4 py-1.5 bg-tone-ink text-white text-xs font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
                     >
                       {addingNote ? 'Saving...' : 'Save Entry'}
                     </button>
                     <button
                       onClick={() => { setShowAddNote(false); setNewNoteContent(''); }}
-                      className="px-4 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-1.5 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-15 transition-colors"
                     >
                       Cancel
                     </button>
@@ -316,20 +316,20 @@ function ClientDetailDrawer({
               )}
 
               {treatmentLog.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No entries yet.</p>
+                <p className="text-xs text-grey-45 italic">No entries yet.</p>
               ) : (
                 <div className="space-y-3 max-h-64 overflow-y-auto">
                   {treatmentLog.map(entry => (
-                    <div key={entry.id} className="border-l-2 border-indigo-200 pl-3 py-1">
+                    <div key={entry.id} className="border-l-2 border-tone-sage/30 pl-3 py-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-gray-700">{entry.staffName || 'Admin'}</span>
-                        <span className="text-[10px] text-gray-400">
+                        <span className="text-xs font-semibold text-grey-75">{entry.staffName || 'Admin'}</span>
+                        <span className="text-[10px] text-grey-45">
                           {new Date(entry.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
                           {' '}
                           {new Date(entry.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
+                      <p className="text-xs text-grey-75 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
                     </div>
                   ))}
                 </div>
@@ -339,33 +339,33 @@ function ClientDetailDrawer({
             {/* Packages */}
             {clientPkgs.length > 0 && (
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Packages</h4>
+                <h4 className="text-sm font-semibold text-tone-ink mb-3">Packages</h4>
                 <div className="space-y-3">
                   {clientPkgs.map((pkg: any) => (
-                    <div key={pkg.id} className="border border-gray-100 rounded-lg p-3">
+                    <div key={pkg.id} className="border border-grey-5 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-900">{pkg.packageName}</span>
+                        <span className="text-sm font-semibold text-tone-ink">{pkg.packageName}</span>
                         <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          pkg.status === 'active' ? 'bg-green-50 text-green-700' :
-                          pkg.status === 'completed' ? 'bg-gray-100 text-gray-500' :
-                          'bg-red-50 text-red-600'
+                          pkg.status === 'active' ? 'bg-tone-sage/5 text-tone-sage' :
+                          pkg.status === 'completed' ? 'bg-grey-15 text-grey-60' :
+                          'bg-semantic-danger/5 text-semantic-danger'
                         }`}>{pkg.status}</span>
                       </div>
                       <div className="flex items-center gap-2 mb-2">
-                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${(pkg.sessionsUsed / pkg.sessionsTotal) * 100}%` }} />
+                        <div className="flex-1 h-1.5 bg-grey-15 rounded-full overflow-hidden">
+                          <div className="h-full bg-tone-ink rounded-full" style={{ width: `${(pkg.sessionsUsed / pkg.sessionsTotal) * 100}%` }} />
                         </div>
-                        <span className="text-[10px] font-medium text-gray-500">{pkg.sessionsUsed}/{pkg.sessionsTotal}</span>
+                        <span className="text-[10px] font-medium text-grey-60">{pkg.sessionsUsed}/{pkg.sessionsTotal}</span>
                       </div>
                       <div className="space-y-1">
                         {pkg.sessions?.map((s: any) => (
                           <div key={s.id} className="flex items-center justify-between text-xs py-1">
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-green-400' : s.status === 'booked' ? 'bg-blue-400' : 'bg-gray-300'}`} />
-                              <span className="text-gray-700">Session {s.sessionNumber}</span>
+                              <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
+                              <span className="text-grey-75">Session {s.sessionNumber}</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-gray-400 capitalize">{s.status}</span>
+                              <span className="text-grey-45 capitalize">{s.status}</span>
                               {s.status === 'pending' || s.status === 'booked' ? (
                                 <button
                                   onClick={async () => {
@@ -382,7 +382,7 @@ function ClientDetailDrawer({
                                       }
                                     } catch { alert('Failed to update session'); }
                                   }}
-                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+                                  className="text-[10px] text-tone-sage hover:text-tone-sage font-medium"
                                 >
                                   Mark Done
                                 </button>
@@ -391,7 +391,7 @@ function ClientDetailDrawer({
                           </div>
                         ))}
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-1">Expires {new Date(pkg.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      <p className="text-[10px] text-grey-45 mt-1">Expires {new Date(pkg.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                     </div>
                   ))}
                 </div>
@@ -479,8 +479,8 @@ export default function ClientsPage() {
   return (
     <>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{clients.length} client{clients.length !== 1 ? 's' : ''} shown</p>
+        <h1 className="text-2xl font-bold text-tone-ink">Clients</h1>
+        <p className="text-sm text-grey-60 mt-0.5">{clients.length} client{clients.length !== 1 ? 's' : ''} shown</p>
       </div>
 
       {/* VIP summary bar */}
@@ -491,15 +491,15 @@ export default function ClientsPage() {
             onClick={() => setTierFilter(tierFilter === tier ? '' : tier)}
             className={`rounded-xl border p-3 text-left transition-all ${
               tierFilter === tier
-                ? `${cfg.className} ring-2 ring-indigo-500`
-                : 'bg-white border-gray-200 hover:border-gray-300'
+                ? `${cfg.className} ring-2 ring-tone-sage`
+                : 'bg-tone-surface border-grey-15 hover:border-grey-30'
             }`}
           >
             <div className="flex items-center gap-1.5 mb-1">
               <span className="text-lg">{cfg.emoji}</span>
-              <span className="text-sm font-semibold text-gray-900">{cfg.label}</span>
+              <span className="text-sm font-semibold text-tone-ink">{cfg.label}</span>
             </div>
-            <p className="text-xs text-gray-500">{tierCounts[tier]} client{tierCounts[tier] !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-grey-60">{tierCounts[tier]} client{tierCounts[tier] !== 1 ? 's' : ''}</p>
           </button>
         ))}
       </div>
@@ -507,7 +507,7 @@ export default function ClientsPage() {
       {/* Search and filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="flex-1 relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
           </svg>
           <input
@@ -515,13 +515,13 @@ export default function ClientsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or phone..."
-            className="w-full rounded-xl border border-gray-300 pl-9 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-xl border border-grey-30 pl-9 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
           />
         </div>
         <select
           value={churnFilter}
           onChange={(e) => setChurnFilter(e.target.value)}
-          className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          className="rounded-xl border border-grey-30 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
         >
           <option value="">All churn risk</option>
           <option value="low">Low risk</option>
@@ -531,7 +531,7 @@ export default function ClientsPage() {
         {(search || tierFilter || churnFilter) && (
           <button
             onClick={() => { setSearch(''); setTierFilter(''); setChurnFilter(''); }}
-            className="px-4 py-2.5 rounded-xl border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap"
+            className="px-4 py-2.5 rounded-xl border border-grey-30 text-sm text-grey-75 hover:bg-grey-5 transition-colors whitespace-nowrap"
           >
             Clear filters
           </button>
@@ -541,11 +541,11 @@ export default function ClientsPage() {
       {loading && <Spinner />}
 
       {!loading && error && (
-        <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-center">
-          <p className="text-red-600 font-medium mb-3">{error}</p>
+        <div className="rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 p-6 text-center">
+          <p className="text-semantic-danger font-medium mb-3">{error}</p>
           <button
             onClick={() => { setError(''); setLoading(true); fetchClients().finally(() => setLoading(false)); }}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            className="px-4 py-2 rounded-lg bg-semantic-danger text-white text-sm font-medium hover:bg-semantic-danger transition-colors"
           >
             Retry
           </button>
@@ -553,12 +553,12 @@ export default function ClientsPage() {
       )}
 
       {!loading && !error && clients.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
           <div className="text-4xl mb-3">👤</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+          <h3 className="text-lg font-semibold text-tone-ink mb-1">
             {search || tierFilter || churnFilter ? 'No clients match your filters' : 'No clients yet'}
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-grey-60">
             {search || tierFilter || churnFilter
               ? 'Try clearing your filters'
               : 'Clients will appear here after their first booking.'}
@@ -567,39 +567,39 @@ export default function ClientsPage() {
       )}
 
       {!loading && !error && clients.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-tone-surface rounded-xl border border-grey-15 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">VIP</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Last Visit</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Spend</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Churn</th>
+                <tr className="border-b border-grey-5 bg-grey-5">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide">Client</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden sm:table-cell">VIP</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden md:table-cell">Last Visit</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden lg:table-cell">Spend</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden md:table-cell">Churn</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-grey-5">
                 {clients.map((row) => (
                   <tr
                     key={row.profile.id}
-                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="hover:bg-grey-5 transition-colors cursor-pointer"
                     onClick={() => setSelectedProfileId(row.profile.id)}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-indigo-600">
+                          <span className="text-sm font-bold text-tone-sage">
                             {(row.client.name ?? '?').charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-medium text-gray-900">{row.client.name ?? 'Unknown'}</p>
+                            <p className="text-sm font-medium text-tone-ink">{row.client.name ?? 'Unknown'}</p>
                             <NoShowChip count={row.noShowCount ?? 0} compact />
                           </div>
-                          <p className="text-xs text-gray-500">{row.client.phone}</p>
+                          <p className="text-xs text-grey-60">{row.client.phone}</p>
                         </div>
                       </div>
                     </td>
@@ -607,10 +607,10 @@ export default function ClientsPage() {
                       <VipBadge tier={row.profile.vipTier} />
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="text-sm text-gray-600">{formatDate(row.profile.lastVisitAt ?? row.profile.lastVisitDate)}</span>
+                      <span className="text-sm text-grey-75">{formatDate(row.profile.lastVisitAt ?? row.profile.lastVisitDate)}</span>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-medium text-tone-ink">
                         S${parseFloat(row.profile.totalSpendSgd ?? row.profile.rfmMonetary ?? '0').toFixed(2)}
                       </span>
                     </td>
@@ -626,7 +626,7 @@ export default function ClientsPage() {
                         >
                           View Profile
                         </Link>
-                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <svg className="w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                         </svg>
                       </div>

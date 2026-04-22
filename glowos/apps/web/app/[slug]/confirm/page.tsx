@@ -62,16 +62,16 @@ export default function ConfirmPage() {
   const displayRef = bookingId ?? paymentRef;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-indigo-50 flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-tone-surface-warm flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl shadow-gray-100 border border-gray-100 overflow-hidden">
+        <div className="bg-tone-surface rounded-2xl shadow-xl shadow-gray-100 border border-grey-5 overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-green-400 to-emerald-500 px-8 py-10 text-white text-center">
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-4 text-3xl">
+          <div className="bg-tone-sage px-8 py-10 text-white text-center">
+            <div className="w-16 h-16 rounded-full bg-tone-surface/20 flex items-center justify-center mx-auto mb-4 text-3xl">
               ✅
             </div>
             <h1 className="text-2xl font-bold mb-1">Booking Confirmed!</h1>
-            <p className="text-green-100 text-sm">
+            <p className="text-white/80 text-sm">
               We&apos;re looking forward to seeing you
             </p>
           </div>
@@ -79,35 +79,35 @@ export default function ConfirmPage() {
           {/* Details */}
           <div className="px-8 py-6 space-y-3">
             {displayRef && (
-              <div className="flex justify-between items-center text-sm pb-3 border-b border-gray-100">
-                <span className="text-gray-500">{isPaid ? 'Payment ref' : 'Booking ref'}</span>
-                <span className="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+              <div className="flex justify-between items-center text-sm pb-3 border-b border-grey-5">
+                <span className="text-grey-60">{isPaid ? 'Payment ref' : 'Booking ref'}</span>
+                <span className="font-mono text-xs bg-grey-15 text-grey-75 px-2 py-1 rounded">
                   {displayRef.slice(-8).toUpperCase()}
                 </span>
               </div>
             )}
             {service && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Service</span>
-                <span className="font-semibold text-gray-900">{service}</span>
+                <span className="text-grey-60">Service</span>
+                <span className="font-semibold text-tone-ink">{service}</span>
               </div>
             )}
             {staff && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Staff</span>
-                <span className="font-medium text-gray-900">{staff}</span>
+                <span className="text-grey-60">Staff</span>
+                <span className="font-medium text-tone-ink">{staff}</span>
               </div>
             )}
             {time && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Date &amp; time</span>
-                <span className="font-medium text-gray-900 text-right">{formatTime(time)}</span>
+                <span className="text-grey-60">Date &amp; time</span>
+                <span className="font-medium text-tone-ink text-right">{formatTime(time)}</span>
               </div>
             )}
             {amount && (
-              <div className="flex justify-between text-sm border-t border-gray-100 pt-3 mt-3">
-                <span className="text-gray-500">{isPaid ? 'Amount paid' : 'Amount due'}</span>
-                <span className="font-bold text-gray-900 text-base">
+              <div className="flex justify-between text-sm border-t border-grey-5 pt-3 mt-3">
+                <span className="text-grey-60">{isPaid ? 'Amount paid' : 'Amount due'}</span>
+                <span className="font-bold text-tone-ink text-base">
                   SGD {parseFloat(amount).toFixed(2)}
                 </span>
               </div>
@@ -116,19 +116,19 @@ export default function ConfirmPage() {
 
           {/* Payment notice */}
           {isPaid && amount ? (
-            <div className="mx-8 mb-4 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">
+            <div className="mx-8 mb-4 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">
               <div className="font-semibold mb-0.5">✅ Payment received</div>
               SGD {parseFloat(amount).toFixed(2)} has been charged. No further payment is needed.
             </div>
           ) : amount ? (
-            <div className="mx-8 mb-4 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm text-indigo-700">
+            <div className="mx-8 mb-4 bg-tone-sage/10 border border-tone-sage/30 rounded-xl px-4 py-3 text-sm text-tone-sage">
               <div className="font-semibold mb-0.5">💳 Pay at your appointment</div>
               Please bring SGD {parseFloat(amount).toFixed(2)} on the day of your appointment.
             </div>
           ) : null}
 
           {/* WhatsApp notice */}
-          <div className="mx-8 mb-5 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-700">
+          <div className="mx-8 mb-5 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">
             <div className="font-semibold mb-0.5">💬 Confirmation on the way</div>
             You&apos;ll receive a WhatsApp confirmation shortly with your booking details
             and a cancellation link.
@@ -138,7 +138,7 @@ export default function ConfirmPage() {
           <div className="px-8 pb-8">
             <Link
               href={`/${slug}`}
-              className="block w-full rounded-xl border-2 border-gray-200 py-3 text-center text-sm font-semibold text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+              className="block w-full rounded-xl border-2 border-grey-15 py-3 text-center text-sm font-semibold text-grey-75 hover:border-tone-sage/50 hover:text-tone-sage transition-colors"
             >
               ← Back to {slug.replace(/-/g, ' ')}
             </Link>

@@ -138,13 +138,13 @@ function formatDate(dateStr: string): string {
 // ─── Change Badge ──────────────────────────────────────────────────────────────
 
 function ChangeBadge({ change }: { change: number | null }) {
-  if (change === null) return <span className="text-xs text-gray-400">No prev data</span>;
+  if (change === null) return <span className="text-xs text-grey-45">No prev data</span>;
 
   const isPositive = change >= 0;
   return (
     <span
       className={`inline-flex items-center gap-0.5 text-xs font-medium ${
-        isPositive ? 'text-green-600' : 'text-red-500'
+        isPositive ? 'text-tone-sage' : 'text-semantic-danger'
       }`}
     >
       {isPositive ? (
@@ -165,10 +165,10 @@ function ChangeBadge({ change }: { change: number | null }) {
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
-      <div className="h-3 bg-gray-200 rounded w-24 mb-3" />
-      <div className="h-7 bg-gray-200 rounded w-32 mb-2" />
-      <div className="h-3 bg-gray-200 rounded w-16" />
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-5 animate-pulse">
+      <div className="h-3 bg-grey-15 rounded w-24 mb-3" />
+      <div className="h-7 bg-grey-15 rounded w-32 mb-2" />
+      <div className="h-3 bg-grey-15 rounded w-16" />
     </div>
   );
 }
@@ -178,9 +178,9 @@ function SkeletonTable({ rows = 4 }: { rows?: number }) {
     <div className="animate-pulse space-y-3">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex gap-4">
-          <div className="h-4 bg-gray-200 rounded flex-1" />
-          <div className="h-4 bg-gray-200 rounded w-16" />
-          <div className="h-4 bg-gray-200 rounded w-20" />
+          <div className="h-4 bg-grey-15 rounded flex-1" />
+          <div className="h-4 bg-grey-15 rounded w-16" />
+          <div className="h-4 bg-grey-15 rounded w-20" />
         </div>
       ))}
     </div>
@@ -193,7 +193,7 @@ function SkeletonChart() {
       {Array.from({ length: 14 }).map((_, i) => (
         <div
           key={i}
-          className="flex-1 bg-gray-200 rounded-t"
+          className="flex-1 bg-grey-15 rounded-t"
           style={{ height: `${20 + Math.random() * 80}%` }}
         />
       ))}
@@ -220,36 +220,40 @@ function SummaryCards({
 
   if (!data) return null;
 
+  // Hierarchy by visual weight, not hue:
+  //  - Revenue = primary (ink-filled)
+  //  - Bookings = secondary (sage tint)
+  //  - The rest = supporting (neutral surface with grey border)
   const cards = [
-    {
-      label: 'Total Bookings',
-      value: data.total_bookings.toLocaleString(),
-      change: data.total_bookings_change,
-      accent: 'text-indigo-700 bg-indigo-50 border-indigo-100',
-    },
     {
       label: 'Total Revenue',
       value: formatCurrency(data.total_revenue),
       change: data.total_revenue_change,
-      accent: 'text-purple-700 bg-purple-50 border-purple-100',
+      accent: 'text-tone-surface bg-tone-ink border-tone-ink',
     },
     {
-      label: 'Active Clients',
-      value: data.active_clients.toLocaleString(),
-      change: null,
-      accent: 'text-blue-700 bg-blue-50 border-blue-100',
+      label: 'Total Bookings',
+      value: data.total_bookings.toLocaleString(),
+      change: data.total_bookings_change,
+      accent: 'text-tone-sage bg-tone-sage/10 border-tone-sage/30',
     },
     {
       label: 'Avg Booking Value',
       value: formatCurrency(data.avg_booking_value),
       change: data.avg_booking_value_change,
-      accent: 'text-violet-700 bg-violet-50 border-violet-100',
+      accent: 'text-tone-ink bg-tone-surface border-grey-15',
+    },
+    {
+      label: 'Active Clients',
+      value: data.active_clients.toLocaleString(),
+      change: null,
+      accent: 'text-tone-ink bg-tone-surface border-grey-15',
     },
     {
       label: 'New Clients',
       value: data.new_clients.toLocaleString(),
       change: data.new_clients_change,
-      accent: 'text-fuchsia-700 bg-fuchsia-50 border-fuchsia-100',
+      accent: 'text-tone-ink bg-tone-surface border-grey-15',
     },
   ];
 
@@ -282,8 +286,8 @@ function RevenueChart({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="h-5 bg-gray-200 rounded w-32 mb-6 animate-pulse" />
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+        <div className="h-5 bg-grey-15 rounded w-32 mb-6 animate-pulse" />
         <SkeletonChart />
       </div>
     );
@@ -291,9 +295,9 @@ function RevenueChart({
 
   if (!data || data.revenue.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Revenue Over Time</h2>
-        <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+        <h2 className="text-sm font-semibold text-grey-75 mb-4">Revenue Over Time</h2>
+        <div className="flex items-center justify-center h-40 text-grey-45 text-sm">
           No revenue data for this period
         </div>
       </div>
@@ -304,12 +308,12 @@ function RevenueChart({
   const maxRevenue = Math.max(...points.map((p) => p.revenue), 1);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Revenue Over Time</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Revenue Over Time</h2>
       <div className="relative">
         {/* Y-axis labels */}
         <div className="flex">
-          <div className="flex flex-col justify-between text-xs text-gray-400 pr-2 h-40 text-right w-14 flex-shrink-0">
+          <div className="flex flex-col justify-between text-xs text-grey-45 pr-2 h-40 text-right w-14 flex-shrink-0">
             <span>S${maxRevenue.toFixed(0)}</span>
             <span>S${(maxRevenue / 2).toFixed(0)}</span>
             <span>S$0</span>
@@ -329,19 +333,19 @@ function RevenueChart({
                   <div
                     className={`rounded-t transition-colors cursor-default ${
                       isHovered
-                        ? 'bg-indigo-600'
+                        ? 'bg-tone-ink'
                         : point.revenue > 0
-                        ? 'bg-indigo-400 hover:bg-indigo-500'
-                        : 'bg-gray-100'
+                        ? 'bg-tone-sage hover:bg-tone-ink'
+                        : 'bg-grey-15'
                     }`}
                     style={{ height: `${Math.max(heightPct, point.revenue > 0 ? 2 : 0)}%` }}
                   />
                   {/* Tooltip */}
                   {isHovered && (
-                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-gray-900 text-white text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap pointer-events-none shadow-lg">
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-tone-ink text-white text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap pointer-events-none shadow-lg">
                       <p className="font-medium">{formatDate(point.date)}</p>
                       <p>{formatCurrency(point.revenue)}</p>
-                      <p className="text-gray-300">{point.bookings_count} bookings</p>
+                      <p className="text-grey-30">{point.bookings_count} bookings</p>
                     </div>
                   )}
                 </div>
@@ -360,7 +364,7 @@ function RevenueChart({
             return (
               <div key={point.date} className="flex-1 text-center">
                 {showLabel ? (
-                  <span className="text-xs text-gray-400">{formatDate(point.date)}</span>
+                  <span className="text-xs text-grey-45">{formatDate(point.date)}</span>
                 ) : null}
               </div>
             );
@@ -381,41 +385,41 @@ function StaffPerformanceTable({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Staff Performance</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Staff Performance</h2>
       {loading ? (
         <SkeletonTable rows={4} />
       ) : !data || data.staff_performance.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No staff data for this period</p>
+        <p className="text-sm text-grey-45 py-6 text-center">No staff data for this period</p>
       ) : (
         <div className="overflow-x-auto -mx-1">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Staff</th>
-                <th className="text-right text-xs font-medium text-gray-500 pb-2 px-3">Bookings</th>
-                <th className="text-right text-xs font-medium text-gray-500 pb-2 px-3">Revenue</th>
-                <th className="text-right text-xs font-medium text-gray-500 pb-2 pl-3">Avg Rating</th>
+              <tr className="border-b border-grey-5">
+                <th className="text-left text-xs font-medium text-grey-60 pb-2 pr-3">Staff</th>
+                <th className="text-right text-xs font-medium text-grey-60 pb-2 px-3">Bookings</th>
+                <th className="text-right text-xs font-medium text-grey-60 pb-2 px-3">Revenue</th>
+                <th className="text-right text-xs font-medium text-grey-60 pb-2 pl-3">Avg Rating</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-grey-5">
               {data.staff_performance.map((row) => (
-                <tr key={row.staff_id} className="hover:bg-gray-50 transition-colors">
-                  <td className="py-2.5 pr-3 font-medium text-gray-900">{row.staff_name}</td>
-                  <td className="py-2.5 px-3 text-right text-gray-600">{row.bookings_count}</td>
-                  <td className="py-2.5 px-3 text-right text-gray-900 font-medium">
+                <tr key={row.staff_id} className="hover:bg-grey-5 transition-colors">
+                  <td className="py-2.5 pr-3 font-medium text-tone-ink">{row.staff_name}</td>
+                  <td className="py-2.5 px-3 text-right text-grey-75">{row.bookings_count}</td>
+                  <td className="py-2.5 px-3 text-right text-tone-ink font-medium">
                     {formatCurrency(row.revenue)}
                   </td>
                   <td className="py-2.5 pl-3 text-right">
                     {row.avg_rating !== null ? (
-                      <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                      <span className="inline-flex items-center gap-1 text-semantic-warn font-medium">
                         <svg className="w-3.5 h-3.5 fill-amber-400" viewBox="0 0 20 20">
                           <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
                         {row.avg_rating.toFixed(1)}
                       </span>
                     ) : (
-                      <span className="text-gray-300 text-xs">No reviews</span>
+                      <span className="text-grey-30 text-xs">No reviews</span>
                     )}
                   </td>
                 </tr>
@@ -438,44 +442,44 @@ function TopServicesTable({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Top Services</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Top Services</h2>
       {loading ? (
         <SkeletonTable rows={4} />
       ) : !data || data.top_services.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No service data for this period</p>
+        <p className="text-sm text-grey-45 py-6 text-center">No service data for this period</p>
       ) : (
         <div className="overflow-x-auto -mx-1">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-medium text-gray-500 pb-2 pr-3">Service</th>
-                <th className="text-right text-xs font-medium text-gray-500 pb-2 px-3">Bookings</th>
-                <th className="text-right text-xs font-medium text-gray-500 pb-2 pl-3">Revenue</th>
+              <tr className="border-b border-grey-5">
+                <th className="text-left text-xs font-medium text-grey-60 pb-2 pr-3">Service</th>
+                <th className="text-right text-xs font-medium text-grey-60 pb-2 px-3">Bookings</th>
+                <th className="text-right text-xs font-medium text-grey-60 pb-2 pl-3">Revenue</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-grey-5">
               {data.top_services.map((row, i) => {
                 const maxRevenue = data.top_services[0]?.revenue ?? 1;
                 const pct = maxRevenue > 0 ? (row.revenue / maxRevenue) * 100 : 0;
                 return (
-                  <tr key={row.service_id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={row.service_id} className="hover:bg-grey-5 transition-colors">
                     <td className="py-2.5 pr-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 w-4 flex-shrink-0">#{i + 1}</span>
+                        <span className="text-xs text-grey-45 w-4 flex-shrink-0">#{i + 1}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{row.service_name}</p>
-                          <div className="mt-0.5 h-1 bg-gray-100 rounded-full overflow-hidden">
+                          <p className="font-medium text-tone-ink truncate">{row.service_name}</p>
+                          <div className="mt-0.5 h-1 bg-grey-15 rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-indigo-400 rounded-full"
+                              className="h-full bg-tone-sage rounded-full"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-right text-gray-600">{row.bookings_count}</td>
-                    <td className="py-2.5 pl-3 text-right font-medium text-gray-900">
+                    <td className="py-2.5 px-3 text-right text-grey-75">{row.bookings_count}</td>
+                    <td className="py-2.5 pl-3 text-right font-medium text-tone-ink">
                       {formatCurrency(row.revenue)}
                     </td>
                   </tr>
@@ -499,51 +503,51 @@ function BookingSources({
   loading: boolean;
 }) {
   const SOURCE_COLORS: Record<string, string> = {
-    google_reserve: 'bg-blue-500',
-    direct_widget: 'bg-indigo-500',
-    walkin_manual: 'bg-purple-500',
-    instagram: 'bg-pink-500',
-    facebook: 'bg-sky-500',
-    phone: 'bg-teal-500',
-    other: 'bg-gray-400',
+    google_reserve: 'bg-grey-75',
+    direct_widget: 'bg-tone-ink',
+    walkin_manual: 'bg-grey-75',
+    instagram: 'bg-grey-75',
+    facebook: 'bg-grey-60',
+    phone: 'bg-grey-60',
+    other: 'bg-grey-45',
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Booking Sources</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Booking Sources</h2>
       {loading ? (
         <div className="space-y-3 animate-pulse">
           {[80, 60, 40, 25].map((w, i) => (
             <div key={i} className="flex items-center gap-3">
-              <div className="h-4 bg-gray-200 rounded w-28 flex-shrink-0" />
-              <div className="flex-1 h-3 bg-gray-200 rounded-full" style={{ maxWidth: `${w}%` }} />
-              <div className="h-4 bg-gray-200 rounded w-8" />
+              <div className="h-4 bg-grey-15 rounded w-28 flex-shrink-0" />
+              <div className="flex-1 h-3 bg-grey-15 rounded-full" style={{ maxWidth: `${w}%` }} />
+              <div className="h-4 bg-grey-15 rounded w-8" />
             </div>
           ))}
         </div>
       ) : !data || data.booking_sources.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No source data for this period</p>
+        <p className="text-sm text-grey-45 py-6 text-center">No source data for this period</p>
       ) : (
         <div className="space-y-3">
           {(() => {
             const totalCount = data.booking_sources.reduce((s, r) => s + r.count, 0);
             return data.booking_sources.map((row) => {
               const pct = totalCount > 0 ? (row.count / totalCount) * 100 : 0;
-              const colorClass = SOURCE_COLORS[row.source] ?? 'bg-gray-400';
+              const colorClass = SOURCE_COLORS[row.source] ?? 'bg-grey-45';
               return (
                 <div key={row.source} className="flex items-center gap-3">
-                  <div className="w-28 flex-shrink-0 text-xs text-gray-600 font-medium truncate">
+                  <div className="w-28 flex-shrink-0 text-xs text-grey-75 font-medium truncate">
                     {formatSourceLabel(row.source)}
                   </div>
-                  <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                  <div className="flex-1 bg-grey-15 rounded-full h-2.5 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${colorClass}`}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
                   <div className="flex-shrink-0 text-right w-16">
-                    <span className="text-xs font-medium text-gray-700">{row.count}</span>
-                    <span className="text-xs text-gray-400 ml-1">({pct.toFixed(0)}%)</span>
+                    <span className="text-xs font-medium text-grey-75">{row.count}</span>
+                    <span className="text-xs text-grey-45 ml-1">({pct.toFixed(0)}%)</span>
                   </div>
                 </div>
               );
@@ -559,26 +563,26 @@ function BookingSources({
 
 function CancellationRates({ data, loading }: { data: CancellationRateData | null; loading: boolean }) {
   const bars = data ? [
-    { label: 'Completed',    value: data.completion_rate,   color: 'bg-emerald-400', count: data.completed },
-    { label: 'Cancellations', value: data.cancellation_rate, color: 'bg-red-400',     count: data.cancelled },
-    { label: 'No-shows',     value: data.no_show_rate,      color: 'bg-orange-400',  count: data.no_show },
+    { label: 'Completed',    value: data.completion_rate,   color: 'bg-tone-sage', count: data.completed },
+    { label: 'Cancellations', value: data.cancellation_rate, color: 'bg-semantic-danger',     count: data.cancelled },
+    { label: 'No-shows',     value: data.no_show_rate,      color: 'bg-semantic-warn',  count: data.no_show },
   ] : [];
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Booking Outcomes</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Booking Outcomes</h2>
       {loading ? <SkeletonTable rows={3} /> : !data ? null : (
         <div className="space-y-3">
-          <p className="text-xs text-gray-400 mb-3">{data.total} total bookings this period</p>
+          <p className="text-xs text-grey-45 mb-3">{data.total} total bookings this period</p>
           {bars.map(({ label, value, color, count }) => (
             <div key={label} className="flex items-center gap-3">
-              <div className="w-28 flex-shrink-0 text-xs font-medium text-gray-600">{label}</div>
-              <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+              <div className="w-28 flex-shrink-0 text-xs font-medium text-grey-75">{label}</div>
+              <div className="flex-1 bg-grey-15 rounded-full h-2.5 overflow-hidden">
                 <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${value}%` }} />
               </div>
               <div className="w-20 text-right flex-shrink-0">
-                <span className="text-xs font-semibold text-gray-800">{value}%</span>
-                <span className="text-xs text-gray-400 ml-1">({count})</span>
+                <span className="text-xs font-semibold text-grey-90">{value}%</span>
+                <span className="text-xs text-grey-45 ml-1">({count})</span>
               </div>
             </div>
           ))}
@@ -596,33 +600,33 @@ function ClientRetention({ data, loading }: { data: ClientRetentionData | null; 
   const returnPct  = total > 0 ? Math.round((data!.returning_clients / total) * 100) : 0;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Client Retention</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Client Retention</h2>
       {loading ? <SkeletonTable rows={2} /> : !data || total === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No client data for this period</p>
+        <p className="text-sm text-grey-45 py-6 text-center">No client data for this period</p>
       ) : (
         <div className="space-y-4">
           <div className="flex rounded-xl overflow-hidden h-8">
-            <div className="flex items-center justify-center text-xs font-semibold text-white bg-indigo-500 transition-all" style={{ width: `${newPct}%` }}>
+            <div className="flex items-center justify-center text-xs font-semibold text-white bg-tone-ink transition-all" style={{ width: `${newPct}%` }}>
               {newPct > 15 ? `New ${newPct}%` : ''}
             </div>
-            <div className="flex items-center justify-center text-xs font-semibold text-white bg-violet-400 transition-all" style={{ width: `${returnPct}%` }}>
+            <div className="flex items-center justify-center text-xs font-semibold text-white bg-grey-45 transition-all" style={{ width: `${returnPct}%` }}>
               {returnPct > 15 ? `Return ${returnPct}%` : ''}
             </div>
           </div>
           <div className="flex gap-6">
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-indigo-500 flex-shrink-0" />
+              <span className="w-3 h-3 rounded-full bg-tone-ink flex-shrink-0" />
               <div>
-                <p className="text-base font-bold text-gray-900">{data.new_clients}</p>
-                <p className="text-xs text-gray-400">New clients ({newPct}%)</p>
+                <p className="text-base font-bold text-tone-ink">{data.new_clients}</p>
+                <p className="text-xs text-grey-45">New clients ({newPct}%)</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-violet-400 flex-shrink-0" />
+              <span className="w-3 h-3 rounded-full bg-grey-45 flex-shrink-0" />
               <div>
-                <p className="text-base font-bold text-gray-900">{data.returning_clients}</p>
-                <p className="text-xs text-gray-400">Returning ({returnPct}%)</p>
+                <p className="text-base font-bold text-tone-ink">{data.returning_clients}</p>
+                <p className="text-xs text-grey-45">Returning ({returnPct}%)</p>
               </div>
             </div>
           </div>
@@ -637,8 +641,8 @@ function ClientRetention({ data, loading }: { data: ClientRetentionData | null; 
 function RevByDow({ data, loading }: { data: RevByDowData | null; loading: boolean }) {
   const maxRev = data ? Math.max(...data.revenue_by_dow.map(r => r.revenue), 1) : 1;
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Revenue by Day of Week</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Revenue by Day of Week</h2>
       {loading ? <SkeletonChart /> : !data ? null : (
         <div className="flex items-end gap-2 h-40">
           {data.revenue_by_dow.map(row => {
@@ -646,17 +650,17 @@ function RevByDow({ data, loading }: { data: RevByDowData | null; loading: boole
             return (
               <div key={row.dow} className="flex-1 flex flex-col items-center gap-1 group relative h-full justify-end">
                 <div
-                  className="w-full rounded-t bg-purple-400 hover:bg-purple-500 transition-colors cursor-default relative"
+                  className="w-full rounded-t bg-grey-45 hover:bg-grey-75 transition-colors cursor-default relative"
                   style={{ height: `${Math.max(pct, row.revenue > 0 ? 4 : 0)}%` }}
                 >
                   {/* Tooltip */}
-                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-gray-900 text-white text-xs rounded-lg px-2 py-1.5 whitespace-nowrap pointer-events-none shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-tone-ink text-white text-xs rounded-lg px-2 py-1.5 whitespace-nowrap pointer-events-none shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                     <p className="font-medium">{row.label}</p>
                     <p>S${row.revenue.toFixed(0)}</p>
-                    <p className="text-gray-300">{row.count} bookings</p>
+                    <p className="text-grey-30">{row.count} bookings</p>
                   </div>
                 </div>
-                <span className="text-[10px] text-gray-400">{row.label}</span>
+                <span className="text-[10px] text-grey-45">{row.label}</span>
               </div>
             );
           })}
@@ -682,25 +686,25 @@ function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loadi
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">Peak Hours</h2>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">Peak Hours</h2>
       {loading ? (
-        <div className="animate-pulse h-40 bg-gray-100 rounded-lg" />
+        <div className="animate-pulse h-40 bg-grey-15 rounded-lg" />
       ) : !data || data.peak_hours.length === 0 ? (
-        <p className="text-sm text-gray-400 py-6 text-center">No data for this period</p>
+        <p className="text-sm text-grey-45 py-6 text-center">No data for this period</p>
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[460px]">
             {/* Day headers */}
             <div className="flex mb-1 pl-10">
               {DOW.map(d => (
-                <div key={d} className="flex-1 text-center text-[10px] font-semibold text-gray-400">{d}</div>
+                <div key={d} className="flex-1 text-center text-[10px] font-semibold text-grey-45">{d}</div>
               ))}
             </div>
             {/* Hour rows */}
             {HOURS.map(hour => (
               <div key={hour} className="flex items-center mb-0.5">
-                <div className="w-10 text-[10px] text-gray-400 text-right pr-2 flex-shrink-0">
+                <div className="w-10 text-[10px] text-grey-45 text-right pr-2 flex-shrink-0">
                   {hour < 12 ? `${hour}am` : hour === 12 ? '12pm' : `${hour - 12}pm`}
                 </div>
                 {DOW.map((_, dow) => {
@@ -709,10 +713,10 @@ function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loadi
                     <div key={dow} className="flex-1 mx-0.5 relative group">
                       <div
                         className="h-6 rounded-sm transition-all"
-                        style={{ backgroundColor: `rgba(99, 102, 241, ${opacity(count)})`, minHeight: 8 }}
+                        style={{ backgroundColor: `rgba(26, 35, 19, ${opacity(count)})`, minHeight: 8 }}
                       />
                       {count > 0 && (
-                        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-10 bg-gray-900 text-white text-[10px] rounded px-1.5 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-10 bg-tone-ink text-white text-[10px] rounded px-1.5 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                           {count} booking{count !== 1 ? 's' : ''}
                         </div>
                       )}
@@ -723,11 +727,11 @@ function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loadi
             ))}
             {/* Legend */}
             <div className="flex items-center gap-2 mt-3 pl-10">
-              <span className="text-[10px] text-gray-400">Less</span>
+              <span className="text-[10px] text-grey-45">Less</span>
               {[0.1, 0.3, 0.5, 0.7, 0.95].map(o => (
-                <div key={o} className="w-4 h-4 rounded-sm" style={{ backgroundColor: `rgba(99,102,241,${o})` }} />
+                <div key={o} className="w-4 h-4 rounded-sm" style={{ backgroundColor: `rgba(26,35,19,${o})` }} />
               ))}
-              <span className="text-[10px] text-gray-400">More</span>
+              <span className="text-[10px] text-grey-45">More</span>
             </div>
           </div>
         </div>
@@ -741,9 +745,9 @@ function PeakHoursHeatmap({ data, loading }: { data: PeakHoursData | null; loadi
 function RatingDistribution({ data }: { data: ReviewDistributionData | null }) {
   if (!data || data.distribution.every(d => d.count === 0)) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Rating Distribution</h3>
-        <p className="text-xs text-gray-400">No reviews in this period.</p>
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+        <h3 className="text-sm font-semibold text-tone-ink mb-3">Rating Distribution</h3>
+        <p className="text-xs text-grey-45">No reviews in this period.</p>
       </div>
     );
   }
@@ -754,31 +758,31 @@ function RatingDistribution({ data }: { data: ReviewDistributionData | null }) {
     : 0;
 
   function barColor(rating: number): string {
-    if (rating >= 4) return 'bg-[#c4a778]';
-    if (rating === 3) return 'bg-amber-400';
-    return 'bg-red-400';
+    if (rating >= 4) return 'bg-tone-sage';
+    if (rating === 3) return 'bg-semantic-warn';
+    return 'bg-semantic-danger';
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4">Rating Distribution</h3>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+      <h3 className="text-sm font-semibold text-tone-ink mb-4">Rating Distribution</h3>
       <div className="space-y-2">
         {data.distribution.map(d => (
           <div key={d.rating} className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 w-7 text-right">{d.rating} ★</span>
-            <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
+            <span className="text-xs text-grey-60 w-7 text-right">{d.rating} ★</span>
+            <div className="flex-1 h-5 bg-grey-15 rounded overflow-hidden">
               <div
                 className={`h-full ${barColor(d.rating)} rounded`}
                 style={{ width: `${d.percentage}%` }}
               />
             </div>
-            <span className="text-xs text-gray-500 w-16">{d.count} ({d.percentage}%)</span>
+            <span className="text-xs text-grey-60 w-16">{d.count} ({d.percentage}%)</span>
           </div>
         ))}
       </div>
-      <div className="flex justify-between mt-3 pt-3 border-t border-gray-100">
-        <span className="text-xs text-gray-400">{total} reviews</span>
-        <span className="text-sm font-semibold text-[#c4a778]">★ {avg.toFixed(1)} avg</span>
+      <div className="flex justify-between mt-3 pt-3 border-t border-grey-5">
+        <span className="text-xs text-grey-45">{total} reviews</span>
+        <span className="text-sm font-semibold text-semantic-warn">★ {avg.toFixed(1)} avg</span>
       </div>
     </div>
   );
@@ -789,9 +793,9 @@ function RatingDistribution({ data }: { data: ReviewDistributionData | null }) {
 function RatingTrend({ data }: { data: ReviewTrendData | null }) {
   if (!data || data.trend.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Average Rating Over Time</h3>
-        <p className="text-xs text-gray-400">No reviews in this period.</p>
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+        <h3 className="text-sm font-semibold text-tone-ink mb-3">Average Rating Over Time</h3>
+        <p className="text-xs text-grey-45">No reviews in this period.</p>
       </div>
     );
   }
@@ -820,13 +824,13 @@ function RatingTrend({ data }: { data: ReviewTrendData | null }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-900 mb-4">Average Rating Over Time</h3>
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+      <h3 className="text-sm font-semibold text-tone-ink mb-4">Average Rating Over Time</h3>
       <div className="relative" style={{ height: chartHeight + 30 }}>
         {[5, 4, 3, 2, 1].map(val => {
           const y = chartHeight - padding - ((val - minRating) / range) * (chartHeight - 2 * padding);
           return (
-            <span key={val} className="absolute text-[10px] text-gray-400" style={{ left: 0, top: y - 6 }}>
+            <span key={val} className="absolute text-[10px] text-grey-45" style={{ left: 0, top: y - 6 }}>
               {val}.0
             </span>
           );
@@ -840,11 +844,11 @@ function RatingTrend({ data }: { data: ReviewTrendData | null }) {
         >
           {[5, 4, 3, 2, 1].map(val => {
             const y = chartHeight - padding - ((val - minRating) / range) * (chartHeight - 2 * padding);
-            return <line key={val} x1={0} y1={y} x2={chartWidth} y2={y} stroke="#f3f4f6" strokeWidth={1} />;
+            return <line key={val} x1={0} y1={y} x2={chartWidth} y2={y} stroke="var(--color-grey-15)" strokeWidth={1} />;
           })}
           <polyline
             fill="none"
-            stroke="#c4a778"
+            stroke="var(--color-tone-sage)"
             strokeWidth="2.5"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -853,13 +857,13 @@ function RatingTrend({ data }: { data: ReviewTrendData | null }) {
           {points.map((p, i) => {
             const x = padding + i * xStep;
             const y = chartHeight - padding - ((p.avgRating - minRating) / range) * (chartHeight - 2 * padding);
-            return <circle key={i} cx={x} cy={y} r={3.5} fill="#c4a778" />;
+            return <circle key={i} cx={x} cy={y} r={3.5} fill="var(--color-tone-sage)" />;
           })}
         </svg>
 
         <div className="flex justify-between" style={{ marginLeft: 28, marginTop: 4 }}>
           {points.map((p, i) => (
-            <span key={i} className="text-[10px] text-gray-400">{formatWeek(p.week)}</span>
+            <span key={i} className="text-[10px] text-grey-45">{formatWeek(p.week)}</span>
           ))}
         </div>
       </div>
@@ -878,8 +882,8 @@ function FirstTimerROI({
 }) {
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+        <h2 className="text-sm font-semibold text-grey-75 mb-4">
           First-Timer Discount Performance
         </h2>
         <SkeletonCard />
@@ -889,11 +893,11 @@ function FirstTimerROI({
 
   if (!data || data.first_timers_count === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+        <h2 className="text-sm font-semibold text-grey-75 mb-4">
           First-Timer Discount Performance
         </h2>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-grey-60">
           No first-timer discounts granted in this period.
         </p>
       </div>
@@ -903,45 +907,45 @@ function FirstTimerROI({
   const net = parseFloat(data.net_roi_sgd);
   const netPositive = net >= 0;
   const netLabel = `${netPositive ? '+' : '−'}SGD ${Math.abs(net).toFixed(2)}`;
-  const netColor = netPositive ? 'text-green-600' : 'text-orange-600';
+  const netColor = netPositive ? 'text-tone-sage' : 'text-semantic-warn';
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-sm font-semibold text-gray-700 mb-4">
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-4">
         First-Timer Discount Performance
       </h2>
 
       {/* Net ROI hero */}
-      <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 mb-4">
-        <div className="text-xs text-gray-500 mb-1">Net ROI</div>
+      <div className="bg-grey-5 rounded-xl border border-grey-15 p-5 mb-4">
+        <div className="text-xs text-grey-60 mb-1">Net ROI</div>
         <div
           className={`text-3xl font-bold ${netColor}`}
           aria-label={`Net return on investment: ${netPositive ? 'positive' : 'negative'} ${Math.abs(net).toFixed(2)} Singapore dollars.`}
         >
           {netLabel}
         </div>
-        <div className="text-xs text-gray-400 mt-1">
+        <div className="text-xs text-grey-45 mt-1">
           return revenue − discount given
         </div>
       </div>
 
       {/* 4 stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 mb-1">First-timers</div>
-          <div className="text-xl font-semibold text-gray-900">
+        <div className="bg-grey-5 rounded-xl border border-grey-15 p-4">
+          <div className="text-xs text-grey-60 mb-1">First-timers</div>
+          <div className="text-xl font-semibold text-tone-ink">
             {data.first_timers_count}
           </div>
         </div>
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 mb-1">Discount given</div>
-          <div className="text-xl font-semibold text-gray-900">
+        <div className="bg-grey-5 rounded-xl border border-grey-15 p-4">
+          <div className="text-xs text-grey-60 mb-1">Discount given</div>
+          <div className="text-xl font-semibold text-tone-ink">
             SGD {parseFloat(data.discount_given_sgd).toFixed(2)}
           </div>
         </div>
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+        <div className="bg-grey-5 rounded-xl border border-grey-15 p-4">
           <div
-            className="text-xs text-gray-500 mb-1"
+            className="text-xs text-grey-60 mb-1"
             title={
               data.return_rate_pct === null
                 ? 'Need at least one first-timer from 30+ days ago.'
@@ -950,13 +954,13 @@ function FirstTimerROI({
           >
             Return rate (30d+)
           </div>
-          <div className="text-xl font-semibold text-gray-900">
+          <div className="text-xl font-semibold text-tone-ink">
             {data.return_rate_pct === null ? '—' : `${data.return_rate_pct}%`}
           </div>
         </div>
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 mb-1">Revenue from returns</div>
-          <div className="text-xl font-semibold text-gray-900">
+        <div className="bg-grey-5 rounded-xl border border-grey-15 p-4">
+          <div className="text-xs text-grey-60 mb-1">Revenue from returns</div>
+          <div className="text-xl font-semibold text-tone-ink">
             SGD {parseFloat(data.return_revenue_sgd).toFixed(2)}
           </div>
         </div>
@@ -981,15 +985,15 @@ function PeriodSelector({
   ];
 
   return (
-    <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+    <div className="flex gap-1 bg-grey-15 rounded-xl p-1">
       {options.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
             period === opt.value
-              ? 'bg-white text-indigo-700 shadow-sm'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'bg-tone-surface text-tone-sage shadow-sm'
+              : 'text-grey-60 hover:text-grey-75'
           }`}
         >
           {opt.label}
@@ -1171,8 +1175,8 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Business performance overview</p>
+          <h1 className="text-2xl font-bold text-tone-ink">Analytics</h1>
+          <p className="text-sm text-grey-60 mt-0.5">Business performance overview</p>
         </div>
         <div className="sm:w-72">
           <PeriodSelector period={period} onChange={handlePeriodChange} />
@@ -1180,7 +1184,7 @@ export default function AnalyticsPage() {
       </div>
 
       {error && (
-        <div className="mb-6 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 flex items-center justify-between">
+        <div className="mb-6 rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => { setError(''); void fetchAll(period); }}

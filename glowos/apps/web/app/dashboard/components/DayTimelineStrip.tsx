@@ -82,18 +82,18 @@ export function DayTimelineStrip({
   });
 
   return (
-    <div className="mb-4 bg-white rounded-xl border border-gray-200 p-4">
+    <div className="mb-4 bg-tone-surface rounded-xl border border-grey-15 p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-900">Today at a glance</h2>
+        <h2 className="text-sm font-semibold text-tone-ink">Today at a glance</h2>
         {isClosedToday && (
-          <span className="text-xs text-gray-500 italic">Closed today</span>
+          <span className="text-xs text-grey-60 italic">Closed today</span>
         )}
       </div>
 
       {isClosedToday ? (
-        <div className="h-10 rounded-md bg-gray-100 border border-gray-200" />
+        <div className="h-10 rounded-md bg-grey-15 border border-grey-15" />
       ) : staffOrder.length === 0 ? (
-        <div className="h-10 flex items-center justify-center text-xs text-gray-400 italic">
+        <div className="h-10 flex items-center justify-center text-xs text-grey-45 italic">
           No bookings scheduled today
         </div>
       ) : (
@@ -104,13 +104,13 @@ export function DayTimelineStrip({
             return (
               <div key={staffId} className="flex items-center gap-2">
                 <span
-                  className="text-[10px] font-medium text-gray-600 shrink-0 truncate"
+                  className="text-[10px] font-medium text-grey-75 shrink-0 truncate"
                   style={{ width: 64 }}
                   title={staffNames.get(staffId) ?? ''}
                 >
                   {staffNames.get(staffId) ?? ''}
                 </span>
-                <div className="relative flex-1 h-5 rounded bg-gray-50 border border-gray-100">
+                <div className="relative flex-1 h-5 rounded bg-grey-5 border border-grey-5">
                   {staffBookings.map((b) => {
                     const bStart = isoToLocalMin(b.startTime);
                     const bEnd = isoToLocalMin(b.endTime);
@@ -160,7 +160,7 @@ export function DayTimelineStrip({
           {ticks.map((t, i) => (
             <span
               key={i}
-              className="absolute text-[10px] text-gray-400 tabular-nums"
+              className="absolute text-[10px] text-grey-45 tabular-nums"
               style={{
                 left: `${t.leftPct}%`,
                 transform:

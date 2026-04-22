@@ -2,7 +2,8 @@ import type { Context, Next } from "hono";
 import { eq } from "drizzle-orm";
 import { db } from "@glowos/db";
 import { merchantUsers } from "@glowos/db";
-import { verifyAccessToken } from "../lib/jwt.js";
+import { verifyAccessToken, type AccessTokenPayload } from "../lib/jwt.js";
+import { isSuperAdminEmail } from "../lib/config.js";
 import type { AppVariables } from "../lib/types.js";
 
 type AppContext = Context<{ Variables: AppVariables }>;
@@ -19,17 +20,20 @@ export async function requireMerchant(c: AppContext, next: Next) {
 
   const token = authHeader.slice(7);
 
-  let payload: { userId: string; merchantId: string; role: string };
+  let payload: AccessTokenPayload;
   try {
     payload = verifyAccessToken(token);
   } catch {
     return c.json({ error: "Unauthorized", message: "Invalid or expired token" }, 401);
   }
 
-  // Verify user is still active in DB
+  // Verify user is still active in DB. When impersonating, the JWT's userId
+  // is the impersonated owner — but we still load that row so role/merchantId
+  // stay in sync with current DB state.
   const [user] = await db
     .select({
       id: merchantUsers.id,
+      email: merchantUsers.email,
       isActive: merchantUsers.isActive,
       merchantId: merchantUsers.merchantId,
       role: merchantUsers.role,
@@ -48,6 +52,36 @@ export async function requireMerchant(c: AppContext, next: Next) {
   c.set("userRole", user.role);
   if (user.staffId) c.set("staffId", user.staffId);
 
+  // Forward superadmin claims. Re-validate against the allowlist on every
+  // request — rotating SUPER_ADMIN_EMAILS effectively revokes access without
+  // waiting for token expiry. Impersonation flag is trusted from the JWT.
+  if (payload.superAdmin && isSuperAdminEmail(payload.actorEmail ?? user.email)) {
+    c.set("superAdmin", true);
+  }
+  if (payload.impersonating) {
+    c.set("impersonating", true);
+    if (payload.actorUserId) c.set("actorUserId", payload.actorUserId);
+    if (payload.actorEmail) c.set("actorEmail", payload.actorEmail);
+  }
+
+  await next();
+}
+
+/**
+ * Requires the caller to be an active superadmin AND not currently
+ * impersonating a merchant. /super/* endpoints are cross-tenant and
+ * should only run from the superadmin's own session.
+ */
+export async function requireSuperAdmin(c: AppContext, next: Next) {
+  if (!c.get("superAdmin")) {
+    return c.json({ error: "Forbidden", message: "Superadmin access required" }, 403);
+  }
+  if (c.get("impersonating")) {
+    return c.json(
+      { error: "Forbidden", message: "End impersonation before accessing /super" },
+      403,
+    );
+  }
   await next();
 }
 

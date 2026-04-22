@@ -50,7 +50,7 @@ interface PackageForm {
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-4 border-gray-200 border-t-[#1a2313] rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-grey-15 border-t-[#1a2313] rounded-full animate-spin" />
     </div>
   );
 }
@@ -256,8 +256,8 @@ export default function PackagesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Packages</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Multi-session packages for your clients</p>
+          <h1 className="text-xl font-bold text-tone-ink">Packages</h1>
+          <p className="text-sm text-grey-60 mt-0.5">Multi-session packages for your clients</p>
         </div>
         <button
           onClick={openCreate}
@@ -270,59 +270,59 @@ export default function PackagesPage() {
 
       {/* Package list */}
       {packages.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gray-100 flex items-center justify-center">
-            <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-12 text-center">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-grey-15 flex items-center justify-center">
+            <svg className="w-6 h-6 text-grey-45" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-gray-700">No packages yet</p>
-          <p className="text-xs text-gray-400 mt-1">Create your first multi-session package to get started.</p>
+          <p className="text-sm font-medium text-grey-75">No packages yet</p>
+          <p className="text-xs text-grey-45 mt-1">Create your first multi-session package to get started.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {packages.map(pkg => (
-            <div key={pkg.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 transition-colors">
+            <div key={pkg.id} className="bg-tone-surface rounded-xl border border-grey-15 p-5 hover:border-grey-30 transition-colors">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold text-gray-900">{pkg.name}</h3>
-                    <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                    <h3 className="text-sm font-semibold text-tone-ink">{pkg.name}</h3>
+                    <span className="text-xs font-medium text-grey-60 bg-grey-15 px-2 py-0.5 rounded-full">
                       {pkg.totalSessions} sessions
                     </span>
                   </div>
                   {pkg.description && (
-                    <p className="text-xs text-gray-500 mt-1">{pkg.description}</p>
+                    <p className="text-xs text-grey-60 mt-1">{pkg.description}</p>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {pkg.includedServices.map(svc => (
-                      <span key={svc.serviceId} className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
+                      <span key={svc.serviceId} className="text-[11px] bg-tone-sage/10 text-tone-sage px-2 py-0.5 rounded-full">
                         {svc.serviceName} x{svc.quantity}
                       </span>
                     ))}
                   </div>
-                  <p className="text-[11px] text-gray-400 mt-2">
+                  <p className="text-[11px] text-grey-45 mt-2">
                     Valid for {pkg.validityDays} days
                   </p>
                 </div>
                 <div className="text-right flex flex-col items-end gap-2 ml-4">
-                  <p className="text-lg font-bold text-gray-900">${parseFloat(pkg.priceSgd).toFixed(0)}</p>
+                  <p className="text-lg font-bold text-tone-ink">${parseFloat(pkg.priceSgd).toFixed(0)}</p>
                   <div className="flex gap-1.5">
                     <button
                       onClick={() => openAssign(pkg)}
-                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition-colors"
+                      className="text-[11px] font-medium text-tone-sage hover:text-tone-sage bg-tone-sage/10 hover:bg-tone-sage/15 px-2.5 py-1 rounded-md transition-colors"
                     >
                       Assign
                     </button>
                     <button
                       onClick={() => openEdit(pkg)}
-                      className="text-[11px] font-medium text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 px-2.5 py-1 rounded-md transition-colors"
+                      className="text-[11px] font-medium text-grey-60 hover:text-grey-75 bg-grey-5 hover:bg-grey-15 px-2.5 py-1 rounded-md transition-colors"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(pkg.id)}
-                      className="text-[11px] font-medium text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-md transition-colors"
+                      className="text-[11px] font-medium text-semantic-danger hover:text-semantic-danger bg-semantic-danger/5 hover:bg-semantic-danger/10 px-2.5 py-1 rounded-md transition-colors"
                     >
                       Archive
                     </button>
@@ -337,41 +337,41 @@ export default function PackagesPage() {
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">
+          <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-grey-5">
+              <h2 className="text-lg font-semibold text-tone-ink">
                 {editingId ? 'Edit Package' : 'Create Package'}
               </h2>
             </div>
             <div className="p-6 space-y-4">
               {/* Name */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Package Name</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Package Name</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="e.g. Facial Rejuvenation - 5 Sessions"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                 />
               </div>
 
               {/* Description */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Description</label>
                 <textarea
                   value={form.description}
                   onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
                   rows={2}
                   placeholder="Optional description..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 resize-none"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
                 />
               </div>
 
               {/* Price + Validity */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Price (SGD)</label>
+                  <label className="block text-xs font-medium text-grey-75 mb-1">Price (SGD)</label>
                   <input
                     type="number"
                     value={form.priceSgd}
@@ -379,30 +379,30 @@ export default function PackagesPage() {
                     placeholder="0.00"
                     min="0"
                     step="0.01"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                    className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Validity (days)</label>
+                  <label className="block text-xs font-medium text-grey-75 mb-1">Validity (days)</label>
                   <input
                     type="number"
                     value={form.validityDays}
                     onChange={e => setForm(prev => ({ ...prev, validityDays: e.target.value }))}
                     placeholder="180"
                     min="1"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                    className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                   />
                 </div>
               </div>
 
               {/* Included Services Picker */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Included Services</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Included Services</label>
                 <div className="flex gap-2">
                   <select
                     value={pickerServiceId}
                     onChange={e => setPickerServiceId(e.target.value)}
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                    className="flex-1 border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                   >
                     <option value="">Select a service...</option>
                     {services.map(svc => (
@@ -414,14 +414,14 @@ export default function PackagesPage() {
                     value={pickerQuantity}
                     onChange={e => setPickerQuantity(e.target.value)}
                     min="1"
-                    className="w-16 border border-gray-200 rounded-lg px-2 py-2 text-sm text-center text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                    className="w-16 border border-grey-15 rounded-lg px-2 py-2 text-sm text-center text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                     placeholder="Qty"
                   />
                   <button
                     type="button"
                     onClick={addServiceToPicker}
                     disabled={!pickerServiceId}
-                    className="px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                    className="px-3 py-2 bg-tone-ink text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-40 transition-colors"
                   >
                     Add
                   </button>
@@ -429,27 +429,27 @@ export default function PackagesPage() {
                 {form.includedServices.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {form.includedServices.map(svc => (
-                      <div key={svc.serviceId} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                        <span className="text-xs text-gray-700">{svc.serviceName} x{svc.quantity}</span>
+                      <div key={svc.serviceId} className="flex items-center justify-between bg-grey-5 rounded-lg px-3 py-2">
+                        <span className="text-xs text-grey-75">{svc.serviceName} x{svc.quantity}</span>
                         <button
                           onClick={() => removeServiceFromPicker(svc.serviceId)}
-                          className="text-xs text-red-500 hover:text-red-700"
+                          className="text-xs text-semantic-danger hover:text-semantic-danger"
                         >
                           Remove
                         </button>
                       </div>
                     ))}
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-grey-45 mt-1">
                       Total sessions: {form.includedServices.reduce((sum, s) => sum + s.quantity, 0)}
                     </p>
                   </div>
                 )}
               </div>
             </div>
-            <div className="p-6 border-t border-gray-100 flex justify-end gap-2">
+            <div className="p-6 border-t border-grey-5 flex justify-end gap-2">
               <button
                 onClick={() => { setShowModal(false); setForm(blankForm()); setEditingId(null); }}
-                className="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors"
               >
                 Cancel
               </button>
@@ -468,28 +468,28 @@ export default function PackagesPage() {
       {/* Assign Modal */}
       {showAssign && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-            <div className="p-6 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Assign Package to Client</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+          <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="p-6 border-b border-grey-5">
+              <h2 className="text-lg font-semibold text-tone-ink">Assign Package to Client</h2>
+              <p className="text-xs text-grey-60 mt-0.5">
                 {packages.find(p => p.id === assignPkgId)?.name}
               </p>
             </div>
             <div className="p-6 space-y-4">
               {/* Client search */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Client</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Client</label>
                 <input
                   type="text"
                   value={clientSearch}
                   onChange={e => setClientSearch(e.target.value)}
                   placeholder="Search by name, phone, or email..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 mb-2"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 mb-2"
                 />
                 <select
                   value={assignClientId}
                   onChange={e => setAssignClientId(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                   size={Math.min(filteredClients.length + 1, 6)}
                 >
                   <option value="">Select a client...</option>
@@ -503,39 +503,39 @@ export default function PackagesPage() {
 
               {/* Price paid */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Price Paid (SGD)</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Price Paid (SGD)</label>
                 <input
                   type="number"
                   value={assignPrice}
                   onChange={e => setAssignPrice(e.target.value)}
                   min="0"
                   step="0.01"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                 />
               </div>
 
               {/* Notes */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Notes (optional)</label>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Notes (optional)</label>
                 <textarea
                   value={assignNotes}
                   onChange={e => setAssignNotes(e.target.value)}
                   rows={2}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 resize-none"
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
                 />
               </div>
             </div>
-            <div className="p-6 border-t border-gray-100 flex justify-end gap-2">
+            <div className="p-6 border-t border-grey-5 flex justify-end gap-2">
               <button
                 onClick={() => setShowAssign(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAssign}
                 disabled={assigning || !assignClientId}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-tone-ink text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
               >
                 {assigning ? 'Assigning...' : 'Assign Package'}
               </button>

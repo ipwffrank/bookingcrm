@@ -1212,11 +1212,20 @@ bookingsRouter.get("/:slug", async (c) => {
     .from(services)
     .where(and(eq(services.merchantId, merchant.id), eq(services.isActive, true)));
 
-  // Active staff
+  // Active, publicly visible staff. Excludes is_any_available rows because the
+  // booking widget renders a synthetic "Any Available" entry itself — including
+  // DB-backed rows would duplicate it.
   const activeStaff = await db
     .select()
     .from(staff)
-    .where(and(eq(staff.merchantId, merchant.id), eq(staff.isActive, true)));
+    .where(
+      and(
+        eq(staff.merchantId, merchant.id),
+        eq(staff.isActive, true),
+        eq(staff.isPubliclyVisible, true),
+        eq(staff.isAnyAvailable, false),
+      ),
+    );
 
   // Don't expose the actual stripe account ID to public, just whether payment is enabled
   const { stripeAccountId, ...merchantPublic } = merchant;

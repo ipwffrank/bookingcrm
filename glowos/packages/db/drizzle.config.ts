@@ -25,6 +25,8 @@ export default {
     "./src/schema/packages.ts",
     "./src/schema/booking-groups.ts",
     "./src/schema/waitlist.ts",
+    "./src/schema/password-reset-tokens.ts",
+    "./src/schema/super-admin.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
