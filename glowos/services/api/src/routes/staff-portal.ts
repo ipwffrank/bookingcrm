@@ -30,7 +30,13 @@ staffPortalRouter.get("/me", async (c) => {
     .limit(1);
 
   const [merchant] = await db
-    .select({ id: merchants.id, name: merchants.name, slug: merchants.slug })
+    .select({
+      id: merchants.id,
+      name: merchants.name,
+      slug: merchants.slug,
+      operatingHours: merchants.operatingHours,
+      timezone: merchants.timezone,
+    })
     .from(merchants)
     .where(eq(merchants.id, merchantId))
     .limit(1);

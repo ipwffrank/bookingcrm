@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 import { BookingForm } from '../bookings/BookingForm';
+import { computeCalendarRange } from '../../lib/operating-hours';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -11,8 +12,10 @@ import interactionPlugin from '@fullcalendar/interaction';
 import type { EventInput, DatesSetArg, EventClickArg } from '@fullcalendar/core';
 
 // ─── Grid constants (static) ───────────────────────────────────────────────────
-const DAY_START_H = 7;
-const DAY_END_H   = 22;
+// DAY_START_H / DAY_END_H defaults; the actual per-merchant range is derived
+// inside the component from their operating_hours and overrides these at runtime.
+const DEFAULT_DAY_START_H = 7;
+const DEFAULT_DAY_END_H   = 22;
 const SNAP_MIN    = 15;
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -156,7 +159,13 @@ export default function CalendarPage() {
   const ppmRef   = useRef(2); // kept in sync with ppm for stable drag effect
   const dateRef  = useRef(''); // kept in sync with dateStr for stable drag effect
 
-  // ── Dynamic grid helpers (depend on density) ─────────────────────────────────
+  // ── Dynamic grid helpers (depend on density + merchant operating hours) ─────
+  // Pulls the visible day range from the merchant's operating_hours so each
+  // merchant sees a calendar focused on their own trading hours, not a
+  // one-size-fits-all 7am–10pm window.
+  const calendarRange = computeCalendarRange(operatingHours);
+  const DAY_START_H = calendarRange.startHour;
+  const DAY_END_H = calendarRange.endHour;
   const ppm      = density === 'compact' ? 1.5 : 2;   // px per minute
   const totalPx  = (DAY_END_H - DAY_START_H) * 60 * ppm;
   const topPx    = (min: number) => (min - DAY_START_H * 60) * ppm;
@@ -1263,8 +1272,8 @@ export default function CalendarPage() {
           headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
           events={buildCalendarEvents()}
           height="auto"
-          slotMinTime="07:00:00"
-          slotMaxTime="22:00:00"
+          slotMinTime={calendarRange.slotMinTime}
+          slotMaxTime={calendarRange.slotMaxTime}
           eventClick={(info: EventClickArg) => {
             if (info.event.extendedProps.type === 'booking') {
               const b = info.event.extendedProps.booking as Booking;

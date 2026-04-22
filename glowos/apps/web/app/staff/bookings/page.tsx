@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -8,6 +8,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import type { EventInput, EventDropArg, EventClickArg, DatesSetArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { apiFetch } from '../../lib/api';
+import { computeCalendarRange, type OperatingHoursMap } from '../../lib/operating-hours';
 
 interface DutyBlock {
   id: string;
@@ -70,6 +71,19 @@ export default function StaffAllBookingsPage() {
   const [dutyError, setDutyError]             = useState<string | null>(null);
   const [dutySaving, setDutySaving]           = useState(false);
   const [deleting, setDeleting]               = useState(false);
+  const [operatingHours, setOperatingHours]   = useState<OperatingHoursMap>(null);
+
+  // Fetch merchant operating hours once — feeds the calendar's slot range so
+  // this staff member sees a window tailored to their business's trading hours.
+  useEffect(() => {
+    apiFetch('/staff/me')
+      .then((d: { merchant?: { operatingHours?: OperatingHoursMap } }) => {
+        setOperatingHours(d.merchant?.operatingHours ?? null);
+      })
+      .catch(() => { /* fallback to defaults inside computeCalendarRange */ });
+  }, []);
+
+  const calendarRange = computeCalendarRange(operatingHours);
 
   const loadEvents = useCallback(async (start: string, end: string) => {
     const from = start.slice(0, 10);
@@ -292,8 +306,8 @@ export default function StaffAllBookingsPage() {
             loadEvents(info.startStr, info.endStr);
           }}
           height="auto"
-          slotMinTime="07:00:00"
-          slotMaxTime="22:00:00"
+          slotMinTime={calendarRange.slotMinTime}
+          slotMaxTime={calendarRange.slotMaxTime}
         />
       </div>
 
