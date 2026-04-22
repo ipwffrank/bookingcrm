@@ -12,7 +12,9 @@ import {
   clientProfiles,
   notificationLog,
   whatsappInboundLog,
+  ipay88Transactions,
 } from "@glowos/db";
+import { verifyCallbackSignature } from "../lib/ipay88.js";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
@@ -567,6 +569,147 @@ webhooksRouter.post("/twilio/whatsapp-inbound", async (c) => {
   });
 
   return c.text("<Response/>", 200, { "content-type": "text/xml" });
+});
+
+// ─── POST /webhooks/ipay88/backend ─────────────────────────────────────────────
+//
+// iPay88's server-to-server callback. AUTHORITATIVE — this determines whether
+// the booking is paid. Behavior per iPay88 spec:
+//   - POST application/x-www-form-urlencoded
+//   - iPay88 retries up to 3 times until we respond with body "RECEIVEOK"
+//     (case-sensitive plain text, HTTP 200)
+//   - Duplicate deliveries are expected — idempotent on RefNo
+//
+// Flow:
+//   1. Parse form body → extract RefNo
+//   2. Load the pending transaction row by RefNo
+//   3. Verify signature using the merchant's stored MerchantKey
+//   4. If status=1 → mark paid + update booking
+//   5. Always return "RECEIVEOK" on any 200-eligible outcome so iPay88 stops
+//      retrying; internal errors return 500 which triggers the retry
+
+webhooksRouter.post("/ipay88/backend", async (c) => {
+  const form = await c.req.parseBody();
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(form)) {
+    if (typeof v === "string") params[k] = v;
+  }
+
+  const refNo = params.RefNo ?? "";
+  if (!refNo) {
+    console.warn("[iPay88] backend: missing RefNo");
+    return c.text("RECEIVEOK", 200);
+  }
+
+  const [tx] = await db
+    .select({
+      tx: ipay88Transactions,
+      merchant: merchants,
+    })
+    .from(ipay88Transactions)
+    .innerJoin(merchants, eq(ipay88Transactions.merchantId, merchants.id))
+    .where(eq(ipay88Transactions.refNo, refNo))
+    .limit(1);
+
+  if (!tx) {
+    console.warn("[iPay88] backend: unknown RefNo", { refNo });
+    return c.text("RECEIVEOK", 200);
+  }
+
+  if (!tx.merchant.ipay88MerchantKey) {
+    console.error("[iPay88] backend: merchant has no MerchantKey configured", { refNo });
+    return c.text("RECEIVEOK", 200);
+  }
+
+  // Idempotency — iPay88 retries until we return RECEIVEOK. If we already
+  // booked this one, ACK without re-processing.
+  if (tx.tx.status === "paid") {
+    return c.text("RECEIVEOK", 200);
+  }
+
+  const valid = verifyCallbackSignature({
+    merchantKey: tx.merchant.ipay88MerchantKey,
+    merchantCode: params.MerchantCode ?? "",
+    paymentId: params.PaymentId ?? "",
+    refNo,
+    amount: params.Amount ?? "",
+    currency: params.Currency ?? "",
+    status: params.Status ?? "",
+    receivedSignature: params.Signature ?? "",
+  });
+
+  if (!valid) {
+    console.warn("[iPay88] backend: signature mismatch", { refNo });
+    // Don't return RECEIVEOK — force iPay88 to retry. Signature mismatch is
+    // almost always a config drift (wrong MerchantKey on our side) and we
+    // want visibility, not silent swallowing.
+    return c.text("Invalid signature", 403);
+  }
+
+  const status = params.Status ?? "";
+  const normalizedStatus: "paid" | "failed" | "pending_fpx" =
+    status === "1" ? "paid" : status === "6" ? "pending_fpx" : "failed";
+
+  await db
+    .update(ipay88Transactions)
+    .set({
+      status: normalizedStatus,
+      ipay88TransId: params.TransId ?? null,
+      ipay88AuthCode: params.AuthCode ?? null,
+      ipay88ErrDesc: params.ErrDesc ?? null,
+      lastCallbackPayload: params as never,
+      paidAt: normalizedStatus === "paid" ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(ipay88Transactions.id, tx.tx.id));
+
+  if (normalizedStatus === "paid" && tx.tx.bookingId) {
+    await db
+      .update(bookings)
+      .set({
+        paymentStatus: "paid",
+        paymentMethod: "ipay88",
+        updatedAt: new Date(),
+      })
+      .where(eq(bookings.id, tx.tx.bookingId));
+    // Fire booking-confirmation notifications (reuses existing worker pattern).
+    await addJob("notifications", "booking_confirmation", { booking_id: tx.tx.bookingId }).catch((err: unknown) => {
+      console.error("[iPay88] failed to enqueue booking_confirmation", err);
+    });
+  }
+
+  console.log("[iPay88] backend ACK", { refNo, status: normalizedStatus });
+  return c.text("RECEIVEOK", 200);
+});
+
+// ─── POST /webhooks/ipay88/response ───────────────────────────────────────────
+//
+// Browser-side redirect — NOT authoritative. Fires only if the user's browser
+// actually returns to our site. We redirect them to the /[slug]/confirm page
+// with the RefNo; the page queries /super/ipay88/status?ref=<RefNo> to show
+// the real status (which by then should have been set by /backend).
+
+webhooksRouter.post("/ipay88/response", async (c) => {
+  const form = await c.req.parseBody();
+  const refNo = (form.RefNo as string) ?? "";
+  const merchantCode = (form.MerchantCode as string) ?? "";
+
+  if (!refNo || !merchantCode) {
+    return c.redirect("/");
+  }
+
+  const [row] = await db
+    .select({ slug: merchants.slug })
+    .from(ipay88Transactions)
+    .innerJoin(merchants, eq(ipay88Transactions.merchantId, merchants.id))
+    .where(eq(ipay88Transactions.refNo, refNo))
+    .limit(1);
+
+  if (!row) {
+    return c.redirect("/");
+  }
+
+  return c.redirect(`${config.frontendUrl}/${row.slug}/confirm?ref=${refNo}`);
 });
 
 export { webhooksRouter };

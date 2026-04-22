@@ -29,6 +29,20 @@ export const merchants = pgTable("merchants", {
   gbpPlaceId: varchar("gbp_place_id", { length: 255 }),
   stripeAccountId: varchar("stripe_account_id", { length: 255 }),
   hitpayMerchantId: varchar("hitpay_merchant_id", { length: 255 }),
+  // iPay88 gateway — primary option for MY merchants. Credentials stored as
+  // plaintext for MVP; migrate to encrypted-at-rest before onboarding
+  // merchants with high transaction volume.
+  paymentGateway: varchar("payment_gateway", { length: 20 })
+    .notNull()
+    .default("stripe")
+    .$type<"stripe" | "ipay88">(),
+  ipay88MerchantCode: varchar("ipay88_merchant_code", { length: 20 }),
+  ipay88MerchantKey: text("ipay88_merchant_key"),
+  ipay88Currency: varchar("ipay88_currency", { length: 5 }).$type<"MYR" | "SGD">(),
+  ipay88Environment: varchar("ipay88_environment", { length: 20 })
+    .notNull()
+    .default("sandbox")
+    .$type<"sandbox" | "production">(),
   subscriptionTier: varchar("subscription_tier", { length: 50 }).notNull().default("starter"),
   subscriptionStatus: varchar("subscription_status", { length: 50 }).notNull().default("trial"),
   subscriptionExpiresAt: timestamp("subscription_expires_at", { withTimezone: true }),

@@ -770,6 +770,25 @@ function PaymentsTab({ onSaved, onError }: { onSaved: (msg: string) => void; onE
           </div>
         </div>
       </div>
+
+      {/* iPay88 — Malaysia gateway, alternative to Stripe */}
+      <a
+        href="/dashboard/settings/ipay88"
+        className="block bg-white rounded-xl border border-gray-200 p-6 hover:border-tone-sage/50 hover:shadow-sm transition-all"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1">iPay88 (Malaysia)</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Alternative gateway for MY-market merchants. Accepts FPX, DuitNow, Boost, GrabPay MY, Touch &apos;n Go, cards.
+            </p>
+            <p className="text-xs text-tone-sage font-medium">Configure &rarr;</p>
+          </div>
+          <svg className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </div>
+      </a>
     </div>
   );
 }

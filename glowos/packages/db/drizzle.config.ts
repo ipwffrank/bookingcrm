@@ -27,6 +27,7 @@ export default {
     "./src/schema/waitlist.ts",
     "./src/schema/password-reset-tokens.ts",
     "./src/schema/super-admin.ts",
+    "./src/schema/ipay88.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
