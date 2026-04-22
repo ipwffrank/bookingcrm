@@ -147,6 +147,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
+  // Show "Superadmin panel" link only when this session is elevated AND not
+  // currently impersonating — mirrors the API's requireSuperAdmin rule so
+  // the UI matches what the route will allow.
+  const [showSuperLink, setShowSuperLink] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isSuper = localStorage.getItem('superAdmin') === 'true';
+    const impersonating = localStorage.getItem('impersonating') === 'true';
+    setShowSuperLink(isSuper && !impersonating);
+  }, [pathname]);
 
   function toggleCollapse() {
     setSidebarCollapsed(prev => {
@@ -242,6 +252,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         })}
       </div>
       <div className={`${collapsed ? 'px-2' : 'px-3'} py-4 border-t border-grey-5 space-y-0.5`}>
+        {showSuperLink && (
+          <Link
+            href="/super"
+            title={collapsed ? 'Superadmin panel' : undefined}
+            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2.5 rounded-lg text-sm font-medium bg-tone-ink text-tone-surface hover:opacity-90 transition-opacity`}
+          >
+            <svg className="w-4.5 h-4.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z" />
+            </svg>
+            {!collapsed && 'Superadmin panel'}
+          </Link>
+        )}
         {(() => {
           const settingsHref = '/dashboard/settings';
           const settingsActive = isActive(settingsHref);
