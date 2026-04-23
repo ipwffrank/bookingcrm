@@ -390,11 +390,16 @@ export default function BookingWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientPhone]);
 
-  // Debounced phone lookup for returning-customer detection
+  // Debounced lookup — cross-checks both phone AND email against the
+  // merchant's client profiles. Triggers whenever either field changes;
+  // the backend returns matched=true if either hits an existing record.
   useEffect(() => {
     if (authClient) { setLookupResult(null); return; } // Google user, skip lookup
     const phone = clientPhone.trim();
-    if (phone.length < 6) {
+    const email = clientEmail.trim();
+    const hasPhone = phone.length >= 6;
+    const hasEmail = email.includes('@');
+    if (!hasPhone && !hasEmail) {
       setLookupResult(null);
       return;
     }
@@ -403,7 +408,10 @@ export default function BookingWidget({
         const res = (await apiFetch(`/booking/${slug}/lookup-client`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify({
+            ...(hasPhone ? { phone } : {}),
+            ...(hasEmail ? { email } : {}),
+          }),
         })) as { matched: boolean; masked_name?: string };
         setLookupResult(res);
       } catch {
@@ -411,7 +419,7 @@ export default function BookingWidget({
       }
     }, 500);
     return () => clearTimeout(t);
-  }, [clientPhone, slug, authClient]);
+  }, [clientPhone, clientEmail, slug, authClient]);
 
   // Proactively check if the user's phone/email matches an existing customer at
   // this merchant. If so, the backend will deny the first-timer discount, so we

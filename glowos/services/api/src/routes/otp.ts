@@ -1,6 +1,6 @@
 // glowos/services/api/src/routes/otp.ts
 import { Hono } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
 import { db, merchants, clients, clientProfiles } from "@glowos/db";
@@ -29,7 +29,10 @@ const verifySchema = z.object({
 });
 
 const lookupSchema = z.object({
-  phone: z.string().min(1),
+  phone: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+}).refine((d) => Boolean(d.phone || d.email), {
+  message: "phone or email is required",
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -300,10 +303,11 @@ otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
   if (!merchant) return c.json({ matched: false });
 
   const defaultCountry = merchant.country;
-  const phone = normalizePhone(body.phone, defaultCountry);
-  if (!phone) return c.json({ matched: false });
+  const phone = body.phone ? normalizePhone(body.phone, defaultCountry) : null;
+  const email = body.email ? normalizeEmail(body.email) : null;
+  if (!phone && !email) return c.json({ matched: false });
 
-  // Rate limit: 10 lookups/min per IP (prevents phone-number enumeration)
+  // Rate limit: 10 lookups/min per IP (prevents phone/email enumeration)
   const ip =
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
     c.req.header("x-real-ip") ||
@@ -319,11 +323,19 @@ otpRouter.post("/:slug/lookup-client", zValidator(lookupSchema), async (c) => {
     console.error("[OTP] lookup-client: rate-limit check failed; skipping", err);
   }
 
+  // Match on phone OR email — whichever the customer entered first. Both
+  // checks are scoped to this merchant's client profiles so a customer who
+  // has history at a sibling merchant isn't falsely surfaced here.
+  const orConds = [];
+  if (phone) orConds.push(eq(clients.phone, phone));
+  if (email) orConds.push(eq(clients.email, email));
+  const matchExpr = orConds.length === 1 ? orConds[0] : or(...orConds);
+
   const [client] = await db
-    .select({ name: clients.name })
+    .select({ name: clients.name, email: clients.email, phone: clients.phone })
     .from(clients)
     .innerJoin(clientProfiles, eq(clientProfiles.clientId, clients.id))
-    .where(and(eq(clients.phone, phone), eq(clientProfiles.merchantId, merchant.id)))
+    .where(and(matchExpr!, eq(clientProfiles.merchantId, merchant.id)))
     .limit(1);
 
   if (!client || !client.name) return c.json({ matched: false });
