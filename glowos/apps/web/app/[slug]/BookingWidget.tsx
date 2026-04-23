@@ -7,6 +7,7 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { OTPVerificationCard } from './components/OTPVerificationCard';
 import { ReturningCustomerCard } from './components/ReturningCustomerCard';
+import { PhoneInput } from './components/PhoneInput';
 import { JoinWaitlistCard } from './components/JoinWaitlistCard';
 
 declare global {
@@ -74,6 +75,7 @@ interface Merchant {
   addressLine2: string | null;
   postalCode: string | null;
   timezone: string;
+  country?: 'SG' | 'MY' | null;
   paymentEnabled?: boolean;
   operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
 }
@@ -1201,13 +1203,11 @@ export default function BookingWidget({
                       <label className="block text-sm font-semibold text-grey-75 mb-1.5">
                         Mobile number <span className="text-semantic-danger">*</span>
                       </label>
-                      <input
-                        type="tel"
+                      <PhoneInput
                         value={clientPhone}
-                        onChange={(e) => setClientPhone(e.target.value)}
-                        autoComplete="tel"
-                        className="w-full rounded-xl border-2 border-grey-15 px-4 py-3 text-sm outline-none focus:border-tone-sage focus:ring-2 focus:ring-indigo-100 transition-colors"
-                        placeholder="+65 9123 4567"
+                        onChange={setClientPhone}
+                        defaultCountry={merchant.country ?? 'SG'}
+                        placeholder="9123 4567"
                       />
                       <p className="mt-1.5 text-xs text-grey-45">We&apos;ll check if you&apos;ve booked with us before</p>
                     </div>
@@ -1323,13 +1323,11 @@ export default function BookingWidget({
                     <label className="block text-sm font-semibold text-grey-75 mb-1.5">
                       Mobile number <span className="text-semantic-danger">*</span>
                     </label>
-                    <input
-                      type="tel"
+                    <PhoneInput
                       value={clientPhone}
-                      onChange={(e) => setClientPhone(e.target.value)}
-                      autoComplete="tel"
-                      className="w-full rounded-xl border-2 border-grey-15 px-4 py-3 text-sm outline-none focus:border-tone-sage focus:ring-2 focus:ring-indigo-100 transition-colors"
-                      placeholder="+65 9123 4567"
+                      onChange={setClientPhone}
+                      defaultCountry={merchant.country ?? 'SG'}
+                      placeholder="9123 4567"
                     />
                   </div>
 

@@ -16,6 +16,7 @@ interface SalonData {
     addressLine2: string | null;
     postalCode: string | null;
     timezone: string;
+    country?: 'SG' | 'MY' | null;
     paymentEnabled?: boolean;
     operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
   };

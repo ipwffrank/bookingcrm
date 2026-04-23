@@ -1195,6 +1195,7 @@ bookingsRouter.get("/:slug", async (c) => {
       addressLine2: merchants.addressLine2,
       postalCode: merchants.postalCode,
       timezone: merchants.timezone,
+      country: merchants.country,
       stripeAccountId: merchants.stripeAccountId,
       operatingHours: merchants.operatingHours,
     })
