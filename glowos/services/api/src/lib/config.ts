@@ -44,7 +44,13 @@ export const config = {
   // the same Redis instance. Without a distinct prefix, a local `pnpm dev`
   // worker can steal prod jobs (and vice versa), causing e.g. WhatsApp
   // notifications to render with localhost URLs.
-  queuePrefix: process.env.QUEUE_PREFIX ?? "glowos",
+  //
+  // Default is NODE_ENV-aware so nobody has to remember to set a local
+  // override: production processes use "glowos", everything else uses
+  // "dev-glowos". Explicit QUEUE_PREFIX still wins.
+  queuePrefix:
+    process.env.QUEUE_PREFIX ??
+    (process.env.NODE_ENV === "production" ? "glowos" : "dev-glowos"),
 
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;
