@@ -309,11 +309,13 @@ export default function BookingWidget({
     return key ? loadStripe(key) : null;
   });
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  // Default to cash ("Pay at Venue") for every customer — new, phone-returning,
-  // or Google-authed. Customers who want to pay online opt in by clicking
-  // the Pay Online button. This keeps the experience consistent regardless
-  // of how the customer identified themselves.
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('cash');
+  // No preselected payment method when the merchant has online payment
+  // enabled — force the customer to consciously pick. When Stripe isn't
+  // connected at all, the selector doesn't render and we implicitly lock
+  // in cash (nothing else is possible).
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | null>(
+    merchant.paymentEnabled ? null : 'cash',
+  );
 
   const bookingSource = embedded ? 'embedded_widget' : 'direct_widget';
 
@@ -1522,14 +1524,26 @@ export default function BookingWidget({
                         setStep(5);
                       }
                     }}
-                    disabled={shouldOfferFirstTimerOtp || !clientName.trim() || !clientPhone.trim() || confirmLoading}
+                    disabled={
+                      shouldOfferFirstTimerOtp ||
+                      !clientName.trim() ||
+                      !clientPhone.trim() ||
+                      confirmLoading ||
+                      // When the merchant has online payment enabled, the
+                      // customer MUST pick a method before continuing. When
+                      // it's disabled, paymentMethod is forced to 'cash' at
+                      // mount so this condition is a no-op.
+                      (merchant.paymentEnabled && paymentMethod === null)
+                    }
                     className="w-full rounded-xl bg-tone-ink py-3.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {confirmLoading
                       ? 'Setting up payment...'
                       : paymentMethod === 'card'
                       ? 'Continue to Payment'
-                      : 'Continue to Review'}
+                      : paymentMethod === 'cash'
+                      ? 'Continue to Review'
+                      : 'Choose a payment method above'}
                   </button>
                 </>
               )}
@@ -1626,8 +1640,14 @@ export default function BookingWidget({
                 </div>
                 <div>
                   <p className="text-xs text-grey-60 mb-0.5">Payment</p>
-                  <p className="text-sm font-semibold text-grey-90">
-                    {usePackageSession ? 'Package session (free)' : paymentMethod === 'card' ? 'Pay now (online)' : 'Pay at appointment'}
+                  <p className={`text-sm font-semibold ${paymentMethod === null && !usePackageSession ? 'text-semantic-warn' : 'text-grey-90'}`}>
+                    {usePackageSession
+                      ? 'Package session (free)'
+                      : paymentMethod === 'card'
+                        ? 'Pay now (online)'
+                        : paymentMethod === 'cash'
+                          ? 'Pay at appointment'
+                          : 'Not selected'}
                   </p>
                 </div>
               </div>
