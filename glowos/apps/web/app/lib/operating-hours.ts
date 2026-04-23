@@ -3,9 +3,9 @@
  * operating_hours map.
  *
  * Takes the earliest `open` across non-closed days and the latest `close`,
- * then widens by 30 min (rounded to the hour) on each side so users can still
- * see the just-before-open / just-after-close gaps at a glance. Falls back to
- * a conservative 7:00–22:00 window if no hours are set.
+ * then widens by 1 hour (rounded to the hour) on each side so users can
+ * still see the just-before-open / just-after-close gaps at a glance.
+ * Falls back to a conservative 7:00–22:00 window if no hours are set.
  *
  * Time strings are assumed HH:MM or HH:MM:SS in the merchant's local tz —
  * FullCalendar is tz-agnostic about slot ranges, so we just treat them as
@@ -56,9 +56,9 @@ export function computeCalendarRange(hours: OperatingHoursMap): {
   }
 
   let startHour =
-    earliestOpen !== null ? Math.max(0, Math.floor(earliestOpen - 0.5)) : DEFAULT_START_HOUR;
+    earliestOpen !== null ? Math.max(0, Math.floor(earliestOpen - 1)) : DEFAULT_START_HOUR;
   let endHour =
-    latestClose !== null ? Math.min(24, Math.ceil(latestClose + 0.5)) : DEFAULT_END_HOUR;
+    latestClose !== null ? Math.min(24, Math.ceil(latestClose + 1)) : DEFAULT_END_HOUR;
 
   // Guarantee a readable minimum window.
   if (endHour - startHour < MIN_WINDOW_HOURS) {

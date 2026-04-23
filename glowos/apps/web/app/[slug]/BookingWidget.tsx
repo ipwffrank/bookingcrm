@@ -307,9 +307,11 @@ export default function BookingWidget({
     return key ? loadStripe(key) : null;
   });
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>(
-    merchant.paymentEnabled ? 'card' : 'cash'
-  );
+  // Default to cash ("Pay at Venue") for every customer — new, phone-returning,
+  // or Google-authed. Customers who want to pay online opt in by clicking
+  // the Pay Online button. This keeps the experience consistent regardless
+  // of how the customer identified themselves.
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('cash');
 
   const bookingSource = embedded ? 'embedded_widget' : 'direct_widget';
 

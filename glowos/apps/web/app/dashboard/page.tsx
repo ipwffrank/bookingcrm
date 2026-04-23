@@ -572,6 +572,7 @@ function DashboardPageInner() {
           mode="create"
           services={services}
           staffList={staffList}
+          operatingHours={operatingHours}
           onClose={() => setShowWalkIn(false)}
           onSave={() => {
             setShowWalkIn(false);

@@ -13,6 +13,7 @@ export interface ServiceRowProps {
   row: ServiceRowState;
   services: ServiceOption[];
   staff: StaffOption[];
+  operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
   activePackages: ActivePackage[];
   dayBookings: DayBooking[];
   ownBookingIds: Set<string>;
@@ -24,10 +25,29 @@ export interface ServiceRowProps {
   error?: string;
 }
 
+// Heuristic: a staff is the "Any Available" placeholder if the merchant
+// literally named them that. Skip per-staff busy computation on that row
+// because it represents a bucket, not a person — any booked time shown
+// there is noise and confuses the merchant.
+function isAnyAvailablePlaceholder(name: string): boolean {
+  return name.trim().toLowerCase() === 'any available';
+}
+
+function dayOfWeekKey(iso: string): string | null {
+  if (!iso) return null;
+  try {
+    const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    return names[new Date(iso).getDay()] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function ServiceRow({
   row,
   services,
   staff,
+  operatingHours,
   activePackages,
   dayBookings,
   ownBookingIds,
@@ -38,6 +58,24 @@ export function ServiceRow({
   onRemove,
   error,
 }: ServiceRowProps) {
+  // Derive the day's operating-hours bounds for the datetime-local picker.
+  // When the row already has a startTime, use its date; otherwise leave
+  // bounds undefined so the browser doesn't over-restrict.
+  const dayKey = dayOfWeekKey(row.startTime);
+  const dayHours = dayKey && operatingHours ? operatingHours[dayKey] : undefined;
+  const datetimeMin = dayHours && !dayHours.closed
+    ? buildLocalInput(row.startTime, dayHours.open)
+    : undefined;
+  const datetimeMax = dayHours && !dayHours.closed
+    ? buildLocalInput(row.startTime, dayHours.close)
+    : undefined;
+  const isDayClosed = dayHours?.closed === true;
+  const outsideHours = dayHours && !dayHours.closed && isOutsideHours(row.startTime, dayHours);
+
+  const selectedStaffEntry = staff.find((s) => s.id === row.staffId);
+  const selectedIsPlaceholder = selectedStaffEntry
+    ? isAnyAvailablePlaceholder(selectedStaffEntry.name)
+    : false;
   const eligiblePackages = activePackages.flatMap((pkg) =>
     pkg.pendingSessions
       .filter((s) => s.serviceId === row.serviceId)
@@ -81,7 +119,10 @@ export function ServiceRow({
     return latestEnd;
   }
 
-  const selectedBusyUntil = busyUntilFor(row.staffId);
+  // Skip the per-staff busy computation on the placeholder "Any Available"
+  // row — it's a bucket, not a person. Any bookings historically attached to
+  // it aren't meaningful "busy" state for a new walk-in.
+  const selectedBusyUntil = selectedIsPlaceholder ? null : busyUntilFor(row.staffId);
 
   function handleServiceChange(newServiceId: string) {
     const svc = services.find((s) => s.id === newServiceId);
@@ -133,7 +174,7 @@ export function ServiceRow({
         >
           <option value="">Select staff...</option>
           {staff.map((s) => {
-            const busyUntil = busyUntilFor(s.id);
+            const busyUntil = isAnyAvailablePlaceholder(s.name) ? null : busyUntilFor(s.id);
             return (
               <option key={s.id} value={s.id}>
                 {busyUntil
@@ -149,6 +190,8 @@ export function ServiceRow({
           type="datetime-local"
           value={toLocalInput(row.startTime)}
           onChange={(e) => onChange({ startTime: new Date(e.target.value).toISOString() })}
+          min={datetimeMin}
+          max={datetimeMax}
           className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         />
         <input
@@ -163,6 +206,16 @@ export function ServiceRow({
       {selectedBusyUntil !== null && (
         <p className="text-xs text-semantic-warn">
           ⚠ Selected staff is busy until {fmtTime(selectedBusyUntil)}.
+        </p>
+      )}
+      {isDayClosed && (
+        <p className="text-xs text-semantic-danger">
+          ⚠ The business is closed on this day per operating hours.
+        </p>
+      )}
+      {outsideHours && !isDayClosed && (
+        <p className="text-xs text-semantic-warn">
+          ⚠ This time is outside the business&apos;s operating hours ({dayHours?.open}–{dayHours?.close}).
         </p>
       )}
       <div className="flex items-center justify-between">
@@ -234,6 +287,43 @@ function toLocalInput(iso: string) {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Given a reference ISO timestamp (for the date) and an HH:MM operating-
+// hours string, build a datetime-local input value like "2026-04-22T10:00".
+function buildLocalInput(iso: string, hhmm: string): string {
+  try {
+    const d = new Date(iso);
+    const [h, m] = hhmm.split(':').map((x) => parseInt(x, 10));
+    if (Number.isNaN(h) || Number.isNaN(m ?? 0)) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(h)}:${pad(m ?? 0)}`;
+  } catch {
+    return '';
+  }
+}
+
+function parseHM(hhmm: string): number | null {
+  const [h, m] = hhmm.split(':').map((x) => parseInt(x, 10));
+  if (Number.isNaN(h) || Number.isNaN(m ?? 0)) return null;
+  return h * 60 + (m ?? 0);
+}
+
+function isOutsideHours(
+  iso: string,
+  day: { open: string; close: string },
+): boolean {
+  if (!iso) return false;
+  try {
+    const d = new Date(iso);
+    const rowMin = d.getHours() * 60 + d.getMinutes();
+    const open = parseHM(day.open);
+    const close = parseHM(day.close);
+    if (open === null || close === null) return false;
+    return rowMin < open || rowMin > close;
+  } catch {
+    return false;
+  }
 }
 
 function fmtTime(ms: number): string {

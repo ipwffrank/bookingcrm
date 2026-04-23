@@ -22,6 +22,7 @@ export interface BookingFormProps {
   groupId?: string;
   services?: ServiceOption[];
   staffList?: StaffOption[];
+  operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
   onClose: () => void;
   onSave: () => void;
 }
@@ -416,6 +417,7 @@ export function BookingForm(props: BookingFormProps) {
                   row={row}
                   services={services}
                   staff={staffList}
+                  operatingHours={props.operatingHours ?? null}
                   activePackages={activePackages}
                   dayBookings={dayBookings}
                   ownBookingIds={ownBookingIds}
