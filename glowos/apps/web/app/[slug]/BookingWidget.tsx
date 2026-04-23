@@ -711,8 +711,23 @@ export default function BookingWidget({
 
   // ── Computed ─────────────────────────────────────────────────────────────────
 
+  // When customer picks "Any Available" AND has selected a concrete time
+  // slot, the slot itself is bound to a specific staff — show that person's
+  // name so the customer knows who they'll see before confirming payment.
+  // Before they pick a slot, keep showing "Any Available" as the label.
+  const assignedStaffFromSlot =
+    selectedStaff?.id === 'any' && selectedSlot?.staff_id
+      ? staff.find((s) => s.id === selectedSlot.staff_id) ?? null
+      : null;
+
   const resolvedStaffName =
-    selectedStaff?.id === 'any' ? 'Any Available' : (selectedStaff?.name ?? '');
+    selectedStaff?.id === 'any'
+      ? (assignedStaffFromSlot?.name ?? 'Any Available')
+      : (selectedStaff?.name ?? '');
+
+  // Flag so review screens can render an "Assigned from Any Available" note.
+  const anyAvailableResolved =
+    selectedStaff?.id === 'any' && assignedStaffFromSlot !== null;
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -1564,6 +1579,11 @@ export default function BookingWidget({
                 <div>
                   <p className="text-xs text-grey-60 mb-0.5">Staff</p>
                   <p className="text-sm font-semibold text-grey-90">{resolvedStaffName}</p>
+                  {anyAvailableResolved && (
+                    <p className="text-[11px] text-tone-sage mt-0.5">
+                      Assigned from Any Available
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-grey-60 mb-0.5">Date</p>

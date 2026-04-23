@@ -355,10 +355,26 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
   const timeStr = formatTime(booking.startTime);
   const refundAmount = parseFloat(String(booking.refundAmountSgd ?? "0"));
 
+  // Four-way branching so cash/online/refund-eligible/refund-forfeit all get
+  // accurate copy. The old logic showed "No refund applies per our policy"
+  // even for cash cancellations inside the free window, which read as a
+  // penalty when actually no payment had been collected.
   let refundMessage: string;
+  const paymentStatus = booking.paymentStatus ?? "";
+  const paymentMethod = booking.paymentMethod ?? "";
+
   if (refundAmount > 0) {
-    refundMessage = `A refund of SGD ${refundAmount.toFixed(2)} will be processed within 3–5 business days.`;
+    // Actual refund was queued to Stripe (full or partial) — tell the client.
+    refundMessage =
+      paymentStatus === "partially_refunded"
+        ? `A partial refund of SGD ${refundAmount.toFixed(2)} will be processed within 3–5 business days.`
+        : `A full refund of SGD ${refundAmount.toFixed(2)} will be processed within 3–5 business days.`;
+  } else if (paymentStatus === "waived" || paymentMethod === "cash" || paymentStatus === "unpaid") {
+    // Cash or unpaid — there's no online payment to refund. Don't lecture the
+    // client about "no refund per policy" when nothing was collected.
+    refundMessage = `No payment was collected online, so nothing to refund.`;
   } else {
+    // Card paid, cancel fell outside the partial-refund window too.
     refundMessage = `No refund applies per our cancellation policy.`;
   }
 
