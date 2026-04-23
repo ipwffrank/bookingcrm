@@ -1187,6 +1187,7 @@ export default function BookingWidget({
                   purpose="login"
                   title="Verify your number"
                   subtitle="We'll send a one-time code to continue"
+                  autoSend
                   onVerified={(token, client) => {
                     setVerificationToken(token);
                     if (client) {

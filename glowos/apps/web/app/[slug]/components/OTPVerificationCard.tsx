@@ -22,6 +22,10 @@ interface Props {
   purpose: 'login' | 'first_timer_verify';
   title: string;
   subtitle?: string;
+  // When true, fire sendCode('whatsapp') on mount so the returning-customer
+  // flow doesn't require an extra click (the "Welcome back" card's button
+  // already implied the code was being sent).
+  autoSend?: boolean;
   onVerified: (token: string, client?: VerifiedClient) => void;
   onSkip?: () => void;
   onSwitchToGoogle?: () => void;
@@ -34,6 +38,7 @@ export function OTPVerificationCard({
   purpose,
   title,
   subtitle,
+  autoSend,
   onVerified,
   onSkip,
   onSwitchToGoogle,
@@ -45,6 +50,18 @@ export function OTPVerificationCard({
   const [loading, setLoading] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
+
+  // Auto-send on mount if the caller opted in (e.g. returning-customer flow
+  // where the user already clicked "Send WhatsApp code to continue"). Runs
+  // exactly once. Deliberately bare deps — we don't want re-fire if the
+  // parent re-renders with new closures over sendCode.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoSend && stage === 'send' && !loading) {
+      void sendCode('whatsapp');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!cooldownUntil) return;
