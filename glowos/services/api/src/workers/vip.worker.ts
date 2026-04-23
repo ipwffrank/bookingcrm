@@ -201,6 +201,7 @@ export function createVipWorker(): Worker {
         url: config.redisUrl,
         retryStrategy: (times: number) => Math.min(times * 2000, 30000),
       },
+      prefix: config.queuePrefix,
       concurrency: 3,
     }
   );

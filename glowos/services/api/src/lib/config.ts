@@ -40,6 +40,12 @@ export const config = {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
 
+  // BullMQ queue prefix — isolates dev and prod workers even when they share
+  // the same Redis instance. Without a distinct prefix, a local `pnpm dev`
+  // worker can steal prod jobs (and vice versa), causing e.g. WhatsApp
+  // notifications to render with localhost URLs.
+  queuePrefix: process.env.QUEUE_PREFIX ?? "glowos",
+
   nodeEnv: process.env.NODE_ENV ?? "development",
 } as const;
 

@@ -9,15 +9,19 @@ import { config } from "./config.js";
 // from the shared ioredis client used for caching).
 const connection = { url: config.redisUrl };
 
+// Prefix isolates dev/prod queues within one Redis instance. Workers only see
+// jobs that were enqueued with the matching prefix. See config.ts for why.
+export const QUEUE_PREFIX = config.queuePrefix;
+
 // ─── Named queues ──────────────────────────────────────────────────────────────
 
-export const notificationQueue = new Queue("notifications", { connection });
+export const notificationQueue = new Queue("notifications", { connection, prefix: QUEUE_PREFIX });
 
-export const crmQueue = new Queue("crm", { connection });
+export const crmQueue = new Queue("crm", { connection, prefix: QUEUE_PREFIX });
 
-export const vipQueue = new Queue("vip", { connection });
+export const vipQueue = new Queue("vip", { connection, prefix: QUEUE_PREFIX });
 
-export const churnQueue = new Queue("churn", { connection });
+export const churnQueue = new Queue("churn", { connection, prefix: QUEUE_PREFIX });
 
 // ─── Queue registry for addJob ─────────────────────────────────────────────────
 
