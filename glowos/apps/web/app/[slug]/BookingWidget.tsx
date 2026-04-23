@@ -1194,7 +1194,12 @@ export default function BookingWidget({
                       setClientEmail(client.email ?? '');
                     }
                     setShowLoginOtp(false);
-                    setStep(5); // advance to Review & Confirm
+                    // Reveal the rest of step 4 (form fields + payment picker)
+                    // so phone-verified customers get the same "choose how to
+                    // pay" affordance that Google-auth and guest users get.
+                    // Previously this jumped straight to step 5 and silently
+                    // used whatever paymentMethod default had been set.
+                    setIsGuest(true);
                   }}
                   onSwitchToGoogle={() => {
                     // Only close the OTP card. Keep lookupResult so the
