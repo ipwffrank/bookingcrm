@@ -1212,9 +1212,12 @@ bookingsRouter.get("/:slug", async (c) => {
     .from(services)
     .where(and(eq(services.merchantId, merchant.id), eq(services.isActive, true)));
 
-  // Active, publicly visible staff. Excludes is_any_available rows because the
-  // booking widget renders a synthetic "Any Available" entry itself — including
-  // DB-backed rows would duplicate it.
+  // Active, publicly visible staff. `is_any_available` is an eligibility flag
+  // (can this staff receive bookings when a customer picks "Any Available"?)
+  // — NOT a visibility flag. Every real staff shows by name regardless, and a
+  // synthetic "Any Available" entry is prepended client-side. To exclude the
+  // synthetic placeholder staff row that seed data sometimes creates, the
+  // merchant sets that row's is_publicly_visible = false.
   const activeStaff = await db
     .select()
     .from(staff)
@@ -1223,7 +1226,6 @@ bookingsRouter.get("/:slug", async (c) => {
         eq(staff.merchantId, merchant.id),
         eq(staff.isActive, true),
         eq(staff.isPubliclyVisible, true),
-        eq(staff.isAnyAvailable, false),
       ),
     );
 
