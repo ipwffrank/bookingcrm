@@ -26,6 +26,11 @@ export const config = {
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? "",
   twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM ?? "+6531591234",
+  // Pre-approved WhatsApp Content Template SIDs. Required for business-
+  // initiated sends outside the 24h session window (OTP, reminders, etc.).
+  // Create in Twilio Console → Content Template Builder, submit for
+  // WhatsApp approval, copy the ContentSid (starts with "HX").
+  twilioOtpContentSid: process.env.TWILIO_OTP_CONTENT_SID ?? "",
 
   sendgridApiKey: process.env.SENDGRID_API_KEY ?? "",
   fromEmail: process.env.FROM_EMAIL ?? "noreply@glowos.sg",

@@ -13,7 +13,7 @@ import {
   reviews,
   merchantUsers,
 } from "@glowos/db";
-import { sendWhatsApp } from "../lib/twilio.js";
+import { sendWhatsApp, sendWhatsAppTemplate } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
 import { generateBookingToken } from "../lib/jwt.js";
 import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
@@ -787,13 +787,29 @@ async function handleLowRatingAlert(bookingId: string): Promise<void> {
 async function handleOtpSend(data: OtpSendData): Promise<void> {
   const body = `Your GlowOS verification code: ${data.code}. Valid for 10 minutes.`;
   if (data.channel === "whatsapp") {
-    const sid = await sendWhatsApp(data.destination, body);
+    // Prefer the pre-approved Content Template when configured. Required
+    // for business-initiated OTPs outside Twilio's 24h session window —
+    // freeform text returns Twilio error 63016 in that case.
+    let sid = "";
+    if (config.twilioOtpContentSid) {
+      sid = await sendWhatsAppTemplate({
+        to: data.destination,
+        contentSid: config.twilioOtpContentSid,
+        variables: { "1": data.code },
+      });
+    } else {
+      // No template configured — fall back to freeform. This works only if
+      // the recipient has an active 24h session; it WILL fail (Twilio 63016)
+      // for most business-initiated OTPs.
+      sid = await sendWhatsApp(data.destination, body);
+    }
     if (!sid) {
       throw new Error(`WhatsApp OTP failed for ${data.destination}`);
     }
     console.log("[NotificationWorker] otp_send whatsapp ok", {
       destination: data.destination,
       sid,
+      via: config.twilioOtpContentSid ? "template" : "freeform",
     });
     return;
   }
