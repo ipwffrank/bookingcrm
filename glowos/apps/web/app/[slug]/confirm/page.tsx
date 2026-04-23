@@ -34,6 +34,7 @@ export default function ConfirmPage() {
   const [time, setTime] = useState(searchParams.get('time') ?? '');
   const [amount, setAmount] = useState(searchParams.get('amount') ?? '');
   const [isPaid, setIsPaid] = useState(paidParam);
+  const [method, setMethod] = useState(searchParams.get('method') ?? '');
 
   // Fallback: read from sessionStorage if URL params are missing
   // (PayNow/GrabPay redirects can sometimes lose custom params)
@@ -48,16 +49,18 @@ export default function ConfirmPage() {
         time?: string;
         amount?: string;
         paid?: boolean;
+        method?: string;
       };
       if (!service && data.service) setService(data.service);
       if (!staff && data.staff) setStaff(data.staff);
       if (!time && data.time) setTime(data.time);
       if (!amount && data.amount) setAmount(data.amount);
       if (!isPaid && data.paid) setIsPaid(true);
+      if (!method && data.method) setMethod(data.method);
       // Clean up after reading
       sessionStorage.removeItem(`glowos_booking_${slug}`);
     } catch { /* ignore */ }
-  }, [slug, service, time, amount, staff, isPaid]);
+  }, [slug, service, time, amount, staff, isPaid, method]);
 
   const displayRef = bookingId ?? paymentRef;
 
@@ -114,18 +117,38 @@ export default function ConfirmPage() {
             )}
           </div>
 
-          {/* Payment notice */}
-          {isPaid && amount ? (
-            <div className="mx-8 mb-4 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">
-              <div className="font-semibold mb-0.5">✅ Payment received</div>
-              SGD {parseFloat(amount).toFixed(2)} has been charged. No further payment is needed.
-            </div>
-          ) : amount ? (
-            <div className="mx-8 mb-4 bg-tone-sage/10 border border-tone-sage/30 rounded-xl px-4 py-3 text-sm text-tone-sage">
-              <div className="font-semibold mb-0.5">💳 Pay at your appointment</div>
-              Please bring SGD {parseFloat(amount).toFixed(2)} on the day of your appointment.
-            </div>
-          ) : null}
+          {/* Payment notice — adapts to the customer's chosen method */}
+          {(() => {
+            if (method === 'package') {
+              return (
+                <div className="mx-8 mb-4 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">
+                  <div className="font-semibold mb-0.5">✅ Package session applied</div>
+                  This booking uses a session from your package. No payment is needed today.
+                </div>
+              );
+            }
+            if (isPaid && amount) {
+              const label =
+                method === 'card' ? 'Card / PayNow payment received' :
+                method === 'ipay88' ? 'Payment received via iPay88' :
+                'Payment received';
+              return (
+                <div className="mx-8 mb-4 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">
+                  <div className="font-semibold mb-0.5">✅ {label}</div>
+                  SGD {parseFloat(amount).toFixed(2)} has been charged. No further payment is needed.
+                </div>
+              );
+            }
+            if (amount) {
+              return (
+                <div className="mx-8 mb-4 bg-tone-sage/10 border border-tone-sage/30 rounded-xl px-4 py-3 text-sm text-tone-sage">
+                  <div className="font-semibold mb-0.5">🏪 Pay at the venue</div>
+                  Your slot is reserved. Please bring SGD {parseFloat(amount).toFixed(2)} on the day of your appointment — cash, card or PayNow accepted at the counter.
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* WhatsApp notice */}
           <div className="mx-8 mb-5 bg-tone-sage/5 border border-tone-sage/20 rounded-xl px-4 py-3 text-sm text-tone-sage">

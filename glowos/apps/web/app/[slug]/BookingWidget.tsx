@@ -700,7 +700,8 @@ export default function BookingWidget({
         `&service=${encodeURIComponent(selectedService.name)}` +
         `&staff=${encodeURIComponent(selectedStaff?.id === 'any' ? 'Any Available' : (selectedStaff?.name || ''))}` +
         `&time=${encodeURIComponent(selectedSlot?.start_time || '')}` +
-        `&amount=${encodeURIComponent(String(ep))}`
+        `&amount=${encodeURIComponent(String(ep))}` +
+        `&method=${paymentMethod}`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Booking failed. Please try again.';
@@ -1354,32 +1355,53 @@ export default function BookingWidget({
                     />
                   </div>
 
-                  {/* Payment method toggle (only if merchant has Stripe) */}
+                  {/* Payment method — explicit choice step. Larger affordances
+                      + short subtitles so it's a real decision, not a toggle. */}
                   {merchant.paymentEnabled && (
                     <div>
-                      <label className="block text-sm font-semibold text-grey-75 mb-2">Payment method</label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <label className="block text-sm font-semibold text-grey-75 mb-2">
+                        How would you like to pay?
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('card')}
-                          className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors ${
+                          aria-pressed={paymentMethod === 'card'}
+                          className={`flex items-start gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
                             paymentMethod === 'card'
-                              ? 'border-tone-sage bg-tone-sage/10 text-tone-sage'
-                              : 'border-grey-15 text-grey-75 hover:border-grey-30'
+                              ? 'border-tone-sage bg-tone-sage/10 ring-2 ring-tone-sage/30'
+                              : 'border-grey-15 hover:border-tone-sage/50 hover:bg-grey-5'
                           }`}
                         >
-                          Pay Online
+                          <span className="shrink-0 w-9 h-9 rounded-lg bg-tone-ink text-tone-surface flex items-center justify-center text-base">💳</span>
+                          <span className="min-w-0 flex-1">
+                            <span className={`block text-sm font-semibold ${paymentMethod === 'card' ? 'text-tone-sage' : 'text-tone-ink'}`}>
+                              Pay online now
+                            </span>
+                            <span className="block text-[11px] text-grey-60 mt-0.5">
+                              Card · PayNow · GrabPay — secures your slot instantly
+                            </span>
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod('cash')}
-                          className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors ${
+                          aria-pressed={paymentMethod === 'cash'}
+                          className={`flex items-start gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
                             paymentMethod === 'cash'
-                              ? 'border-tone-sage bg-tone-sage/10 text-tone-sage'
-                              : 'border-grey-15 text-grey-75 hover:border-grey-30'
+                              ? 'border-tone-sage bg-tone-sage/10 ring-2 ring-tone-sage/30'
+                              : 'border-grey-15 hover:border-tone-sage/50 hover:bg-grey-5'
                           }`}
                         >
-                          Pay at Venue
+                          <span className="shrink-0 w-9 h-9 rounded-lg bg-tone-surface border border-grey-15 text-tone-ink flex items-center justify-center text-base">🏪</span>
+                          <span className="min-w-0 flex-1">
+                            <span className={`block text-sm font-semibold ${paymentMethod === 'cash' ? 'text-tone-sage' : 'text-tone-ink'}`}>
+                              Pay at the venue
+                            </span>
+                            <span className="block text-[11px] text-grey-60 mt-0.5">
+                              Reserve your slot now · pay when you arrive
+                            </span>
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1487,6 +1509,7 @@ export default function BookingWidget({
                               time: selectedSlot?.start_time,
                               amount: String(ep),
                               paid: true,
+                              method: paymentMethod,
                             }));
                           } catch { /* ignore */ }
                           setStep(5);
@@ -1714,6 +1737,7 @@ export default function BookingWidget({
                         `&staff=${encodeURIComponent(resolvedStaffName)}` +
                         `&time=${encodeURIComponent(selectedSlot.start_time)}` +
                         `&amount=0` +
+                        `&method=package` +
                         `&package=${encodeURIComponent(usePackageSession.packageName)}`
                       );
                     } catch (err) {
@@ -1766,6 +1790,7 @@ export default function BookingWidget({
                     `&staff=${encodeURIComponent(resolvedStaffName)}` +
                     `&time=${encodeURIComponent(selectedSlot.start_time)}` +
                     `&amount=${encodeURIComponent(String(effectivePrice))}` +
+                    `&method=card` +
                     `&paid=true`;
 
                   return (
@@ -1780,6 +1805,7 @@ export default function BookingWidget({
                           `&staff=${encodeURIComponent(resolvedStaffName)}` +
                           `&time=${encodeURIComponent(selectedSlot.start_time)}` +
                           `&amount=${encodeURIComponent(String(effectivePrice))}` +
+                          `&method=card` +
                           `&paid=true`
                         );
                       }}
