@@ -18,6 +18,11 @@ import { NoShowChip } from '../components/NoShowChip';
 
 export interface BookingFormProps {
   mode: 'create' | 'edit';
+  // Walk-in = someone here right now. Pre-book = future appointment (e.g.
+  // client schedules their next visit after their current treatment).
+  // Same endpoints + same form shape — we only tweak the title and the
+  // default start time so the merchant's muscle memory doesn't fight them.
+  intent?: 'walkin' | 'prebook';
   bookingId?: string;
   groupId?: string;
   services?: ServiceOption[];
@@ -123,11 +128,19 @@ export function BookingForm(props: BookingFormProps) {
   }, [mode, props.bookingId, router]);
 
   function defaultRow(svc: ServiceOption, st: StaffOption): ServiceRowState {
-    const now = new Date();
+    // Walk-in: default to "now" (someone standing at the counter).
+    // Pre-book: default to same time tomorrow at the top of the hour
+    // so the merchant just adjusts from there instead of paging back
+    // from today's date.
+    const anchor = new Date();
+    if (props.intent === 'prebook') {
+      anchor.setDate(anchor.getDate() + 1);
+      anchor.setMinutes(0, 0, 0);
+    }
     return {
       serviceId: svc.id,
       staffId: st.id,
-      startTime: now.toISOString(),
+      startTime: anchor.toISOString(),
       priceSgd: svc.priceSgd,
       priceTouched: false,
     };
@@ -342,7 +355,11 @@ export function BookingForm(props: BookingFormProps) {
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-tone-surface rounded-2xl shadow-2xl w-full max-w-2xl p-6 z-10 max-h-[90vh] overflow-y-auto">
         <h2 className="text-lg font-bold text-tone-ink mb-1">
-          {mode === 'create' ? 'Add Walk-in Booking' : 'Edit Booking'}
+          {mode === 'create'
+            ? props.intent === 'prebook'
+              ? 'Schedule Future Appointment'
+              : 'Add Walk-in Booking'
+            : 'Edit Booking'}
         </h2>
         {lastEditLabel && <p className="text-xs text-grey-60 mb-3">{lastEditLabel}</p>}
         {mode === 'edit' && props.bookingId && <EditHistoryPanel bookingId={props.bookingId} />}

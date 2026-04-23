@@ -58,17 +58,15 @@ export function ServiceRow({
   onRemove,
   error,
 }: ServiceRowProps) {
-  // Derive the day's operating-hours bounds for the datetime-local picker.
-  // When the row already has a startTime, use its date; otherwise leave
-  // bounds undefined so the browser doesn't over-restrict.
+  // Operating-hours awareness for this row's selected date. We intentionally
+  // do NOT hard-clamp the datetime-local input (that blocked users from
+  // changing the DATE because datetime-local treats min/max as absolute
+  // timestamps, not time-of-day). Instead we surface an inline warning if
+  // the chosen moment falls outside the day's hours or on a closed day —
+  // leaving the merchant free to override if they really mean it (e.g. a
+  // special after-hours appointment).
   const dayKey = dayOfWeekKey(row.startTime);
   const dayHours = dayKey && operatingHours ? operatingHours[dayKey] : undefined;
-  const datetimeMin = dayHours && !dayHours.closed
-    ? buildLocalInput(row.startTime, dayHours.open)
-    : undefined;
-  const datetimeMax = dayHours && !dayHours.closed
-    ? buildLocalInput(row.startTime, dayHours.close)
-    : undefined;
   const isDayClosed = dayHours?.closed === true;
   const outsideHours = dayHours && !dayHours.closed && isOutsideHours(row.startTime, dayHours);
 
@@ -190,8 +188,6 @@ export function ServiceRow({
           type="datetime-local"
           value={toLocalInput(row.startTime)}
           onChange={(e) => onChange({ startTime: new Date(e.target.value).toISOString() })}
-          min={datetimeMin}
-          max={datetimeMax}
           className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         />
         <input
@@ -287,20 +283,6 @@ function toLocalInput(iso: string) {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-// Given a reference ISO timestamp (for the date) and an HH:MM operating-
-// hours string, build a datetime-local input value like "2026-04-22T10:00".
-function buildLocalInput(iso: string, hhmm: string): string {
-  try {
-    const d = new Date(iso);
-    const [h, m] = hhmm.split(':').map((x) => parseInt(x, 10));
-    if (Number.isNaN(h) || Number.isNaN(m ?? 0)) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(h)}:${pad(m ?? 0)}`;
-  } catch {
-    return '';
-  }
 }
 
 function parseHM(hhmm: string): number | null {
