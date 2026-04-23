@@ -241,7 +241,11 @@ export async function getAvailability(params: {
   let staffList: Array<{ id: string; name: string }> = [];
 
   if (staffIdParam === "any") {
-    // All active staff that can perform this service
+    // Any-available pool: active staff who perform this service AND are
+    // flagged is_any_available. Merchants can opt staff in/out of this pool
+    // (e.g. a premium-only specialist is kept out). is_publicly_visible is
+    // also enforced so the synthetic placeholder staff row — if one exists —
+    // is never matched here.
     const rows = await db
       .select({ id: staff.id, name: staff.name })
       .from(staff)
@@ -250,6 +254,8 @@ export async function getAvailability(params: {
         and(
           eq(staff.merchantId, merchant.id),
           eq(staff.isActive, true),
+          eq(staff.isPubliclyVisible, true),
+          eq(staff.isAnyAvailable, true),
           eq(staffServices.serviceId, serviceId)
         )
       );
