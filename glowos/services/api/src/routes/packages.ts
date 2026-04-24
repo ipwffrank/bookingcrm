@@ -13,6 +13,8 @@ import {
   staff,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
+import { findOrCreateClient } from "../lib/findOrCreateClient.js";
+import { addJob } from "../lib/queue.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const packagesRouter = new Hono<{ Variables: AppVariables }>();
@@ -369,6 +371,159 @@ publicPackagesRouter.get("/:slug/packages", async (c) => {
     .orderBy(servicePackages.createdAt);
 
   return c.json({ packages: pkgs });
+});
+
+// POST /booking/:slug/packages/purchase — customer-initiated package purchase
+//
+// Creates a client_packages row + N package_sessions (pending). For now only
+// cash-reserve mode is supported: the package is active immediately, and the
+// customer pays at their first redemption visit. Online payment support can
+// ride on top of the existing PaymentIntent pattern later.
+publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
+  const slug = c.req.param("slug")!;
+  const body = await c.req.json<{
+    package_id: string;
+    client_name: string;
+    client_phone: string;
+    client_email?: string;
+    payment_method?: "cash" | "card";
+  }>();
+
+  if (!body.package_id || !body.client_name?.trim() || !body.client_phone?.trim()) {
+    return c.json(
+      { error: "Bad Request", message: "package_id, client_name and client_phone are required" },
+      400,
+    );
+  }
+
+  const [merchant] = await db
+    .select({ id: merchants.id, country: merchants.country, name: merchants.name })
+    .from(merchants)
+    .where(eq(merchants.slug, slug))
+    .limit(1);
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  const [pkg] = await db
+    .select()
+    .from(servicePackages)
+    .where(
+      and(
+        eq(servicePackages.id, body.package_id),
+        eq(servicePackages.merchantId, merchant.id),
+        eq(servicePackages.isActive, true),
+      ),
+    )
+    .limit(1);
+  if (!pkg) {
+    return c.json({ error: "Not Found", message: "Package not available" }, 404);
+  }
+
+  // Resolve / create the client — same semantics as booking creation, so a
+  // returning customer's profile is reused and their stored name/email isn't
+  // overwritten.
+  let clientRow: { id: string };
+  try {
+    clientRow = await findOrCreateClient(
+      body.client_phone.trim(),
+      body.client_name.trim(),
+      body.client_email?.trim() || undefined,
+      merchant.country,
+    );
+  } catch (err) {
+    return c.json(
+      { error: "Bad Request", message: err instanceof Error ? err.message : "Invalid client info" },
+      400,
+    );
+  }
+
+  // Ensure a client_profile exists for this merchant (used downstream for
+  // lookup-client + VIP tier calcs).
+  const [existingProfile] = await db
+    .select({ id: clientProfiles.id })
+    .from(clientProfiles)
+    .where(
+      and(
+        eq(clientProfiles.clientId, clientRow.id),
+        eq(clientProfiles.merchantId, merchant.id),
+      ),
+    )
+    .limit(1);
+  if (!existingProfile) {
+    await db
+      .insert(clientProfiles)
+      .values({ clientId: clientRow.id, merchantId: merchant.id });
+  }
+
+  // Create the client_packages row (active immediately under cash-reserve).
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + pkg.validityDays);
+
+  const paymentMethod = body.payment_method ?? "cash";
+  const pricePaidSgd = paymentMethod === "cash" ? "0" : String(pkg.priceSgd);
+
+  const [clientPkg] = await db
+    .insert(clientPackages)
+    .values({
+      merchantId: merchant.id,
+      clientId: clientRow.id,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      sessionsTotal: pkg.totalSessions,
+      pricePaidSgd,
+      expiresAt,
+      notes: paymentMethod === "cash" ? "Self-purchased via widget — pending payment at first visit" : "Self-purchased via widget — paid online",
+    })
+    .returning();
+
+  if (!clientPkg) {
+    return c.json({ error: "Internal Server Error", message: "Failed to create package" }, 500);
+  }
+
+  // Pre-generate N pending sessions, one per included service × quantity.
+  const sessionValues: Array<{
+    clientPackageId: string;
+    sessionNumber: number;
+    serviceId: string;
+  }> = [];
+  for (const svc of pkg.includedServices) {
+    for (let i = 0; i < svc.quantity; i++) {
+      sessionValues.push({
+        clientPackageId: clientPkg.id,
+        sessionNumber: sessionValues.length + 1,
+        serviceId: svc.serviceId,
+      });
+    }
+  }
+  if (sessionValues.length > 0) {
+    await db.insert(packageSessions).values(sessionValues);
+  }
+
+  // Fire a "package purchased" notification to both client + merchant. Worker
+  // handler is a no-op today unless the handler exists — enqueue is idempotent
+  // and will no-op rather than crash.
+  await addJob("notifications", "package_purchased", {
+    client_package_id: clientPkg.id,
+    merchant_id: merchant.id,
+  }).catch((err: unknown) => {
+    console.error("[packages] failed to enqueue package_purchased", err);
+  });
+
+  return c.json(
+    {
+      clientPackage: {
+        id: clientPkg.id,
+        packageName: clientPkg.packageName,
+        sessionsTotal: clientPkg.sessionsTotal,
+        expiresAt: clientPkg.expiresAt,
+        paymentMethod,
+        pricePaidSgd,
+        priceDueSgd: paymentMethod === "cash" ? String(pkg.priceSgd) : "0",
+      },
+    },
+    201,
+  );
 });
 
 // POST /booking/:slug/use-package-session — book using a package session (no payment)

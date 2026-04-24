@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { apiFetch } from '../lib/api';
 import BookingWidget from './BookingWidget';
 
@@ -116,8 +117,19 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
         </div>
       </div>
 
+      {/* Packages entry point — subtle banner linking to the purchase page */}
+      <div className="max-w-2xl mx-auto px-4 pt-6">
+        <Link
+          href={`/${slug}/packages`}
+          className="block rounded-xl border border-tone-sage/30 bg-tone-sage/5 px-4 py-3 text-sm text-tone-sage hover:bg-tone-sage/10 transition-colors"
+        >
+          <span className="font-semibold">🎁 Browse packages & bundles</span>
+          <span className="text-grey-75"> — save more with a multi-session package</span>
+        </Link>
+      </div>
+
       {/* Booking Widget (client component) */}
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="max-w-2xl mx-auto px-4 py-6">
         <BookingWidget merchant={merchant} services={services} staff={staff} slug={slug} />
       </div>
     </div>
