@@ -28,6 +28,7 @@ export default {
     "./src/schema/password-reset-tokens.ts",
     "./src/schema/super-admin.ts",
     "./src/schema/ipay88.ts",
+    "./src/schema/treatment-quotes.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",

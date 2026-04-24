@@ -20,3 +20,4 @@ export * from "./waitlist.js";
 export * from "./password-reset-tokens.js";
 export * from "./super-admin.js";
 export * from "./ipay88.js";
+export * from "./treatment-quotes.js";

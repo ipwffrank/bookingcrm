@@ -28,6 +28,7 @@ import { bookingGroupsRouter } from "./routes/booking-groups.js";
 import { waitlistRouter, merchantWaitlistRouter } from "./routes/waitlist.js";
 import { superRouter } from "./routes/super.js";
 import { merchantIpay88Router, publicIpay88Router } from "./routes/ipay88.js";
+import { merchantQuotesRouter, publicQuotesRouter } from "./routes/quotes.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -77,6 +78,8 @@ app.route("/booking", bookingsRouter);
 //   /booking/:slug/create-payment-intent  → POST  (public)
 app.route("/merchant/payments", paymentsRouter);
 app.route("/merchant/payments/ipay88", merchantIpay88Router);
+app.route("/merchant/quotes", merchantQuotesRouter);
+app.route("/quote", publicQuotesRouter);
 app.route("/booking", paymentsRouter);
 app.route("/booking", publicIpay88Router);
 app.route("/booking", otpRouter);
