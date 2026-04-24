@@ -12,6 +12,7 @@ import {
   notificationLog,
   reviews,
   merchantUsers,
+  treatmentQuotes,
 } from "@glowos/db";
 import { sendWhatsApp, sendWhatsAppTemplate } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
@@ -1032,6 +1033,127 @@ async function handleWaitlistSlotOpened(data: WaitlistSlotOpenedData): Promise<v
   }
 }
 
+// ─── Treatment quote handler ─────────────────────────────────────────────────
+//
+// Auto-sends the accept-link to the client via WhatsApp + email when a quote
+// is issued. Uses freeform WhatsApp — Twilio's 24h session window usually
+// covers this case because the client was just in the clinic for the consult
+// that triggered the quote. If freeform fails, email picks up the slack
+// (SendGrid has no equivalent window rule).
+
+interface TreatmentQuoteIssuedData {
+  quote_id: string;
+}
+
+async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
+  const [row] = await db
+    .select({
+      quote: treatmentQuotes,
+      merchant: { id: merchants.id, name: merchants.name, slug: merchants.slug },
+      client: { id: clients.id, name: clients.name, phone: clients.phone, email: clients.email },
+    })
+    .from(treatmentQuotes)
+    .innerJoin(merchants, eq(treatmentQuotes.merchantId, merchants.id))
+    .innerJoin(clients, eq(treatmentQuotes.clientId, clients.id))
+    .where(eq(treatmentQuotes.id, quoteId))
+    .limit(1);
+
+  if (!row) {
+    console.warn("[NotificationWorker] treatment_quote_issued: quote not found", { quoteId });
+    return;
+  }
+
+  const { quote, merchant, client } = row;
+  const acceptUrl = `${config.frontendUrl}/quote/${quote.acceptToken}`;
+  const price = parseFloat(String(quote.priceSgd)).toFixed(2);
+  const validUntil = format(quote.validUntil, "d MMM yyyy");
+  const firstName = client.name ? client.name.split(" ")[0] : "there";
+
+  // WhatsApp — freeform within the session window.
+  if (client.phone) {
+    const msg = [
+      `Hi ${firstName}, ${merchant.name} has issued a treatment quote for you.`,
+      ``,
+      `📋 ${quote.serviceName}`,
+      `💳 SGD ${price}`,
+      `📅 Valid until ${validUntil}`,
+      ``,
+      `Review & accept here: ${acceptUrl}`,
+      ``,
+      `This quote is valid for a limited time. Please accept before the expiry date to confirm your slot.`,
+    ].join("\n");
+    const sid = await sendWhatsApp(client.phone, msg);
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "treatment_quote_issued",
+      channel: "whatsapp",
+      recipient: client.phone,
+      messageBody: msg,
+      status: sid ? "sent" : "failed",
+      twilioSid: sid || undefined,
+    });
+  }
+
+  // Email — reliable fallback.
+  if (client.email) {
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fcfaef;margin:0;padding:32px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="background:#1a2313;color:#fff;padding:24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin:0 0 8px;">Treatment quote</p>
+          <h1 style="font-size:20px;margin:0;">${merchant.name}</h1>
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 8px;color:#333;">Hi ${firstName},</p>
+          <p style="margin:0 0 20px;color:#555;line-height:1.6;">
+            Following your consultation, we've issued the quote below. Please review and accept to reserve your treatment slot.
+          </p>
+          <div style="border-top:1px solid #e8e4de;border-bottom:1px solid #e8e4de;padding:16px 0;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+              <span style="color:#888;">Service</span>
+              <span style="color:#111;font-weight:600;">${quote.serviceName}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+              <span style="color:#888;">Price</span>
+              <span style="color:#456466;font-weight:700;font-size:18px;">SGD ${price}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;">
+              <span style="color:#888;">Valid until</span>
+              <span style="color:#111;font-weight:500;">${validUntil}</span>
+            </div>
+          </div>
+          ${quote.notes ? `<p style="margin:0 0 20px;color:#555;font-style:italic;font-size:13px;border-left:3px solid #e8e4de;padding-left:12px;">${quote.notes}</p>` : ""}
+          <div style="text-align:center;">
+            <a href="${acceptUrl}" style="display:inline-block;background:#1a2313;color:#fff !important;padding:14px 32px;border-radius:12px;font-weight:600;text-decoration:none;font-size:14px;">Review & Accept →</a>
+          </div>
+          <p style="margin:20px 0 0;color:#888;font-size:12px;text-align:center;">
+            Or paste this link into your browser:<br>
+            <span style="word-break:break-all;color:#666;">${acceptUrl}</span>
+          </p>
+        </div>
+      </div>
+    </body></html>`;
+    const ok = await sendEmail({
+      to: client.email,
+      subject: `Your treatment quote from ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "treatment_quote_issued",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Treatment quote email for ${quote.serviceName}`,
+      status: ok ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] treatment_quote_issued handled", { quoteId });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -1102,6 +1224,12 @@ export function createNotificationWorker(): Worker {
         }
         case "otp_send": {
           await handleOtpSend(job.data as OtpSendData);
+          break;
+        }
+        case "treatment_quote_issued": {
+          await handleTreatmentQuoteIssued(
+            (job.data as TreatmentQuoteIssuedData).quote_id,
+          );
           break;
         }
         case "waitlist_match": {
