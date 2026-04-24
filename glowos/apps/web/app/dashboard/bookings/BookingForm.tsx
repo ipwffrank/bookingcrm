@@ -47,6 +47,22 @@ export function BookingForm(props: BookingFormProps) {
   const [notes, setNotes] = useState('');
   const [services, setServices] = useState<ServiceOption[]>(props.services ?? []);
   const [staffList, setStaffList] = useState<StaffOption[]>(props.staffList ?? []);
+
+  // Sync props → state whenever the parent's services/staffList arrive or
+  // change. useState only consumes the initial prop at mount, which was
+  // the underlying reason the pre-book dialog often opened with an empty
+  // service list: the dashboard's fetch resolved after the form had
+  // already snapshotted an empty props array. Edit mode overwrites these
+  // from /edit-context so skip the sync there.
+  useEffect(() => {
+    if (mode === 'edit') return;
+    if (props.services && props.services.length > 0) {
+      setServices(props.services);
+    }
+    if (props.staffList && props.staffList.length > 0) {
+      setStaffList(props.staffList);
+    }
+  }, [mode, props.services, props.staffList]);
   const [activePackages, setActivePackages] = useState<ActivePackage[]>([]);
   const [rows, setRows] = useState<ServiceRowState[]>([]);
   const [dayBookings, setDayBookings] = useState<DayBooking[]>([]);
