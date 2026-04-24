@@ -128,6 +128,26 @@ export default function ClientProfilePage() {
   const [clientReviews, setClientReviews] = useState<ClientReview[]>([]);
   const [treatmentLog, setTreatmentLog] = useState<Array<{ id: string; staffName: string | null; content: string; createdAt: string }>>([]);
   const [clientPackagesData, setClientPackagesData] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<Array<{
+    id: string;
+    serviceId: string;
+    serviceName: string;
+    priceSgd: string;
+    notes: string | null;
+    status: 'pending' | 'accepted' | 'paid' | 'expired' | 'cancelled';
+    validUntil: string;
+    issuedAt: string;
+    acceptToken: string;
+    issuedByName: string | null;
+  }>>([]);
+  const [showIssueQuote, setShowIssueQuote] = useState(false);
+  const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; priceSgd: string; requiresConsultFirst: boolean }>>([]);
+  const [quoteServiceId, setQuoteServiceId] = useState('');
+  const [quotePrice, setQuotePrice] = useState('');
+  const [quoteValidDays, setQuoteValidDays] = useState('14');
+  const [quoteNotes, setQuoteNotes] = useState('');
+  const [issuingQuote, setIssuingQuote] = useState(false);
+  const [issueQuoteError, setIssueQuoteError] = useState('');
   const [waitlistHistory, setWaitlistHistory] = useState<Array<{
     id: string;
     targetDate: string;
@@ -215,6 +235,85 @@ export default function ClientProfilePage() {
       .then((d: any) => setClientPackagesData(d.packages ?? []))
       .catch(() => {});
   }, [data?.client?.id]);
+
+  // Fetch treatment quotes for this client
+  useEffect(() => {
+    if (!data?.client?.id) return;
+    apiFetch(`/merchant/quotes/client/${data.client.id}`)
+      .then((d: any) => setQuotes(d.quotes ?? []))
+      .catch(() => {});
+  }, [data?.client?.id]);
+
+  // Load services once (for the issue-quote form dropdown)
+  useEffect(() => {
+    apiFetch('/merchant/services')
+      .then((d: any) => setAvailableServices(d.services ?? []))
+      .catch(() => {});
+  }, []);
+
+  async function refetchQuotes() {
+    if (!data?.client?.id) return;
+    try {
+      const d = (await apiFetch(`/merchant/quotes/client/${data.client.id}`)) as any;
+      setQuotes(d.quotes ?? []);
+    } catch { /* ignore */ }
+  }
+
+  async function handleIssueQuote(e: React.FormEvent) {
+    e.preventDefault();
+    setIssueQuoteError('');
+    if (!data?.client?.id) return;
+    if (!quoteServiceId || !quotePrice || !quoteValidDays) {
+      setIssueQuoteError('Service, price and validity are required.');
+      return;
+    }
+    const price = parseFloat(quotePrice);
+    const days = parseInt(quoteValidDays, 10);
+    if (Number.isNaN(price) || price <= 0) {
+      setIssueQuoteError('Price must be a positive number.');
+      return;
+    }
+    if (Number.isNaN(days) || days < 1 || days > 365) {
+      setIssueQuoteError('Validity must be between 1 and 365 days.');
+      return;
+    }
+    setIssuingQuote(true);
+    try {
+      await apiFetch('/merchant/quotes', {
+        method: 'POST',
+        body: JSON.stringify({
+          client_id: data.client.id,
+          service_id: quoteServiceId,
+          price_sgd: price,
+          valid_for_days: days,
+          notes: quoteNotes.trim() || undefined,
+        }),
+      });
+      setShowIssueQuote(false);
+      setQuoteServiceId('');
+      setQuotePrice('');
+      setQuoteValidDays('14');
+      setQuoteNotes('');
+      await refetchQuotes();
+    } catch (err) {
+      setIssueQuoteError(err instanceof Error ? err.message : 'Failed to issue quote');
+    } finally {
+      setIssuingQuote(false);
+    }
+  }
+
+  async function handleCancelQuote(quoteId: string) {
+    const reason = prompt('Why are you cancelling this quote? (optional)') ?? '';
+    try {
+      await apiFetch(`/merchant/quotes/${quoteId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() || undefined }),
+      });
+      await refetchQuotes();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to cancel quote');
+    }
+  }
 
   // Fetch waitlist history once client data is available
   useEffect(() => {
@@ -575,6 +674,149 @@ export default function ClientProfilePage() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* ── Treatment Quotes ── */}
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-tone-ink">Treatment Quotes</h2>
+          <button
+            onClick={() => setShowIssueQuote((v) => !v)}
+            className="text-xs text-tone-sage font-medium hover:underline"
+          >
+            {showIssueQuote ? 'Cancel' : '+ Issue Quote'}
+          </button>
+        </div>
+
+        {showIssueQuote && (
+          <form onSubmit={handleIssueQuote} className="mb-4 space-y-3 rounded-lg bg-grey-5 border border-grey-15 p-3">
+            <div>
+              <label className="block text-[11px] font-medium text-grey-75 mb-1">Service</label>
+              <select
+                value={quoteServiceId}
+                onChange={(e) => {
+                  setQuoteServiceId(e.target.value);
+                  const svc = availableServices.find((s) => s.id === e.target.value);
+                  if (svc && !quotePrice) setQuotePrice(svc.priceSgd);
+                }}
+                className="w-full rounded-lg border border-grey-15 bg-tone-surface px-3 py-2 text-sm"
+              >
+                <option value="">Select a service…</option>
+                {availableServices.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.requiresConsultFirst ? '⚕ ' : ''}{s.name} — SGD {parseFloat(s.priceSgd).toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-grey-75 mb-1">Price (SGD)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={quotePrice}
+                  onChange={(e) => setQuotePrice(e.target.value)}
+                  className="w-full rounded-lg border border-grey-15 bg-tone-surface px-3 py-2 text-sm"
+                  placeholder="450.00"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-grey-75 mb-1">Valid for (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={quoteValidDays}
+                  onChange={(e) => setQuoteValidDays(e.target.value)}
+                  className="w-full rounded-lg border border-grey-15 bg-tone-surface px-3 py-2 text-sm"
+                  placeholder="14"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-grey-75 mb-1">Clinical notes (optional)</label>
+              <textarea
+                value={quoteNotes}
+                onChange={(e) => setQuoteNotes(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-grey-15 bg-tone-surface px-3 py-2 text-sm resize-none"
+                placeholder="e.g. Botox 30u, forehead + glabellar areas"
+              />
+            </div>
+            {issueQuoteError && (
+              <p className="text-xs text-semantic-danger">{issueQuoteError}</p>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={issuingQuote}
+                className="px-4 py-2 rounded-lg bg-tone-ink text-tone-surface text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {issuingQuote ? 'Issuing…' : 'Issue Quote'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {quotes.length === 0 ? (
+          <p className="text-xs text-grey-45 italic">No quotes issued for this client yet.</p>
+        ) : (
+          <ul className="divide-y divide-grey-5">
+            {quotes.map((q) => {
+              const statusCls =
+                q.status === 'pending' ? 'bg-semantic-warn/10 text-semantic-warn' :
+                q.status === 'accepted' ? 'bg-tone-sage/10 text-tone-sage' :
+                q.status === 'paid' ? 'bg-tone-sage/20 text-tone-sage' :
+                q.status === 'expired' ? 'bg-grey-15 text-grey-60' :
+                'bg-semantic-danger/10 text-semantic-danger';
+              const acceptUrl = typeof window !== 'undefined' && data?.client
+                ? `${window.location.origin}/quote/${q.acceptToken}`
+                : `/quote/${q.acceptToken}`;
+              return (
+                <li key={q.id} className="py-2.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-tone-ink">{q.serviceName}</p>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold ${statusCls}`}>
+                          {q.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-grey-75 mt-0.5">
+                        SGD {parseFloat(q.priceSgd).toFixed(2)} · valid until {new Date(q.validUntil).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {q.issuedByName ? ` · issued by ${q.issuedByName}` : ''}
+                      </p>
+                      {q.notes && <p className="text-xs text-grey-60 italic mt-0.5 truncate">{q.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {q.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard.writeText(acceptUrl);
+                              alert('Accept link copied to clipboard');
+                            }}
+                            className="text-[11px] text-tone-sage hover:underline"
+                          >
+                            Copy link
+                          </button>
+                          <button
+                            onClick={() => handleCancelQuote(q.id)}
+                            className="text-[11px] text-semantic-danger hover:underline"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
 
