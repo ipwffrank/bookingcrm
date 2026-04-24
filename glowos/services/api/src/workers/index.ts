@@ -3,6 +3,7 @@ import { createNotificationWorker } from "./notification.worker.js";
 import { createCrmWorker } from "./crm.worker.js";
 import { createVipWorker } from "./vip.worker.js";
 import { addJob } from "../lib/queue.js";
+import { sweepExpiredQuotes } from "../routes/quotes.js";
 
 // ─── Worker registry ───────────────────────────────────────────────────────────
 
@@ -39,6 +40,27 @@ export function startWorkers(): void {
     {},
     { repeat: { pattern: "5 0 * * *" } } // 00:05 daily, server time
   );
+
+  // Treatment-quote daily cron: expire past-validUntil pending quotes, then
+  // nudge quotes that expire within 3 days. Uses a wrapper job so the worker
+  // owns the work (keeps logs in one place).
+  void addJob(
+    "notifications",
+    "treatment_quote_reminder_sweep",
+    {},
+    { repeat: { pattern: "10 0 * * *" } } // 00:10 daily, server time
+  );
+
+  // Expired-quote sweeper runs directly in the API process (not a queue job) —
+  // it's a single UPDATE + idempotent, no need to round-trip through the worker.
+  setInterval(async () => {
+    try {
+      const n = await sweepExpiredQuotes();
+      if (n > 0) console.log("[QuoteExpirySweep] expired", { count: n });
+    } catch (err) {
+      console.error("[QuoteExpirySweep] failed", err);
+    }
+  }, 60 * 60 * 1000); // hourly
 }
 
 // ─── stopWorkers ───────────────────────────────────────────────────────────────

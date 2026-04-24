@@ -1154,6 +1154,134 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
   console.log("[NotificationWorker] treatment_quote_issued handled", { quoteId });
 }
 
+// ─── Treatment quote expiry reminder (daily sweep) ─────────────────────────────
+// Fires a nudge 3 days before valid_until for any still-pending quote that
+// hasn't already been reminded. Runs once a day from the repeat-cron in
+// workers/index.ts; internally idempotent via reminderSentAt column.
+async function handleTreatmentQuoteReminderSweep(): Promise<void> {
+  const { gt, lte, isNull } = await import("drizzle-orm");
+  const now = new Date();
+  // Lower bound > now (so we don't nudge quotes that already expired between
+  // sweeps), upper bound <= now + 3d.
+  const threeDaysOut = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  const due = await db
+    .select({ id: treatmentQuotes.id })
+    .from(treatmentQuotes)
+    .where(
+      and(
+        eq(treatmentQuotes.status, "pending"),
+        isNull(treatmentQuotes.reminderSentAt),
+        gt(treatmentQuotes.validUntil, now),
+        lte(treatmentQuotes.validUntil, threeDaysOut),
+      ),
+    );
+
+  console.log("[NotificationWorker] quote reminder sweep", { due: due.length });
+
+  for (const { id } of due) {
+    try {
+      await sendTreatmentQuoteReminder(id);
+      await db
+        .update(treatmentQuotes)
+        .set({ reminderSentAt: new Date(), updatedAt: new Date() })
+        .where(eq(treatmentQuotes.id, id));
+    } catch (err) {
+      console.error("[NotificationWorker] quote reminder failed", { id, err });
+    }
+  }
+}
+
+async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
+  const [row] = await db
+    .select({
+      quote: treatmentQuotes,
+      merchant: { id: merchants.id, name: merchants.name, slug: merchants.slug },
+      client: { id: clients.id, name: clients.name, phone: clients.phone, email: clients.email },
+    })
+    .from(treatmentQuotes)
+    .innerJoin(merchants, eq(treatmentQuotes.merchantId, merchants.id))
+    .innerJoin(clients, eq(treatmentQuotes.clientId, clients.id))
+    .where(eq(treatmentQuotes.id, quoteId))
+    .limit(1);
+  if (!row) return;
+
+  const { quote, merchant, client } = row;
+  const acceptUrl = `${config.frontendUrl}/quote/${quote.acceptToken}`;
+  const price = parseFloat(String(quote.priceSgd)).toFixed(2);
+  const validUntil = format(quote.validUntil, "d MMM yyyy");
+  const firstName = client.name ? client.name.split(" ")[0] : "there";
+
+  if (client.phone) {
+    const msg = [
+      `Hi ${firstName}, a quick reminder — your ${merchant.name} treatment quote expires on ${validUntil}.`,
+      ``,
+      `📋 ${quote.serviceName}`,
+      `💳 SGD ${price}`,
+      ``,
+      `Accept before it expires: ${acceptUrl}`,
+    ].join("\n");
+    const sid = await sendWhatsApp(client.phone, msg);
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "treatment_quote_reminder",
+      channel: "whatsapp",
+      recipient: client.phone,
+      messageBody: msg,
+      status: sid ? "sent" : "failed",
+      twilioSid: sid || undefined,
+    });
+  }
+
+  if (client.email) {
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fcfaef;margin:0;padding:32px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="background:#1a2313;color:#fff;padding:24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin:0 0 8px;">Quote expiring soon</p>
+          <h1 style="font-size:20px;margin:0;">${merchant.name}</h1>
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 8px;color:#333;">Hi ${firstName},</p>
+          <p style="margin:0 0 20px;color:#555;line-height:1.6;">
+            Just a reminder — your treatment quote expires on <strong>${validUntil}</strong>.
+            Accept before then to lock in your slot at the quoted price.
+          </p>
+          <div style="border-top:1px solid #e8e4de;border-bottom:1px solid #e8e4de;padding:16px 0;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+              <span style="color:#888;">Service</span>
+              <span style="color:#111;font-weight:600;">${quote.serviceName}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;">
+              <span style="color:#888;">Price</span>
+              <span style="color:#456466;font-weight:700;font-size:18px;">SGD ${price}</span>
+            </div>
+          </div>
+          <div style="text-align:center;">
+            <a href="${acceptUrl}" style="display:inline-block;background:#1a2313;color:#fff !important;padding:14px 32px;border-radius:12px;font-weight:600;text-decoration:none;font-size:14px;">Review & Accept →</a>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const ok = await sendEmail({
+      to: client.email,
+      subject: `Reminder: your treatment quote from ${merchant.name} expires ${validUntil}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "treatment_quote_reminder",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Treatment quote reminder for ${quote.serviceName}`,
+      status: ok ? "sent" : "failed",
+    });
+  }
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -1230,6 +1358,10 @@ export function createNotificationWorker(): Worker {
           await handleTreatmentQuoteIssued(
             (job.data as TreatmentQuoteIssuedData).quote_id,
           );
+          break;
+        }
+        case "treatment_quote_reminder_sweep": {
+          await handleTreatmentQuoteReminderSweep();
           break;
         }
         case "waitlist_match": {
