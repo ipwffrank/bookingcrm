@@ -23,6 +23,7 @@ interface PackageTemplate {
   totalSessions: number;
   validityDays: number;
   isActive: boolean;
+  requiresConsultFirst: boolean;
   includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
 }
 

@@ -36,6 +36,13 @@
       "when": 1777046829931,
       "tag": "0004_fat_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1777048365222,
+      "tag": "0005_booking_visibility_and_package_consult_gate",
+      "breakpoints": true
     }
   ]
 }

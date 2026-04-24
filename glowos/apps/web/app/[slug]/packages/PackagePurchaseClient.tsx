@@ -12,6 +12,7 @@ interface PackageTemplate {
   totalSessions: number;
   validityDays: number;
   isActive: boolean;
+  requiresConsultFirst: boolean;
   includedServices: Array<{ serviceId: string; serviceName: string; quantity: number }>;
 }
 
@@ -128,14 +129,21 @@ export default function PackagePurchaseClient({ slug, packages, defaultCountry }
                 </div>
               )}
 
-              {!isOpen && (
+              {pkg.requiresConsultFirst ? (
+                <div className="mt-4 rounded-lg bg-semantic-warn/10 border border-semantic-warn/30 px-3 py-3 text-xs text-grey-75">
+                  <p className="font-semibold text-tone-ink mb-0.5">Consultation required</p>
+                  This package can only be purchased after an in-person consultation. Please book
+                  a consult with the clinic first — they&apos;ll send you a personalised quote with a
+                  secure payment link.
+                </div>
+              ) : !isOpen ? (
                 <button
                   onClick={() => openPurchase(pkg.id)}
                   className="mt-4 w-full rounded-xl bg-tone-ink text-tone-surface py-3 text-sm font-semibold hover:opacity-90 transition-opacity"
                 >
                   Buy Package
                 </button>
-              )}
+              ) : null}
             </div>
 
             {isOpen && (

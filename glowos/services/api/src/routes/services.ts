@@ -31,6 +31,7 @@ const createServiceSchema = z.object({
   slot_type: z.enum(["standard", "consult", "treatment"]).optional().default("standard"),
   requires_consult_first: z.boolean().optional().default(false),
   consult_service_id: z.string().uuid().nullable().optional(),
+  visible_on_booking_page: z.boolean().optional().default(true),
   discount_pct: z.number().int().min(0).max(100).nullable().optional(),
   discount_show_online: z.boolean().optional().default(false),
   first_timer_discount_pct: z.number().int().min(0).max(100).nullable().optional(),
@@ -118,6 +119,7 @@ servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async
       slotType: body.slot_type,
       requiresConsultFirst: body.requires_consult_first,
       consultServiceId: body.consult_service_id ?? null,
+      visibleOnBookingPage: body.visible_on_booking_page,
       discountPct: body.discount_pct ?? null,
       discountShowOnline: body.discount_show_online,
       firstTimerDiscountPct: body.first_timer_discount_pct ?? null,
@@ -161,6 +163,7 @@ servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), asy
   if (body.slot_type !== undefined) updateData.slotType = body.slot_type;
   if (body.requires_consult_first !== undefined) updateData.requiresConsultFirst = body.requires_consult_first;
   if (body.consult_service_id !== undefined) updateData.consultServiceId = body.consult_service_id;
+  if (body.visible_on_booking_page !== undefined) updateData.visibleOnBookingPage = body.visible_on_booking_page;
   if (body.discount_pct !== undefined) updateData.discountPct = body.discount_pct;
   if (body.discount_show_online !== undefined) updateData.discountShowOnline = body.discount_show_online;
   if (body.first_timer_discount_pct !== undefined) updateData.firstTimerDiscountPct = body.first_timer_discount_pct;

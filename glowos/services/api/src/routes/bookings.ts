@@ -1207,11 +1207,19 @@ bookingsRouter.get("/:slug", async (c) => {
     return c.json({ error: "Not Found", message: "Salon not found" }, 404);
   }
 
-  // Active services
+  // Active, publicly visible services. Package-only add-ons (like "Nail art
+  // per nail") are flagged visible_on_booking_page = false so they don't
+  // appear in the customer's standalone service list.
   const activeServices = await db
     .select()
     .from(services)
-    .where(and(eq(services.merchantId, merchant.id), eq(services.isActive, true)));
+    .where(
+      and(
+        eq(services.merchantId, merchant.id),
+        eq(services.isActive, true),
+        eq(services.visibleOnBookingPage, true),
+      ),
+    );
 
   // Active, publicly visible staff. `is_any_available` is an eligibility flag
   // (can this staff receive bookings when a customer picks "Any Available"?)

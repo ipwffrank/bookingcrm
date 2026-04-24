@@ -52,6 +52,7 @@ packagesRouter.post("/", requireMerchant, async (c) => {
       quantity: number;
     }>;
     validityDays?: number;
+    requiresConsultFirst?: boolean;
   }>();
 
   if (
@@ -80,6 +81,7 @@ packagesRouter.post("/", requireMerchant, async (c) => {
       priceSgd: String(body.priceSgd),
       includedServices: body.includedServices,
       validityDays: body.validityDays ?? 180,
+      requiresConsultFirst: body.requiresConsultFirst ?? false,
     })
     .returning();
 
@@ -103,6 +105,8 @@ packagesRouter.put("/:id", requireMerchant, async (c) => {
     updateData.includedServices = body.includedServices;
   if (body.validityDays !== undefined)
     updateData.validityDays = body.validityDays;
+  if (body.requiresConsultFirst !== undefined)
+    updateData.requiresConsultFirst = body.requiresConsultFirst;
 
   const [updated] = await db
     .update(servicePackages)
@@ -418,6 +422,20 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
     .limit(1);
   if (!pkg) {
     return c.json({ error: "Not Found", message: "Package not available" }, 404);
+  }
+
+  // Consult-first gate: packages that require an in-person assessment cannot
+  // be purchased directly online. The clinic issues a treatment quote after
+  // the consult instead.
+  if (pkg.requiresConsultFirst) {
+    return c.json(
+      {
+        error: "Forbidden",
+        message:
+          "This package requires an in-person consultation before purchase. Please book a consultation with the clinic first.",
+      },
+      403,
+    );
   }
 
   // Resolve / create the client — same semantics as booking creation, so a

@@ -21,6 +21,7 @@ interface PackageTemplate {
   includedServices: IncludedService[];
   validityDays: number;
   isActive: boolean;
+  requiresConsultFirst: boolean;
   createdAt: string;
 }
 
@@ -43,6 +44,7 @@ interface PackageForm {
   priceSgd: string;
   validityDays: string;
   includedServices: IncludedService[];
+  bookingMode: 'standard' | 'consult_required';
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ function Spinner() {
 }
 
 function blankForm(): PackageForm {
-  return { name: '', description: '', priceSgd: '', validityDays: '180', includedServices: [] };
+  return { name: '', description: '', priceSgd: '', validityDays: '180', includedServices: [], bookingMode: 'standard' };
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -122,6 +124,7 @@ export default function PackagesPage() {
       priceSgd: pkg.priceSgd,
       validityDays: String(pkg.validityDays),
       includedServices: [...pkg.includedServices],
+      bookingMode: pkg.requiresConsultFirst ? 'consult_required' : 'standard',
     });
     setEditingId(pkg.id);
     setShowModal(true);
@@ -172,6 +175,7 @@ export default function PackagesPage() {
         priceSgd: parseFloat(form.priceSgd),
         includedServices: form.includedServices,
         validityDays: parseInt(form.validityDays) || 180,
+        requiresConsultFirst: form.bookingMode === 'consult_required',
       };
 
       if (editingId) {
@@ -393,6 +397,23 @@ export default function PackagesPage() {
                     className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
                   />
                 </div>
+              </div>
+
+              {/* Booking Type */}
+              <div>
+                <label className="block text-xs font-medium text-grey-75 mb-1">Booking Type</label>
+                <select
+                  value={form.bookingMode}
+                  onChange={e => setForm(prev => ({ ...prev, bookingMode: e.target.value as 'standard' | 'consult_required' }))}
+                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
+                >
+                  <option value="standard">Standard — book directly</option>
+                  <option value="consult_required">Consultation — requires prior consult</option>
+                </select>
+                <p className="text-xs text-grey-60 mt-1">
+                  Packages gated by consultation are hidden from the direct-purchase flow.
+                  The clinic issues a quote after the consult instead.
+                </p>
               </div>
 
               {/* Included Services Picker */}

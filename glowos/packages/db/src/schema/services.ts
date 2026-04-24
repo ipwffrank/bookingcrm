@@ -32,6 +32,10 @@ export const services = pgTable(
       .$type<"standard" | "consult" | "treatment">(),
     requiresConsultFirst: boolean("requires_consult_first").notNull().default(false),
     consultServiceId: uuid("consult_service_id"),
+    // When false the service is not listed on the public booking widget.
+    // Useful for package-only add-ons (e.g. "Nail art per nail") that only
+    // make sense bundled with another service, never sold standalone.
+    visibleOnBookingPage: boolean("visible_on_booking_page").notNull().default(true),
     displayOrder: integer("display_order").notNull().default(0),
     discountPct: integer("discount_pct"), // e.g. 10 = 10% off, null = no discount
     discountShowOnline: boolean("discount_show_online").notNull().default(false), // show on public booking page

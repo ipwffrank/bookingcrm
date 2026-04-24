@@ -1,0 +1,2 @@
+ALTER TABLE "services" ADD COLUMN "visible_on_booking_page" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "service_packages" ADD COLUMN "requires_consult_first" boolean DEFAULT false NOT NULL;

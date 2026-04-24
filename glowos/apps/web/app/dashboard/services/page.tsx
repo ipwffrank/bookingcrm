@@ -21,6 +21,7 @@ interface Service {
   slotType: 'standard' | 'consult' | 'treatment';
   requiresConsultFirst: boolean;
   consultServiceId: string | null;
+  visibleOnBookingPage: boolean;
   discountPct: number | null;
   discountShowOnline: boolean;
   firstTimerDiscountPct: number | null;
@@ -34,9 +35,12 @@ interface ServiceForm {
   duration_minutes: string;
   buffer_minutes: string;
   price_sgd: string;
-  slot_type: 'standard' | 'consult' | 'treatment';
-  requires_consult_first: boolean;
+  // UI-level booking mode — collapses the old three-option slot_type into two
+  // choices the merchant actually thinks in: "book directly" vs "requires
+  // consultation first". Mapped to slot_type + requires_consult_first on save.
+  booking_mode: 'standard' | 'consult_required';
   consult_service_id: string;
+  visible_on_booking_page: boolean;
   discount_pct: string;
   discount_show_online: boolean;
   first_timer_discount_pct: string;
@@ -76,7 +80,7 @@ function Spinner() {
 }
 
 function blankForm(): ServiceForm {
-  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '', slot_type: 'standard', requires_consult_first: false, consult_service_id: '', discount_pct: '', discount_show_online: false, first_timer_discount_pct: '', first_timer_discount_enabled: false };
+  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', price_sgd: '', booking_mode: 'standard', consult_service_id: '', visible_on_booking_page: true, discount_pct: '', discount_show_online: false, first_timer_discount_pct: '', first_timer_discount_enabled: false };
 }
 
 type FormErrors = Partial<Record<keyof ServiceForm, string>>;
@@ -117,9 +121,15 @@ function ServiceModal({
           duration_minutes: String(initial.durationMinutes),
           buffer_minutes: String(initial.bufferMinutes),
           price_sgd: String(initial.priceSgd),
-          slot_type: initial.slotType ?? 'standard',
-          requires_consult_first: initial.requiresConsultFirst ?? false,
+          // Legacy services stored slot_type separately from the consult-first
+          // checkbox. A saved 'consult' or 'treatment' — or any service flagged
+          // requires_consult_first — all surface here as consult_required.
+          booking_mode:
+            initial.slotType !== 'standard' || initial.requiresConsultFirst
+              ? 'consult_required'
+              : 'standard',
           consult_service_id: initial.consultServiceId ?? '',
+          visible_on_booking_page: initial.visibleOnBookingPage ?? true,
           discount_pct: initial.discountPct?.toString() ?? '',
           discount_show_online: initial.discountShowOnline ?? false,
           first_timer_discount_pct: initial.firstTimerDiscountPct?.toString() ?? '',
@@ -148,9 +158,13 @@ function ServiceModal({
         duration_minutes: parseInt(form.duration_minutes, 10),
         buffer_minutes: parseInt(form.buffer_minutes, 10),
         price_sgd: parseFloat(form.price_sgd),
-        slot_type: form.slot_type,
-        requires_consult_first: form.requires_consult_first,
+        // Map the unified UI toggle back to the underlying slot_type +
+        // requires_consult_first pair. "Consult required" stores as a
+        // treatment slot with the gating flag set; standard clears both.
+        slot_type: form.booking_mode === 'consult_required' ? 'treatment' : 'standard',
+        requires_consult_first: form.booking_mode === 'consult_required',
         consult_service_id: form.consult_service_id || null,
+        visible_on_booking_page: form.visible_on_booking_page,
         discount_pct: form.discount_pct ? parseInt(form.discount_pct) : null,
         discount_show_online: form.discount_show_online,
         first_timer_discount_pct: form.first_timer_discount_pct ? parseInt(form.first_timer_discount_pct) : null,
@@ -232,56 +246,37 @@ function ServiceModal({
           <div>
             <label className="block text-sm font-medium text-grey-75 mb-1">Booking Type</label>
             <select
-              value={form.slot_type}
-              onChange={(e) => setForm({ ...form, slot_type: e.target.value as 'standard' | 'consult' | 'treatment' })}
+              value={form.booking_mode}
+              onChange={(e) => setForm({ ...form, booking_mode: e.target.value as 'standard' | 'consult_required' })}
               className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
             >
               <option value="standard">Standard — book directly</option>
-              <option value="consult">Consultation — assess client first</option>
-              <option value="treatment">Treatment — requires prior consult</option>
+              <option value="consult_required">Consultation — requires prior consult</option>
             </select>
             <p className="text-xs text-grey-60 mt-1">
-              &quot;Consultation&quot; slots let staff assess the client before recommending a treatment.
-              &quot;Treatment&quot; slots can be linked to require a consult booking first.
+              Services that require consultation first are hidden from the direct-book flow.
+              The clinic issues a quote after the consult, and the client pays via that quote link.
             </p>
           </div>
 
-          {/* Requires Consult First (only shown for treatment type) */}
-          {form.slot_type === 'treatment' && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="requires_consult_first"
-                  checked={form.requires_consult_first}
-                  onChange={(e) => setForm({ ...form, requires_consult_first: e.target.checked })}
-                  className="w-4 h-4 rounded"
-                />
-                <label htmlFor="requires_consult_first" className="text-sm text-grey-75">
-                  Require consultation booking before this treatment
-                </label>
-              </div>
-              {form.requires_consult_first && (
-                <div>
-                  <label className="block text-sm font-medium text-grey-75 mb-1">
-                    Consultation service (optional)
-                  </label>
-                  <select
-                    value={form.consult_service_id}
-                    onChange={(e) => setForm({ ...form, consult_service_id: e.target.value })}
-                    className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
-                  >
-                    <option value="">— any consultation —</option>
-                    {services
-                      .filter((s) => s.slotType === 'consult' && s.id !== initial?.id)
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Visibility on public booking page */}
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.visible_on_booking_page}
+                onChange={(e) => setForm({ ...form, visible_on_booking_page: e.target.checked })}
+                className="mt-0.5 rounded border-grey-30 text-tone-sage"
+              />
+              <span className="text-sm text-grey-75">
+                Show this service on the public booking page
+                <span className="block text-xs text-grey-60 mt-0.5">
+                  Uncheck for package-only add-ons (e.g. &ldquo;Nail art per nail&rdquo;) that only
+                  make sense bundled with another service.
+                </span>
+              </span>
+            </label>
+          </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>

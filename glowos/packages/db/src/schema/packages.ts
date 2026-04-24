@@ -33,6 +33,10 @@ export const servicePackages = pgTable("service_packages", {
     .notNull(),
   validityDays: integer("validity_days").notNull().default(180),
   isActive: boolean("is_active").notNull().default(true),
+  // When true the customer can only purchase this package after an in-person
+  // consultation — parallel to services.requires_consult_first. The widget
+  // blocks direct purchase and the clinic issues a treatment quote instead.
+  requiresConsultFirst: boolean("requires_consult_first").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
