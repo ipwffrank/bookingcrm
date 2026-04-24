@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { apiFetch } from '../../lib/api';
 
 interface QuoteData {
@@ -25,10 +27,95 @@ interface QuoteData {
   client: { name: string | null };
 }
 
+interface AcceptResponse {
+  quote: { id: string; status: string };
+  booking: { id: string; startTime: string };
+  payment: { clientSecret: string; stripeAccountId: string } | null;
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-SG', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
   });
+}
+
+// Inner payment form — must render inside <Elements> so useStripe/useElements resolve.
+function QuotePaymentForm({
+  amount,
+  token,
+  merchantSlug,
+  router,
+  onPaid,
+}: {
+  amount: string;
+  token: string;
+  merchantSlug: string;
+  router: ReturnType<typeof useRouter>;
+  onPaid: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setProcessing(true);
+    setError('');
+
+    const result = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/quote/${token}`,
+      },
+      redirect: 'if_required',
+    });
+
+    if (result.error) {
+      setError(result.error.message ?? 'Payment failed');
+      setProcessing(false);
+      return;
+    }
+
+    const intentId = result.paymentIntent?.id;
+    if (intentId && (result.paymentIntent?.status === 'succeeded' || result.paymentIntent?.status === 'processing')) {
+      try {
+        await apiFetch(`/quote/${token}/mark-paid`, {
+          method: 'POST',
+          body: JSON.stringify({ payment_intent_id: intentId }),
+        });
+        onPaid();
+        setTimeout(() => router.push(`/${merchantSlug}`), 3500);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to confirm payment');
+        setProcessing(false);
+      }
+    } else {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <PaymentElement options={{ layout: 'tabs' }} />
+      {error && (
+        <div className="rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-3 py-2 text-xs text-semantic-danger">
+          {error}
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={!stripe || processing}
+        className="w-full rounded-xl bg-tone-ink text-tone-surface py-3 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+      >
+        {processing ? 'Processing payment…' : `Pay SGD ${parseFloat(amount).toFixed(2)}`}
+      </button>
+      <p className="text-[11px] text-grey-60 text-center">
+        Payments are processed securely by Stripe.
+      </p>
+    </form>
+  );
 }
 
 export default function QuotePage() {
@@ -41,6 +128,12 @@ export default function QuotePage() {
   const [startTime, setStartTime] = useState('');
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [paid, setPaid] = useState(false);
+
+  // Stripe payment state — populated after accept if merchant has Stripe connected.
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
     apiFetch(`/quote/${token}`)
@@ -48,6 +141,18 @@ export default function QuotePage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load quote'))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Re-load stripe.js scoped to the merchant's connected account every time
+  // stripeAccountId changes. loadStripe with a stripeAccount option produces
+  // a publishable-key instance that signs confirmPayment calls for that account.
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!key || !stripeAccountId) {
+      setStripePromise(null);
+      return;
+    }
+    setStripePromise(loadStripe(key, { stripeAccount: stripeAccountId }));
+  }, [stripeAccountId]);
 
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
@@ -59,14 +164,18 @@ export default function QuotePage() {
     setError('');
     try {
       const iso = new Date(startTime).toISOString();
-      await apiFetch(`/quote/${token}/accept`, {
+      const res = (await apiFetch(`/quote/${token}/accept`, {
         method: 'POST',
         body: JSON.stringify({ start_time: iso }),
-      });
+      })) as AcceptResponse;
       setAccepted(true);
-      // Redirect to the merchant's booking page so the client can manage
-      // the resulting booking (cancel/reschedule) if needed.
-      setTimeout(() => router.push(`/${data?.merchant.slug}`), 3500);
+      if (res.payment) {
+        setClientSecret(res.payment.clientSecret);
+        setStripeAccountId(res.payment.stripeAccountId);
+      } else {
+        // No online payment available — fall back to the old "contact clinic" path.
+        setTimeout(() => router.push(`/${data?.merchant.slug}`), 3500);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Accept failed');
     } finally {
@@ -152,7 +261,7 @@ export default function QuotePage() {
                 This quote has been cancelled.
               </div>
             )}
-            {quote.status === 'accepted' && (
+            {quote.status === 'accepted' && !accepted && (
               <div className="rounded-lg bg-tone-sage/5 border border-tone-sage/30 px-4 py-3 text-sm text-tone-sage">
                 <p className="font-semibold mb-0.5">✓ Already accepted</p>
                 Payment is pending. Please complete payment to confirm your booking.
@@ -194,15 +303,43 @@ export default function QuotePage() {
                   disabled={accepting}
                   className="w-full rounded-xl bg-tone-ink text-tone-surface py-3 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
                 >
-                  {accepting ? 'Accepting…' : `Accept quote & reserve slot`}
+                  {accepting ? 'Accepting…' : `Accept quote & continue to payment`}
                 </button>
                 <p className="text-[11px] text-grey-60 text-center">
-                  Payment will be collected after you accept — you&apos;ll be guided through it on the next screen.
+                  You&apos;ll pay online on the next step to confirm your booking.
                 </p>
               </form>
             )}
 
-            {accepted && (
+            {/* Post-accept: render Stripe Payment Element if we have a client secret */}
+            {accepted && !paid && clientSecret && stripePromise && (
+              <div className="pt-2 space-y-3">
+                <div className="rounded-lg bg-tone-sage/5 border border-tone-sage/30 px-4 py-3 text-sm text-tone-sage">
+                  <p className="font-semibold mb-0.5">Slot reserved — complete payment to confirm</p>
+                  <p className="text-xs text-grey-75">
+                    Your booking is held pending payment.
+                  </p>
+                </div>
+                <Elements
+                  stripe={stripePromise}
+                  options={{
+                    clientSecret,
+                    appearance: { theme: 'stripe', variables: { colorPrimary: '#456466', borderRadius: '12px' } },
+                  }}
+                >
+                  <QuotePaymentForm
+                    amount={quote.priceSgd}
+                    token={token}
+                    merchantSlug={merchant.slug}
+                    router={router}
+                    onPaid={() => setPaid(true)}
+                  />
+                </Elements>
+              </div>
+            )}
+
+            {/* Post-accept fallback: no online payment (merchant Stripe not connected) */}
+            {accepted && !paid && !clientSecret && (
               <div className="rounded-lg bg-tone-sage/10 border border-tone-sage/30 px-4 py-4 text-sm text-tone-sage text-center">
                 <div className="w-12 h-12 bg-tone-sage/10 text-tone-sage rounded-full mx-auto flex items-center justify-center text-2xl mb-2">
                   ✓
@@ -210,6 +347,19 @@ export default function QuotePage() {
                 <p className="font-semibold">Quote accepted — slot reserved</p>
                 <p className="text-xs text-grey-75 mt-1">
                   Redirecting you back to {merchant.name}…
+                </p>
+              </div>
+            )}
+
+            {/* Final paid state */}
+            {paid && (
+              <div className="rounded-lg bg-tone-sage/10 border border-tone-sage/30 px-4 py-4 text-sm text-tone-sage text-center">
+                <div className="w-12 h-12 bg-tone-sage/10 text-tone-sage rounded-full mx-auto flex items-center justify-center text-2xl mb-2">
+                  ✓
+                </div>
+                <p className="font-semibold">Payment confirmed</p>
+                <p className="text-xs text-grey-75 mt-1">
+                  See you at {merchant.name}. Redirecting…
                 </p>
               </div>
             )}

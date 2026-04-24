@@ -15,6 +15,7 @@ import {
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { addJob } from "../lib/queue.js";
+import { stripe } from "../lib/stripe.js";
 import type { AppVariables } from "../lib/types.js";
 
 // ─── Merchant-facing router ───────────────────────────────────────────────────
@@ -281,8 +282,24 @@ publicQuotesRouter.post("/:token/accept", zValidator(acceptSchema), async (c) =>
     startTime.getTime() + (svc.durationMinutes + svc.bufferMinutes) * 60_000,
   );
 
-  // Create the booking (payment_status = pending; will flip to paid via webhook
-  // or confirm endpoint on successful online payment).
+  // Load merchant for Stripe account
+  const [merchant] = await db
+    .select({ stripeAccountId: merchants.stripeAccountId })
+    .from(merchants)
+    .where(eq(merchants.id, row.merchantId))
+    .limit(1);
+  if (!merchant?.stripeAccountId) {
+    return c.json(
+      {
+        error: "Bad Request",
+        message: "This clinic has not completed online-payment setup. Please contact them directly.",
+      },
+      400,
+    );
+  }
+
+  // Create the booking (payment_status = pending; flips to paid once the
+  // customer completes the Stripe Payment Element on the accept page).
   const [booking] = await db
     .insert(bookings)
     .values({
@@ -314,10 +331,120 @@ publicQuotesRouter.post("/:token/accept", zValidator(acceptSchema), async (c) =>
     })
     .where(eq(treatmentQuotes.id, row.id));
 
-  return c.json({
-    quote: { id: row.id, status: "accepted" },
-    booking: { id: booking.id, startTime: booking.startTime },
-  }, 201);
+  // Mint a Stripe PaymentIntent for the accept page to drive the Payment
+  // Element. amount is in cents (Stripe convention). Metadata carries the
+  // quote_id + booking_id so the mark-paid endpoint + webhook can reconcile.
+  const amountCents = Math.round(parseFloat(String(row.priceSgd)) * 100);
+  let clientSecret: string | null = null;
+  try {
+    const intent = await stripe.paymentIntents.create(
+      {
+        amount: amountCents,
+        currency: "sgd",
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          quote_id: row.id,
+          booking_id: booking.id,
+          merchant_id: row.merchantId,
+        },
+      },
+      { stripeAccount: merchant.stripeAccountId },
+    );
+    clientSecret = intent.client_secret;
+  } catch (err) {
+    console.error("[quotes] PaymentIntent create failed", err);
+    // Booking + quote state stay as-is — customer can retry via pay endpoint.
+  }
+
+  return c.json(
+    {
+      quote: { id: row.id, status: "accepted" },
+      booking: { id: booking.id, startTime: booking.startTime },
+      payment: clientSecret
+        ? { clientSecret, stripeAccountId: merchant.stripeAccountId }
+        : null,
+    },
+    201,
+  );
+});
+
+// POST /quote/:token/mark-paid — called by the frontend when Stripe reports
+// successful payment client-side. Verifies with Stripe, then flips quote →
+// paid + booking.paymentStatus → paid. Idempotent.
+const markPaidSchema = z.object({
+  payment_intent_id: z.string().min(1),
+});
+publicQuotesRouter.post("/:token/mark-paid", zValidator(markPaidSchema), async (c) => {
+  const token = c.req.param("token")!;
+  const body = c.get("body") as z.infer<typeof markPaidSchema>;
+
+  const [row] = await db
+    .select()
+    .from(treatmentQuotes)
+    .where(eq(treatmentQuotes.acceptToken, token))
+    .limit(1);
+  if (!row) return c.json({ error: "Not Found" }, 404);
+  if (row.status === "paid") {
+    return c.json({ quote: { id: row.id, status: "paid" } });
+  }
+  if (row.status !== "accepted") {
+    return c.json(
+      { error: "Conflict", message: `Quote is ${row.status} — cannot mark paid` },
+      409,
+    );
+  }
+
+  // Verify with Stripe that the PaymentIntent actually succeeded.
+  const [merchant] = await db
+    .select({ stripeAccountId: merchants.stripeAccountId })
+    .from(merchants)
+    .where(eq(merchants.id, row.merchantId))
+    .limit(1);
+  if (!merchant?.stripeAccountId) {
+    return c.json({ error: "Bad Request", message: "Stripe not configured" }, 400);
+  }
+
+  try {
+    const intent = await stripe.paymentIntents.retrieve(body.payment_intent_id, {
+      stripeAccount: merchant.stripeAccountId,
+    });
+    if (intent.status !== "succeeded") {
+      return c.json(
+        {
+          error: "Payment Required",
+          message: `PaymentIntent status: ${intent.status}`,
+        },
+        402,
+      );
+    }
+    if (intent.metadata?.quote_id !== row.id) {
+      // Payment intent belongs to a different quote — reject.
+      return c.json({ error: "Forbidden", message: "PaymentIntent mismatch" }, 403);
+    }
+  } catch (err) {
+    console.error("[quotes] mark-paid: Stripe retrieve failed", err);
+    return c.json({ error: "Internal Server Error" }, 500);
+  }
+
+  const now = new Date();
+  await db
+    .update(treatmentQuotes)
+    .set({ status: "paid", paidAt: now, updatedAt: now })
+    .where(eq(treatmentQuotes.id, row.id));
+  if (row.convertedBookingId) {
+    await db
+      .update(bookings)
+      .set({ paymentStatus: "paid", updatedAt: now })
+      .where(eq(bookings.id, row.convertedBookingId));
+    // Fire booking_confirmation so client + merchant get the usual notification.
+    await addJob("notifications", "booking_confirmation", {
+      booking_id: row.convertedBookingId,
+    }).catch((err: unknown) => {
+      console.error("[quotes] failed to enqueue booking_confirmation", err);
+    });
+  }
+
+  return c.json({ quote: { id: row.id, status: "paid" } });
 });
 
 // ─── Expired quote sweeper (exported for cron) ────────────────────────────────
