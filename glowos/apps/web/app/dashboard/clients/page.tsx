@@ -360,16 +360,19 @@ function ClientDetailDrawer({
                       <div className="space-y-1">
                         {pkg.sessions?.map((s: any) => (
                           <div key={s.id} className="flex items-center justify-between text-xs py-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
-                              <span className="text-grey-75">Session {s.sessionNumber}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
+                              <span className="text-grey-75 truncate">
+                                {s.serviceName ?? `Session ${s.sessionNumber}`}
+                                {s.serviceName ? ` · #${s.sessionNumber}` : ''}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-shrink-0">
                               <span className="text-grey-45 capitalize">{s.status}</span>
                               {s.status === 'pending' || s.status === 'booked' ? (
                                 <button
                                   onClick={async () => {
-                                    if (!confirm(`Mark Session ${s.sessionNumber} as completed?`)) return;
+                                    if (!confirm(`Mark ${s.serviceName ?? `Session ${s.sessionNumber}`} as completed?`)) return;
                                     try {
                                       await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
                                         method: 'PUT',
