@@ -476,29 +476,56 @@ export default function PackagesPage() {
               </p>
             </div>
             <div className="p-6 space-y-4">
-              {/* Client search */}
+              {/* Client search — collapses to a selected-chip once a client
+                  is picked so the listbox doesn't linger. "Change" re-opens
+                  the search for picking a different client. */}
               <div>
                 <label className="block text-xs font-medium text-grey-75 mb-1">Client</label>
-                <input
-                  type="text"
-                  value={clientSearch}
-                  onChange={e => setClientSearch(e.target.value)}
-                  placeholder="Search by name, phone, or email..."
-                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 mb-2"
-                />
-                <select
-                  value={assignClientId}
-                  onChange={e => setAssignClientId(e.target.value)}
-                  className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
-                  size={Math.min(filteredClients.length + 1, 6)}
-                >
-                  <option value="">Select a client...</option>
-                  {filteredClients.slice(0, 50).map(c => (
-                    <option key={c.id} value={c.client?.id ?? c.clientId}>
-                      {c.client?.name ?? 'Unknown'} — {c.client?.phone ?? ''}
-                    </option>
-                  ))}
-                </select>
+                {assignClientId ? (
+                  (() => {
+                    const selected = filteredClients.find(
+                      (c) => (c.client?.id ?? c.clientId) === assignClientId,
+                    );
+                    const label = selected
+                      ? `${selected.client?.name ?? 'Unknown'} — ${selected.client?.phone ?? ''}`
+                      : assignClientId;
+                    return (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-tone-sage/30 bg-tone-sage/5 px-3 py-2 text-sm">
+                        <span className="text-tone-ink truncate">{label}</span>
+                        <button
+                          type="button"
+                          onClick={() => setAssignClientId('')}
+                          className="text-xs text-tone-sage font-medium hover:underline shrink-0"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={clientSearch}
+                      onChange={e => setClientSearch(e.target.value)}
+                      placeholder="Search by name, phone, or email..."
+                      className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 mb-2"
+                    />
+                    <select
+                      value={assignClientId}
+                      onChange={e => setAssignClientId(e.target.value)}
+                      className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
+                      size={Math.min(filteredClients.length + 1, 6)}
+                    >
+                      <option value="">Select a client...</option>
+                      {filteredClients.slice(0, 50).map(c => (
+                        <option key={c.id} value={c.client?.id ?? c.clientId}>
+                          {c.client?.name ?? 'Unknown'} — {c.client?.phone ?? ''}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
 
               {/* Price paid */}
