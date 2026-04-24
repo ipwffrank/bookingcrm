@@ -67,9 +67,6 @@ export function BookingForm(props: BookingFormProps) {
 
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
-      if (services[0] && staffList[0]) {
-        setRows([defaultRow(services[0], staffList[0])]);
-      }
       const token = localStorage.getItem('access_token');
       apiFetch('/merchant/packages', { headers: { Authorization: `Bearer ${token}` } })
         .then((data) => {
@@ -126,6 +123,18 @@ export function BookingForm(props: BookingFormProps) {
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, props.bookingId, router]);
+
+  // Seed a default service row as soon as services + staff are both available.
+  // Runs on mount AND whenever services/staffList arrive async after mount —
+  // previously the row was only set if both were ready at the very first
+  // render, which broke the pre-book dialog (and walk-in under slow network).
+  useEffect(() => {
+    if (mode === 'edit') return;
+    if (rows.length > 0) return;
+    if (!services[0] || !staffList[0]) return;
+    setRows([defaultRow(services[0], staffList[0])]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, services, staffList, rows.length]);
 
   function defaultRow(svc: ServiceOption, st: StaffOption): ServiceRowState {
     // Walk-in: default to "now" (someone standing at the counter).
