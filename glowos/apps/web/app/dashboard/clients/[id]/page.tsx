@@ -538,8 +538,8 @@ export default function ClientProfilePage() {
                           'bg-grey-30'
                         }`} />
                         <span className="text-grey-75 truncate">
-                          Session {s.sessionNumber}
-                          {s.serviceName ? ` · ${s.serviceName}` : ''}
+                          {s.serviceName ?? `Session ${s.sessionNumber}`}
+                          {s.serviceName ? ` · #${s.sessionNumber}` : ''}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -551,7 +551,7 @@ export default function ClientProfilePage() {
                         {(s.status === 'pending' || s.status === 'booked') && (
                           <button
                             onClick={async () => {
-                              if (!confirm(`Mark Session ${s.sessionNumber} as completed?`)) return;
+                              if (!confirm(`Mark ${s.serviceName ?? `Session ${s.sessionNumber}`} as completed?`)) return;
                               try {
                                 await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
                                   method: 'PUT', body: JSON.stringify({}),

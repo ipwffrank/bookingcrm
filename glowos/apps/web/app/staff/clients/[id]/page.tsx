@@ -366,16 +366,19 @@ export default function StaffClientProfilePage() {
                 <div className="space-y-1.5">
                   {pkg.sessions?.map((s: any) => (
                     <div key={s.id} className="flex items-center justify-between text-xs py-1 border-b border-grey-5 last:border-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
-                        <span className="text-grey-75">Session {s.sessionNumber}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
+                        <span className="text-grey-75 truncate">
+                          {s.serviceName ?? `Session ${s.sessionNumber}`}
+                          {s.serviceName ? ` · #${s.sessionNumber}` : ''}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-grey-45 capitalize">{s.status}{s.completedAt ? ` · ${new Date(s.completedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}` : ''}</span>
                         {(s.status === 'pending' || s.status === 'booked') && (
                           <button
                             onClick={async () => {
-                              if (!confirm(`Mark Session ${s.sessionNumber} as completed?`)) return;
+                              if (!confirm(`Mark ${s.serviceName ?? `Session ${s.sessionNumber}`} as completed?`)) return;
                               try {
                                 await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
                                   method: 'PUT', body: JSON.stringify({}),
