@@ -211,7 +211,13 @@ staffPortalRouter.get("/top-vip-clients", async (c) => {
 
   const rows = await db
     .select({
-      clientId: clients.id,
+      // The /staff/clients and /merchant/clients/:id endpoints both key off
+      // client_profile.id (a per-merchant relationship row), not the global
+      // clients.id. Returning profileId here keeps the staff dashboard's
+      // links consistent with how the rest of the staff portal navigates
+      // — clicking a row goes to /staff/clients/<profileId> which is what
+      // the detail page expects.
+      profileId: clientProfiles.id,
       name: clients.name,
       phone: clients.phone,
       vipTier: clientProfiles.vipTier,
@@ -242,7 +248,7 @@ staffPortalRouter.get("/top-vip-clients", async (c) => {
 
   return c.json({
     clients: rows.map((r) => ({
-      clientId: r.clientId,
+      profileId: r.profileId,
       name: r.name,
       phone: r.phone,
       vipTier: r.vipTier,
