@@ -29,6 +29,7 @@ import { waitlistRouter, merchantWaitlistRouter } from "./routes/waitlist.js";
 import { superRouter } from "./routes/super.js";
 import { merchantIpay88Router, publicIpay88Router } from "./routes/ipay88.js";
 import { merchantQuotesRouter, publicQuotesRouter } from "./routes/quotes.js";
+import { auditImpersonatedWrites } from "./middleware/impersonation-audit.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
@@ -45,6 +46,11 @@ app.use(
     credentials: true,
   })
 );
+
+// Auto-log every write performed by an impersonating superadmin. Mounted at
+// the /merchant/* prefix because that's where every admin action lives; the
+// middleware itself no-ops unless requireMerchant later sets impersonating=true.
+app.use("/merchant/*", auditImpersonatedWrites);
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
