@@ -94,41 +94,31 @@ export default function LandingPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
 
-              {/* Command Center — wide */}
-              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded flex flex-col justify-between min-h-[320px] md:min-h-[480px] shadow-sm">
-                <div>
-                  <span
-                    className="material-symbols-outlined text-secondary mb-10 block text-4xl"
-                    style={{ fontVariationSettings: "'opsz' 48" }}
-                  >
-                    space_dashboard
-                  </span>
-                  <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Command Center</h3>
-                  <p className="font-sans text-fluid-body text-on-surface-variant max-w-sm mb-8">
-                    Revenue, no-shows, schedule utilisation, top clients—one screen, no spreadsheets. Know exactly where the money is and where it&apos;s leaking.
-                  </p>
-                </div>
-                <div className="pt-10 border-t border-outline-variant/30 flex gap-6 sm:gap-12 lg:gap-20">
-                  <div className="flex flex-col gap-1">
-                    <div className="label-luxury text-secondary mb-1">Clients Today</div>
-                    <div className="font-serif text-fluid-h3 text-primary">24</div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <div className="label-luxury text-secondary mb-1">Today&apos;s Revenue</div>
-                    <div className="font-serif text-fluid-h3 text-primary">$12.4k</div>
-                  </div>
-                </div>
+              {/* Command Center — wide. All four cards share the same
+                  top-aligned icon → title → paragraph rhythm so the grid
+                  reads consistently regardless of which card is wide vs
+                  narrow. Fake "24 / $12.4k" stats removed — the showcase
+                  shouldn't claim numbers it can't substantiate. */}
+              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded min-h-[280px] md:min-h-[400px] shadow-sm">
+                <span
+                  className="material-symbols-outlined text-secondary mb-10 block text-4xl"
+                  style={{ fontVariationSettings: "'opsz' 48" }}
+                >
+                  space_dashboard
+                </span>
+                <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Command Center</h3>
+                <p className="font-sans text-fluid-body text-on-surface-variant max-w-lg">
+                  Revenue, no-shows, schedule utilisation, top clients—one screen, no spreadsheets. Know exactly where the money is and where it&apos;s leaking.
+                </p>
               </div>
 
               {/* Smart Scheduling — narrow, dark */}
-              <div className="md:col-span-4 bg-primary text-on-primary p-8 sm:p-10 lg:p-16 rounded flex flex-col justify-between min-h-[320px] md:min-h-[480px]">
+              <div className="md:col-span-4 bg-primary text-on-primary p-8 sm:p-10 lg:p-16 rounded min-h-[280px] md:min-h-[400px]">
                 <span className="material-symbols-outlined text-primary-fixed/60 mb-10 block text-4xl">event_upcoming</span>
-                <div>
-                  <h3 className="font-serif italic text-fluid-h3 mb-6">Smart Scheduling</h3>
-                  <p className="font-sans text-on-primary-container text-fluid-body opacity-90">
-                    Empty slots cost you $200/hour. GlowOS fills cancellations automatically and lets your best clients book 24/7—even while you sleep.
-                  </p>
-                </div>
+                <h3 className="font-serif italic text-fluid-h3 mb-6">Smart Scheduling</h3>
+                <p className="font-sans text-on-primary-container text-fluid-body opacity-90">
+                  Empty slots are costly. GlowOS fills cancellations automatically and lets your best clients book 24/7—even while you sleep.
+                </p>
               </div>
 
               {/* Client Portfolios — narrow */}
@@ -141,14 +131,12 @@ export default function LandingPage() {
               </div>
 
               {/* Revenue Ops — wide */}
-              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded flex items-center gap-16 min-h-[280px] md:min-h-[400px] shadow-sm">
-                <div className="flex-1">
-                  <span className="material-symbols-outlined text-secondary mb-10 block text-4xl">payments</span>
-                  <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Revenue Ops</h3>
-                  <p className="font-sans text-on-surface-variant text-fluid-body max-w-lg">
-                    Outstanding invoices followed up. Package renewals prompted at the right moment. Deposits collected before no-shows happen, not after.
-                  </p>
-                </div>
+              <div className="md:col-span-8 bg-surface-container-lowest p-8 sm:p-10 lg:p-16 rounded min-h-[280px] md:min-h-[400px] shadow-sm">
+                <span className="material-symbols-outlined text-secondary mb-10 block text-4xl">payments</span>
+                <h3 className="font-serif italic text-fluid-h3 text-primary mb-6">Revenue Ops</h3>
+                <p className="font-sans text-on-surface-variant text-fluid-body max-w-lg">
+                  Outstanding invoices followed up. Package renewals prompted at the right moment. Deposits collected before no-shows happen, not after.
+                </p>
               </div>
 
             </div>
