@@ -271,8 +271,7 @@ function ServiceModal({
               <span className="text-sm text-grey-75">
                 Show this service on the public booking page
                 <span className="block text-xs text-grey-60 mt-0.5">
-                  Uncheck for package-only add-ons (e.g. &ldquo;Nail art per nail&rdquo;) that only
-                  make sense bundled with another service.
+                  Uncheck for package-only add-ons that only make sense bundled with another service.
                 </span>
               </span>
             </label>
