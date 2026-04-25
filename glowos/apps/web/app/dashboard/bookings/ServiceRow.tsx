@@ -215,21 +215,43 @@ export function ServiceRow({
         </p>
       )}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          {eligiblePackages.length > 0 && (
-            <button
-              type="button"
-              onClick={togglePackage}
-              disabled={Boolean(row.useNewPackage)}
-              className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
-                row.usePackage
-                  ? 'bg-tone-ink text-white border-tone-ink'
-                  : 'bg-tone-surface text-tone-sage border-tone-sage/30 hover:bg-tone-sage/10'
-              }`}
-            >
-              {row.usePackage ? '✓ Using package' : 'Use package'}
-            </button>
-          )}
+        <div className="flex items-center gap-1 flex-wrap">
+          {eligiblePackages.length > 0 && (() => {
+            // When the row is using a package, surface the package's name and
+            // remaining session count so staff know what they're consuming
+            // before clicking Save. The figures come from the parent's
+            // activePackages payload which the backend recomputes after each
+            // save — the visible numbers therefore decrement automatically
+            // once the booking is created and the page refetches.
+            const activePkg = row.usePackage
+              ? activePackages.find((p) => p.id === row.usePackage!.clientPackageId) ?? null
+              : eligiblePackages[0]?.pkg ?? null;
+            const remaining = activePkg
+              ? activePkg.sessionsTotal - activePkg.sessionsUsed
+              : 0;
+            const pkgName = activePkg?.packageName ?? 'package';
+            const shortName =
+              pkgName.length > 22 ? pkgName.slice(0, 20).trimEnd() + '…' : pkgName;
+            return (
+              <button
+                type="button"
+                onClick={togglePackage}
+                disabled={Boolean(row.useNewPackage)}
+                title={
+                  row.usePackage
+                    ? `${pkgName} — ${remaining} of ${activePkg?.sessionsTotal ?? 0} sessions remaining (this booking will use 1)`
+                    : `Redeem from ${pkgName} — ${remaining} sessions remaining`
+                }
+                className={`px-2 py-1 rounded-full text-xs font-medium border disabled:opacity-40 ${
+                  row.usePackage
+                    ? 'bg-tone-ink text-white border-tone-ink'
+                    : 'bg-tone-surface text-tone-sage border-tone-sage/30 hover:bg-tone-sage/10'
+                }`}
+              >
+                {row.usePackage ? `✓ Using ${shortName} · ${remaining} left` : 'Use package'}
+              </button>
+            );
+          })()}
           {sellPackageTemplate && soldQuantityForService > 0 && (
             <button
               type="button"
