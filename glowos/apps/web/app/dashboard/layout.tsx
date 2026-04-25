@@ -318,9 +318,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-tone-surface-warm flex font-manrope">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — hidden when printing so PDF exports are clean */}
       <aside
-        className={`hidden lg:flex flex-col bg-tone-surface border-r border-grey-15 fixed inset-y-0 left-0 z-30 transition-all duration-200 ${
+        className={`hidden lg:flex flex-col bg-tone-surface border-r border-grey-15 fixed inset-y-0 left-0 z-30 transition-all duration-200 print:hidden ${
           sidebarCollapsed ? 'w-14' : 'w-60'
         }`}
       >
@@ -348,14 +348,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main content — left margin reset to 0 when printing so the page
+          uses the full PDF width instead of leaving a sidebar gutter. */}
       <div
-        className={`flex-1 flex flex-col min-h-screen transition-all duration-200 ${
+        className={`flex-1 flex flex-col min-h-screen transition-all duration-200 print:!ml-0 ${
           sidebarCollapsed ? 'lg:ml-14' : 'lg:ml-60'
         }`}
       >
-        {/* Top bar (mobile only) */}
-        <header className="lg:hidden bg-tone-surface border-b border-grey-15 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+        {/* Top bar (mobile only) — hidden when printing */}
+        <header className="lg:hidden bg-tone-surface border-b border-grey-15 px-4 py-3 flex items-center justify-between sticky top-0 z-20 print:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-md text-grey-60 hover:bg-grey-15"

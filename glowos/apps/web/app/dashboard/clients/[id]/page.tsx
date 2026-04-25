@@ -369,10 +369,10 @@ export default function ClientProfilePage() {
   const past     = recent_bookings.filter(e => new Date(e.booking.startTime) <  now);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-manrope">
+    <div id="client-profile-print-root" className="max-w-3xl mx-auto space-y-6 font-manrope">
 
       {/* ── Back nav ── */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 print:hidden">
         <Link href="/dashboard/clients" className="flex items-center gap-1.5 text-xs text-grey-60 hover:text-grey-90 transition-colors">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/></svg>
           All Clients
@@ -420,14 +420,27 @@ export default function ClientProfilePage() {
               )}
             </div>
           </div>
-          {/* New booking button */}
-          <Link
-            href="/dashboard"
-            className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-            New Booking
-          </Link>
+          {/* Action buttons — hidden when printing so the exported PDF is clean */}
+          <div className="shrink-0 flex items-center gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-2 bg-tone-surface border border-grey-15 text-grey-90 text-sm font-medium rounded-lg hover:bg-grey-5 transition-colors"
+              title="Open the browser's print dialog — choose 'Save as PDF' to export."
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" />
+              </svg>
+              Export PDF
+            </button>
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+              New Booking
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -490,7 +503,7 @@ export default function ClientProfilePage() {
           <h2 className="text-sm font-semibold text-tone-ink">Treatment Log</h2>
           <button
             onClick={() => setShowAddNote(true)}
-            className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors"
+            className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors print:hidden"
           >
             + Add Entry
           </button>
@@ -683,7 +696,7 @@ export default function ClientProfilePage() {
           <h2 className="text-sm font-semibold text-tone-ink">Treatment Quotes</h2>
           <button
             onClick={() => setShowIssueQuote((v) => !v)}
-            className="text-xs text-tone-sage font-medium hover:underline"
+            className="text-xs text-tone-sage font-medium hover:underline print:hidden"
           >
             {showIssueQuote ? 'Cancel' : '+ Issue Quote'}
           </button>
