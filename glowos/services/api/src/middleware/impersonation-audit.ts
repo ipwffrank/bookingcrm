@@ -25,22 +25,13 @@ export async function auditImpersonatedWrites(c: AppContext, next: Next) {
     thrown = e;
   }
 
-  if (isWrite && isMerchantPath) {
-    const impersonating = c.get("impersonating");
+  if (isWrite && isMerchantPath && c.get("impersonating")) {
     const actorEmail = c.get("actorEmail");
     const actorUserId = c.get("actorUserId");
     const targetMerchantId = c.get("merchantId");
     const status = c.res?.status;
 
-    // Diagnostic line: log every write that flows through this middleware so
-    // Railway logs reveal whether the middleware fires + whether the
-    // impersonating flag was set on the context. Remove once the audit-write
-    // pipeline is confirmed working in production.
-    console.log(
-      `[impersonation-audit] ${method} ${path} status=${status} impersonating=${!!impersonating} actorEmail=${actorEmail ?? "(none)"} merchantId=${targetMerchantId ?? "(none)"}`,
-    );
-
-    if (impersonating && actorEmail) {
+    if (actorEmail) {
       try {
         await db.insert(superAdminAuditLog).values({
           actorUserId: actorUserId ?? null,
