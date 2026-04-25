@@ -576,20 +576,27 @@ function PurchaseWizard({
                 <p className="text-xs text-grey-60 italic">No slots available on this day. Try another date.</p>
               ) : (
                 <div className="grid grid-cols-3 gap-1.5">
-                  {slots.map((s) => (
-                    <button
-                      key={s.start_time}
-                      type="button"
-                      onClick={() => setSlot(s)}
-                      className={`rounded-lg border px-2 py-1.5 text-xs ${
-                        slot?.start_time === s.start_time
-                          ? 'border-tone-sage bg-tone-sage/10 text-tone-ink font-semibold'
-                          : 'border-grey-15 bg-tone-surface text-grey-75 hover:border-tone-sage/50'
-                      }`}
-                    >
-                      {timeLabel(s.start_time)}
-                    </button>
-                  ))}
+                  {slots.map((s) => {
+                    const isPast = new Date(s.start_time).getTime() <= Date.now();
+                    return (
+                      <button
+                        key={s.start_time}
+                        type="button"
+                        onClick={() => !isPast && setSlot(s)}
+                        disabled={isPast}
+                        title={isPast ? 'This time has already passed.' : undefined}
+                        className={`rounded-lg border px-2 py-1.5 text-xs ${
+                          slot?.start_time === s.start_time
+                            ? 'border-tone-sage bg-tone-sage/10 text-tone-ink font-semibold'
+                            : isPast
+                              ? 'border-grey-15 bg-grey-5 text-grey-45 line-through cursor-not-allowed'
+                              : 'border-grey-15 bg-tone-surface text-grey-75 hover:border-tone-sage/50'
+                        }`}
+                      >
+                        {timeLabel(s.start_time)}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

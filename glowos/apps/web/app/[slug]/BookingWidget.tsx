@@ -1114,46 +1114,61 @@ export default function BookingWidget({
                       )}
                     </div>
                   )}
-                  {!slotsLoading && slots.length > 0 && (
-                    <>
-                      <p className="text-xs text-grey-60 mb-3 font-medium uppercase tracking-wide">
-                        {slots.length} time{slots.length !== 1 ? 's' : ''} available
-                      </p>
-                      {confirmError && !leaseId && (
-                        <div className="mb-3 rounded-lg bg-semantic-danger/5 border border-semantic-danger/20 px-3 py-2 text-sm text-semantic-danger">
-                          {confirmError}
+                  {!slotsLoading && slots.length > 0 && (() => {
+                    // When the customer picks today, the API still returns
+                    // slots that started earlier in the day. Disable those
+                    // (with strikethrough) so they remain visible — gives
+                    // the customer a sense of the day's pattern — but can't
+                    // be tapped, since you can't book a 9am after 11am.
+                    const nowMs = Date.now();
+                    const futureSlots = slots.filter(
+                      (s) => new Date(s.start_time).getTime() > nowMs,
+                    );
+                    return (
+                      <>
+                        <p className="text-xs text-grey-60 mb-3 font-medium uppercase tracking-wide">
+                          {futureSlots.length} time{futureSlots.length !== 1 ? 's' : ''} available
+                        </p>
+                        {confirmError && !leaseId && (
+                          <div className="mb-3 rounded-lg bg-semantic-danger/5 border border-semantic-danger/20 px-3 py-2 text-sm text-semantic-danger">
+                            {confirmError}
+                          </div>
+                        )}
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {slots.map((slot) => {
+                            const isSelected =
+                              selectedSlot?.start_time === slot.start_time &&
+                              selectedSlot?.staff_id === slot.staff_id;
+                            const isPast = new Date(slot.start_time).getTime() <= nowMs;
+                            return (
+                              <button
+                                key={`${slot.start_time}-${slot.staff_id}`}
+                                onClick={() => !isPast && handleSlotSelect(slot)}
+                                disabled={leaseLoading || isPast}
+                                title={isPast ? 'This time has already passed.' : undefined}
+                                className={`rounded-xl py-2.5 px-2 text-sm font-semibold border-2 transition-all ${
+                                  isSelected
+                                    ? 'bg-tone-ink text-white border-tone-ink shadow-md'
+                                    : isPast
+                                      ? 'border-grey-15 text-grey-45 line-through cursor-not-allowed bg-grey-5'
+                                      : 'border-grey-15 text-grey-75 hover:border-tone-sage hover:bg-tone-sage/10'
+                                } disabled:cursor-not-allowed`}
+                              >
+                                {leaseLoading && isSelected ? (
+                                  <svg className="animate-spin h-4 w-4 mx-auto" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                ) : (
+                                  formatTime(slot.start_time)
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      )}
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {slots.map((slot) => {
-                          const isSelected =
-                            selectedSlot?.start_time === slot.start_time &&
-                            selectedSlot?.staff_id === slot.staff_id;
-                          return (
-                            <button
-                              key={`${slot.start_time}-${slot.staff_id}`}
-                              onClick={() => handleSlotSelect(slot)}
-                              disabled={leaseLoading}
-                              className={`rounded-xl py-2.5 px-2 text-sm font-semibold border-2 transition-all ${
-                                isSelected
-                                  ? 'bg-tone-ink text-white border-tone-ink shadow-md'
-                                  : 'border-grey-15 text-grey-75 hover:border-tone-sage hover:bg-tone-sage/10'
-                              } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              {leaseLoading && isSelected ? (
-                                <svg className="animate-spin h-4 w-4 mx-auto" viewBox="0 0 24 24" fill="none">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                </svg>
-                              ) : (
-                                formatTime(slot.start_time)
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
