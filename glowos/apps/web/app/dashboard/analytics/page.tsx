@@ -1281,9 +1281,31 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-bold text-tone-ink">Analytics</h1>
           <p className="text-sm text-grey-60 mt-0.5">Business performance overview</p>
+          {/* Period label only renders when printing — replaces the interactive
+              period selector with a static caption so the PDF reflects which
+              window the data covers. */}
+          <p className="hidden print:block text-sm text-grey-75 mt-1">
+            Period: <strong className="text-tone-ink capitalize">{period === '7d' ? 'Last 7 days' : period === '30d' ? 'Last 30 days' : 'Last 90 days'}</strong>
+            <span className="text-grey-60 ml-2">
+              · Generated {new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          </p>
         </div>
-        <div className="sm:w-72">
-          <PeriodSelector period={period} onChange={handlePeriodChange} />
+        <div className="flex items-center gap-2 print:hidden">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-2 bg-tone-surface border border-grey-15 text-grey-90 text-sm font-medium rounded-lg hover:bg-grey-5 transition-colors"
+            title="Open the browser's print dialog — choose 'Save as PDF' to export."
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" />
+            </svg>
+            Export PDF
+          </button>
+          <div className="sm:w-72">
+            <PeriodSelector period={period} onChange={handlePeriodChange} />
+          </div>
         </div>
       </div>
 
