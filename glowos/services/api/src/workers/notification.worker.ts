@@ -129,17 +129,30 @@ async function logNotification(params: {
 }
 
 /**
- * Format a booking date for display.
+ * Format a booking date for display in the merchant's local timezone.
+ *
+ * Critical: Railway runs in UTC, so the date-fns `format()` was rendering
+ * 3pm-SGT bookings as 7am (the UTC equivalent). Intl.DateTimeFormat with
+ * an explicit timeZone correctly converts before formatting. We default to
+ * Asia/Singapore (the schema default) but accept any IANA tz so MY/other
+ * merchants render correctly when their merchant.timezone is passed.
  */
-function formatDate(date: Date): string {
-  return format(date, "d MMM yyyy");
+function formatDate(date: Date, timeZone = "Asia/Singapore"): string {
+  return new Intl.DateTimeFormat("en-SG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone,
+  }).format(date);
 }
 
-/**
- * Format a booking time for display.
- */
-function formatTime(date: Date): string {
-  return format(date, "h:mm a");
+function formatTime(date: Date, timeZone = "Asia/Singapore"): string {
+  return new Intl.DateTimeFormat("en-SG", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+  }).format(date);
 }
 
 // ─── Job handlers ──────────────────────────────────────────────────────────────
@@ -857,7 +870,7 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
     `Hi ${client.name ?? "there"}, thank you for visiting us!\n\n` +
     `*Service:* ${service.name}\n` +
     `*Amount:* S$${booking.priceSgd}\n` +
-    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" })}\n\n` +
+    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Singapore" })}\n\n` +
     `We hope to see you again soon! 🌟`;
 
   const sid = await sendWhatsApp(client.phone, receiptMessage);
@@ -881,7 +894,7 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
       merchantName: merchant.name,
       serviceName: service.name,
       dateStr: new Date(booking.startTime).toLocaleDateString("en-SG", {
-        day: "numeric", month: "long", year: "numeric",
+        day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Singapore",
       }),
       priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
       bookingUrl,
@@ -1592,7 +1605,14 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
       .where(eq(bookings.id, firstSession.bookingId))
       .limit(1);
     if (b) {
-      const when = format(b.booking.startTime, "EEE, d MMM 'at' h:mma");
+      // Format in SGT (or merchant.timezone if available) so the message
+      // doesn't render UTC time. See formatDate/formatTime above.
+      const when = `${new Intl.DateTimeFormat("en-SG", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        timeZone: "Asia/Singapore",
+      }).format(b.booking.startTime)} at ${formatTime(b.booking.startTime)}`;
       firstBookingLine = `\n📅 First session: ${b.service.name} with ${b.staffMember.name} — ${when}`;
       // Same signed-token cancel/reschedule link the booking_confirmation
       // handler uses, so package customers get the same self-service flow.
