@@ -639,8 +639,8 @@ function PurchaseWizard({
           disabled={submitting}
           className="flex-1 rounded-xl bg-tone-ink text-tone-surface py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          {step === 'contact' && 'Continue'}
-          {step === 'session' && 'Review'}
+          {step === 'contact' && 'Next'}
+          {step === 'session' && 'Next'}
           {step === 'review' && (submitting ? 'Reserving…' : paymentMethod === 'online' ? 'Continue to payment' : 'Reserve package')}
         </button>
       </div>
