@@ -28,6 +28,7 @@ interface Merchant {
     late_cancellation_refund_pct: number;
     no_show_charge: NoShowCharge;
   } | null;
+  gbpBookingLinkConnectedAt: string | null;
 }
 
 interface ConnectStatus {
@@ -864,7 +865,7 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
       </div>
 
       {/* Connect to Google card */}
-      <ConnectToGoogleCard bookingUrl={bookingUrl} merchantName={merchant.name} />
+      <ConnectToGoogleCard merchant={merchant} bookingUrl={bookingUrl} />
 
       {/* QR Code Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -953,8 +954,11 @@ const SAGE = '#456466';
 const SAGE_RGB = '69, 100, 102';
 const INK_RGB = '26, 35, 19';
 
-function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string; merchantName: string }) {
+function ConnectToGoogleCard({ merchant, bookingUrl }: { merchant: Merchant; bookingUrl: string }) {
   const [copied, setCopied] = useState(false);
+  const [connectedAt, setConnectedAt] = useState<string | null>(merchant.gbpBookingLinkConnectedAt);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleCopy() {
     void navigator.clipboard.writeText(bookingUrl).then(() => {
@@ -962,6 +966,30 @@ function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string;
       setTimeout(() => setCopied(false), 2000);
     });
   }
+
+  async function handleToggleConnected(connected: boolean) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const data = (await apiFetch('/merchant/google-booking-link/connected', {
+        method: 'PATCH',
+        body: JSON.stringify({ connected }),
+      })) as { gbp_booking_link_connected_at: string | null };
+      setConnectedAt(data.gbp_booking_link_connected_at);
+    } catch (e) {
+      setSaveError(e instanceof ApiError ? e.message : 'Could not update status');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const connectedLabel = connectedAt
+    ? new Date(connectedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
 
   const steps = [
     {
@@ -979,7 +1007,7 @@ function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string;
     },
     {
       title: 'Verify it works',
-      body: `Search "${merchantName}" on Google. The button should deep-link straight to your GlowOS booking page.`,
+      body: `Search "${merchant.name}" on Google. The button should deep-link straight to your GlowOS booking page.`,
     },
   ];
 
@@ -1001,7 +1029,17 @@ function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string;
           </svg>
         </div>
         <div className="flex-1">
-          <h3 className="text-sm font-semibold" style={{ color: '#1a2313' }}>Connect to Google</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-semibold" style={{ color: '#1a2313' }}>Connect to Google</h3>
+            {connectedLabel && (
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.16)`, color: SAGE }}
+              >
+                Connected · {connectedLabel}
+              </span>
+            )}
+          </div>
           <p className="text-xs mt-0.5" style={{ color: `rgba(${INK_RGB}, 0.6)` }}>
             Add a &ldquo;Book online&rdquo; button to your Google Business Profile. Customers can book directly from Google Search and Maps in 4 steps.
           </p>
@@ -1074,8 +1112,54 @@ function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string;
         ))}
       </ol>
 
+      <div
+        className="mt-5 pt-4 flex items-center gap-3 flex-wrap"
+        style={{ borderTop: `1px solid rgba(${INK_RGB}, 0.08)` }}
+      >
+        {connectedAt ? (
+          <>
+            <span className="text-xs" style={{ color: `rgba(${INK_RGB}, 0.65)` }}>
+              You&rsquo;ve confirmed this is connected. Mark as not connected if you&rsquo;ve removed the link.
+            </span>
+            <button
+              onClick={() => handleToggleConnected(false)}
+              disabled={saving}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'transparent',
+                color: `rgba(${INK_RGB}, 0.7)`,
+                border: `1px solid rgba(${INK_RGB}, 0.18)`,
+              }}
+            >
+              {saving ? 'Updating…' : 'Mark as not connected'}
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="text-xs" style={{ color: `rgba(${INK_RGB}, 0.65)` }}>
+              Done? Mark as connected so it shows up in your dashboard summary.
+            </span>
+            <button
+              onClick={() => handleToggleConnected(true)}
+              disabled={saving}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: SAGE,
+                color: '#ffffff',
+                border: `1px solid ${SAGE}`,
+              }}
+            >
+              {saving ? 'Updating…' : 'Mark as connected'}
+            </button>
+          </>
+        )}
+        {saveError && (
+          <span className="text-xs" style={{ color: '#b8403a' }}>{saveError}</span>
+        )}
+      </div>
+
       <details
-        className="mt-5 pt-4 group"
+        className="mt-4 pt-4 group"
         style={{ borderTop: `1px solid rgba(${INK_RGB}, 0.08)` }}
       >
         <summary

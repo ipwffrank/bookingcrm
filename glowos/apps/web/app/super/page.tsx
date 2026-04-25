@@ -13,6 +13,7 @@ interface Overview {
   totalBookings: number;
   totalRevenue: string;
   totalClients: number;
+  gbpConnected: number;
 }
 
 const PERIOD_LABEL: Record<Period, string> = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days' };
@@ -75,7 +76,16 @@ export default function SuperOverviewPage() {
             <Card label="Active merchants" value={`${data.activeMerchants} / ${data.totalMerchants}`} />
             <Card label="New merchants" value={data.newMerchants.toLocaleString()} />
             <Card label="Total clients (all-time)" value={data.totalClients.toLocaleString()} />
-            <Card label="Total merchants" value={data.totalMerchants.toLocaleString()} />
+            <Card
+              label="Connected to Google"
+              value={
+                data.totalMerchants > 0
+                  ? `${data.gbpConnected} / ${data.totalMerchants} · ${Math.round(
+                      (data.gbpConnected / data.totalMerchants) * 100,
+                    )}%`
+                  : '0 / 0'
+              }
+            />
           </div>
         </>
       ) : null}

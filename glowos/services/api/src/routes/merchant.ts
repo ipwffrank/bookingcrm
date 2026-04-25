@@ -139,4 +139,45 @@ merchantRouter.post(
   }
 );
 
+// ─── PATCH /merchant/google-booking-link/connected ────────────────────────────
+// Self-serve toggle for the merchant to confirm they've pasted their public
+// booking URL into their Google Business Profile's Booking link field.
+// Powers the /super GBP-adoption stat. Stored as a timestamp rather than a
+// boolean so the /super card can show recency / mark stale connections.
+
+const gbpConnectedSchema = z.object({
+  connected: z.boolean(),
+});
+
+merchantRouter.patch(
+  "/google-booking-link/connected",
+  requireMerchant,
+  requireRole("owner", "manager"),
+  zValidator(gbpConnectedSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const body = c.get("body") as z.infer<typeof gbpConnectedSchema>;
+
+    const [updated] = await db
+      .update(merchants)
+      .set({
+        gbpBookingLinkConnectedAt: body.connected ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(merchants.id, merchantId))
+      .returning({
+        id: merchants.id,
+        gbpBookingLinkConnectedAt: merchants.gbpBookingLinkConnectedAt,
+      });
+
+    if (!updated) {
+      return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+    }
+
+    return c.json({
+      gbp_booking_link_connected_at: updated.gbpBookingLinkConnectedAt,
+    });
+  },
+);
+
 export { merchantRouter };

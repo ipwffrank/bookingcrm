@@ -50,6 +50,13 @@
       "when": 1777117840301,
       "tag": "0006_booking_pending_status_and_confirm_token",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1777129375919,
+      "tag": "0007_mean_molten_man",
+      "breakpoints": true
     }
   ]
 }

@@ -283,6 +283,11 @@ superRouter.get("/analytics/overview", async (c) => {
     .select({ totalClients: count() })
     .from(clients);
 
+  const [{ gbpConnected }] = await db
+    .select({ gbpConnected: count() })
+    .from(merchants)
+    .where(sql`${merchants.gbpBookingLinkConnectedAt} IS NOT NULL`);
+
   return c.json({
     period: parsed.data.period,
     totalMerchants,
@@ -291,6 +296,7 @@ superRouter.get("/analytics/overview", async (c) => {
     totalBookings: bookingTotals?.total ?? 0,
     totalRevenue: bookingTotals?.revenue ?? "0",
     totalClients,
+    gbpConnected,
   });
 });
 

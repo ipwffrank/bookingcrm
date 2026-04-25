@@ -1,0 +1,1 @@
+ALTER TABLE "merchants" ADD COLUMN "gbp_booking_link_connected_at" timestamp with time zone;

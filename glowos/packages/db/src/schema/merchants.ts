@@ -27,6 +27,11 @@ export const merchants = pgTable("merchants", {
     .default("SG")
     .$type<"SG" | "MY">(),
   gbpPlaceId: varchar("gbp_place_id", { length: 255 }),
+  // Set when the merchant confirms they've pasted the public booking URL into
+  // their Google Business Profile's Booking link field. Powers the /super GBP
+  // adoption stat — separate from gbpPlaceId, which is reserved for an
+  // eventual Reserve-with-Google partner integration.
+  gbpBookingLinkConnectedAt: timestamp("gbp_booking_link_connected_at", { withTimezone: true }),
   stripeAccountId: varchar("stripe_account_id", { length: 255 }),
   hitpayMerchantId: varchar("hitpay_merchant_id", { length: 255 }),
   // iPay88 gateway — primary option for MY merchants. Credentials stored as
