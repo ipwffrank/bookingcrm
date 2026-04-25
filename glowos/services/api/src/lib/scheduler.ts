@@ -4,31 +4,49 @@ import { config } from "./config.js";
 // ─── scheduleReminder ──────────────────────────────────────────────────────────
 
 /**
- * Queue an appointment reminder 24 hours before the booking start time.
- * If the booking is less than 24 hours away the reminder is skipped — it
- * would arrive after (or too close to) the appointment.
+ * Schedule the full confirmation-reminder cascade for a booking:
+ *   T−24h  appointment_reminder              — primary confirm prompt
+ *   T−12h  appointment_reminder_followup_12h — second nudge if still pending
+ *   T−2h   appointment_reminder_final_2h     — last call if still pending
+ *
+ * Each handler short-circuits if the booking is no longer pending (i.e. the
+ * customer has already confirmed) so the followups are silent for confirmed
+ * bookings. Walk-ins land as 'confirmed' from the start, so they never fire
+ * the followups regardless.
+ *
+ * Reminders whose send-time has already passed at scheduling time are
+ * silently skipped — useful for last-minute bookings ("walk-in scheduled
+ * for an hour from now").
  */
 export async function scheduleReminder(
   bookingId: string,
   bookingStartTime: Date
 ): Promise<void> {
   const now = Date.now();
-  const reminderAt = bookingStartTime.getTime() - 24 * 60 * 60 * 1000; // start - 24h
-  const delay = reminderAt - now;
+  const start = bookingStartTime.getTime();
 
-  if (delay <= 0) {
-    console.log("[Scheduler] Reminder skipped — booking is less than 24h away", {
+  const tiers: Array<{ jobName: string; offsetMs: number; label: string }> = [
+    { jobName: "appointment_reminder",              offsetMs: 24 * 60 * 60 * 1000, label: "T-24h" },
+    { jobName: "appointment_reminder_followup_12h", offsetMs: 12 * 60 * 60 * 1000, label: "T-12h" },
+    { jobName: "appointment_reminder_final_2h",     offsetMs:  2 * 60 * 60 * 1000, label: "T-2h"  },
+  ];
+
+  for (const tier of tiers) {
+    const sendAt = start - tier.offsetMs;
+    const delay = sendAt - now;
+    if (delay <= 0) {
+      console.log(`[Scheduler] ${tier.label} reminder skipped — already past send time`, {
+        bookingId,
+      });
+      continue;
+    }
+    await addJob("notifications", tier.jobName, { booking_id: bookingId }, { delay });
+    console.log(`[Scheduler] ${tier.label} reminder scheduled`, {
       bookingId,
+      jobName: tier.jobName,
+      sendAt: new Date(sendAt).toISOString(),
     });
-    return;
   }
-
-  await addJob("notifications", "appointment_reminder", { booking_id: bookingId }, { delay });
-  console.log("[Scheduler] Reminder scheduled", {
-    bookingId,
-    delayMs: delay,
-    sendAt: new Date(reminderAt).toISOString(),
-  });
 }
 
 // ─── scheduleReviewRequest ─────────────────────────────────────────────────────

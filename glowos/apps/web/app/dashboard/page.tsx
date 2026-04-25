@@ -242,6 +242,13 @@ function DashboardPageInner() {
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [flashBookingId, setFlashBookingId] = useState<string | null>(null);
   const [flashWaitlist, setFlashWaitlist] = useState(false);
+  // Tracks bookings the merchant has already seen confirm — used to fire the
+  // "appointment confirmed by client" banner only on transitions, not on
+  // every refetch.
+  const [seenConfirmedIds, setSeenConfirmedIds] = useState<Set<string> | null>(null);
+  const [confirmBanner, setConfirmBanner] = useState<
+    { clientName: string; serviceName: string; staffName: string; startTime: string } | null
+  >(null);
   const bookingRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const waitlistRef = useRef<HTMLDivElement | null>(null);
 
@@ -272,6 +279,32 @@ function DashboardPageInner() {
         (a, b) => new Date(a.booking.startTime).getTime() - new Date(b.booking.startTime).getTime()
       );
       setBookings(sorted);
+
+      // Detect pending → confirmed transitions since the last poll. Only fire
+      // a banner if the seen set is initialised (skip the very first load so
+      // we don't flash a banner for every already-confirmed booking on page
+      // mount). We pop the most recent transition; if multiple flipped at
+      // once we just show the first — fine for showcase scope.
+      const currentlyConfirmed = new Set(
+        sorted
+          .filter((r) => r.booking.status === 'confirmed')
+          .map((r) => r.booking.id),
+      );
+      setSeenConfirmedIds((prev) => {
+        if (prev === null) return currentlyConfirmed;
+        const newlyConfirmed = sorted.find(
+          (r) => r.booking.status === 'confirmed' && !prev.has(r.booking.id),
+        );
+        if (newlyConfirmed) {
+          setConfirmBanner({
+            clientName: newlyConfirmed.client.name ?? newlyConfirmed.client.phone ?? 'Client',
+            serviceName: newlyConfirmed.service.name,
+            staffName: newlyConfirmed.staffMember.name,
+            startTime: newlyConfirmed.booking.startTime,
+          });
+        }
+        return currentlyConfirmed;
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load bookings';
       if (err instanceof ApiError && err.status === 401) {
@@ -343,6 +376,18 @@ function DashboardPageInner() {
     void init();
   }, [date, router]);
 
+  // Poll for new client confirmations every 30s so the merchant sees the
+  // "appointment confirmed by client" banner without a manual refresh.
+  // Tab-visibility check skips the poll while the tab is hidden — saves
+  // requests + keeps Railway warm without burning extra cycles.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void fetchBookings();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchBookings]);
+
   async function handleAction(bookingId: string, action: 'check-in' | 'complete' | 'no-show') {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
@@ -379,6 +424,28 @@ function DashboardPageInner() {
 
   return (
     <>
+      {confirmBanner && (
+        <div className="mb-4 rounded-xl border border-tone-sage/30 bg-tone-sage/10 px-4 py-3 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="w-8 h-8 rounded-full bg-tone-sage/20 text-tone-sage flex items-center justify-center text-sm font-bold flex-shrink-0">
+            ✓
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-tone-ink">
+              {confirmBanner.clientName} just confirmed their appointment
+            </p>
+            <p className="text-xs text-grey-75 mt-0.5">
+              {confirmBanner.serviceName} · {confirmBanner.staffName} · {new Date(confirmBanner.startTime).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirmBanner(null)}
+            className="text-grey-60 hover:text-tone-ink text-xs font-medium flex-shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-tone-ink">Today&apos;s Bookings</h1>

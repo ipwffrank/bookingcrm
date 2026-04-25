@@ -357,6 +357,146 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
   console.log("[NotificationWorker] appointment_reminder handled", { bookingId, withConfirm: isPending });
 }
 
+// ─── Confirmation cascade followups ────────────────────────────────────────────
+//
+// Both followups short-circuit if the booking is no longer pending — once the
+// customer confirms, the cascade goes silent. They share the same body shape
+// as the T-24h reminder but with tighter time-pressure copy.
+
+async function handleAppointmentReminderFollowup(
+  bookingId: string,
+  windowLabel: "12h" | "2h",
+): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) return;
+  const { booking, merchant, service, staffMember, client } = row;
+  if (booking.status !== "pending") {
+    console.log("[NotificationWorker] cascade-followup skipped — already confirmed/terminal", {
+      bookingId,
+      windowLabel,
+      status: booking.status,
+    });
+    return;
+  }
+  if (!client.phone || !booking.confirmationToken) return;
+
+  const dateStr = formatDate(booking.startTime);
+  const timeStr = formatTime(booking.startTime);
+  const confirmUrl = `${config.frontendUrl}/confirm/${booking.confirmationToken}`;
+
+  const headline =
+    windowLabel === "12h"
+      ? `Heads up — your appointment at ${merchant.name} is in 12 hours.`
+      : `Final reminder — your appointment at ${merchant.name} is in 2 hours.`;
+
+  const cta =
+    windowLabel === "12h"
+      ? `Please confirm so we hold your slot → ${confirmUrl}`
+      : `Last chance to confirm → ${confirmUrl}`;
+
+  const message = [
+    headline,
+    `📅 ${dateStr} at ${timeStr}`,
+    `✂️ ${service.name} with ${staffMember.name}`,
+    ``,
+    cta,
+  ].join("\n");
+
+  const sid = await sendWhatsApp(client.phone, message);
+  await logNotification({
+    merchantId: merchant.id,
+    clientId: client.id,
+    bookingId: booking.id,
+    type: windowLabel === "12h" ? "appointment_reminder_followup_12h" : "appointment_reminder_final_2h",
+    channel: "whatsapp",
+    recipient: client.phone,
+    messageBody: message,
+    status: sid ? "sent" : "failed",
+    twilioSid: sid || undefined,
+  });
+  console.log(`[NotificationWorker] appointment_reminder_${windowLabel} handled`, { bookingId });
+}
+
+// ─── Merchant alert when client confirms ───────────────────────────────────────
+
+async function handleBookingConfirmedByClient(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) return;
+  const { booking, merchant, service, staffMember, client } = row;
+  const dateStr = formatDate(booking.startTime);
+  const timeStr = formatTime(booking.startTime);
+  const clientName = client.name ?? client.phone ?? "Client";
+
+  // Merchant WhatsApp
+  if (merchant.phone) {
+    const msg = [
+      `✅ ${clientName} just confirmed their appointment.`,
+      `📅 ${dateStr} at ${timeStr}`,
+      `✂️ ${service.name} with ${staffMember.name}`,
+    ].join("\n");
+    const sid = await sendWhatsApp(merchant.phone, msg);
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "booking_confirmed_by_client",
+      channel: "whatsapp",
+      recipient: merchant.phone,
+      messageBody: msg,
+      status: sid ? "sent" : "failed",
+      twilioSid: sid || undefined,
+    });
+  }
+
+  // Merchant email
+  if (merchant.email) {
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fcfaef;margin:0;padding:32px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="background:#1a2313;color:#fff;padding:24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin:0 0 8px;">Appointment confirmed by client</p>
+          <h1 style="font-size:20px;margin:0;">${merchant.name}</h1>
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 16px;color:#333;">
+            <strong>${clientName}</strong> confirmed their appointment.
+          </p>
+          <div style="border-top:1px solid #e8e4de;border-bottom:1px solid #e8e4de;padding:16px 0;font-size:14px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <span style="color:#888;">Service</span>
+              <span style="color:#111;font-weight:600;">${service.name}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <span style="color:#888;">Staff</span>
+              <span style="color:#111;">${staffMember.name}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#888;">When</span>
+              <span style="color:#111;">${dateStr} at ${timeStr}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </body></html>`;
+    const ok = await sendEmail({
+      to: merchant.email,
+      subject: `Appointment confirmed by ${clientName}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "booking_confirmed_by_client",
+      channel: "email",
+      recipient: merchant.email,
+      messageBody: `Confirmation alert for ${clientName} — ${service.name}`,
+      status: ok ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] booking_confirmed_by_client handled", { bookingId });
+}
+
 async function handleCancellationNotification(bookingId: string): Promise<void> {
   const row = await loadBookingWithDetails(bookingId);
   if (!row) {
@@ -1535,6 +1675,26 @@ export function createNotificationWorker(): Worker {
         }
         case "package_purchased": {
           await handlePackagePurchased(job.data as PackagePurchasedData);
+          break;
+        }
+        case "appointment_reminder_followup_12h": {
+          await handleAppointmentReminderFollowup(
+            (job.data as AppointmentReminderData).booking_id,
+            "12h",
+          );
+          break;
+        }
+        case "appointment_reminder_final_2h": {
+          await handleAppointmentReminderFollowup(
+            (job.data as AppointmentReminderData).booking_id,
+            "2h",
+          );
+          break;
+        }
+        case "booking_confirmed_by_client": {
+          await handleBookingConfirmedByClient(
+            (job.data as { booking_id: string }).booking_id,
+          );
           break;
         }
         case "waitlist_match": {
