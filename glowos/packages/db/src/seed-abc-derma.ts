@@ -17,6 +17,17 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { and, eq, inArray } from "drizzle-orm";
 import * as schema from "./schema/index.js";
+import dotenv from "dotenv";
+import path from "path";
+
+// Load DATABASE_URL from glowos/.env so the script "just runs" without an
+// inline env var. Try common cwds — the workspace root and `packages/db`.
+for (const candidate of [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "../../.env"),
+]) {
+  dotenv.config({ path: candidate });
+}
 
 const {
   merchants,
