@@ -164,7 +164,7 @@ export default function StaffClientProfilePage() {
   const past = recent_bookings.filter(e => new Date(e.booking.startTime) < now);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-manrope">
+    <div className="space-y-6 font-manrope">
 
       {/* Back nav */}
       <Link href="/staff/clients" className="inline-flex items-center gap-1.5 text-xs text-grey-60 hover:text-grey-90 transition-colors">

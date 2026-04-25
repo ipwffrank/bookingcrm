@@ -58,7 +58,7 @@ export default function StaffDashboard() {
   const showCollapsed = selectedPeriod !== null;
 
   return (
-    <div className="p-4 max-w-3xl mx-auto">
+    <div>
       <h1 className="text-lg font-semibold mb-1 text-tone-ink">
         Hi {today?.staffName ?? ''}
       </h1>

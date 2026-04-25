@@ -37,7 +37,7 @@ export default function StaffClientsPage() {
   }, [fetchClients, router]);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4 font-manrope">
+    <div className="space-y-4 font-manrope">
       <h1 className="text-xl font-semibold text-tone-ink">Clients</h1>
 
       <input
