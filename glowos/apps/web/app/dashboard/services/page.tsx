@@ -371,6 +371,7 @@ function ServiceModal({
 export default function ServicesPage() {
   const router = useRouter();
   const [services, setServices] = useState<Service[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -424,12 +425,29 @@ export default function ServicesPage() {
     }
   }
 
+  // Per-category counts so empty categories disappear from the filter row
+  // automatically — no point showing a "Massage 0" pill if the merchant has
+  // no massage services configured.
+  const categoryCounts = services.reduce<Record<Category, number>>((acc, s) => {
+    acc[s.category] = (acc[s.category] ?? 0) + 1;
+    return acc;
+  }, { hair: 0, nails: 0, face: 0, body: 0, massage: 0, dining: 0, medical: 0, other: 0 });
+  const availableCategories = CATEGORIES.filter((c) => categoryCounts[c.value] > 0);
+
+  const visibleServices = categoryFilter
+    ? services.filter((s) => s.category === categoryFilter)
+    : services;
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-tone-ink">Services</h1>
-          <p className="text-sm text-grey-60 mt-0.5">{services.length} service{services.length !== 1 ? 's' : ''} configured</p>
+          <p className="text-sm text-grey-60 mt-0.5">
+            {categoryFilter
+              ? `${visibleServices.length} of ${services.length} service${services.length !== 1 ? 's' : ''} (filtered)`
+              : `${services.length} service${services.length !== 1 ? 's' : ''} configured`}
+          </p>
         </div>
         <button
           onClick={() => { setEditing(null); setModalOpen(true); }}
@@ -441,6 +459,41 @@ export default function ServicesPage() {
           Add Service
         </button>
       </div>
+
+      {/* Category filter — only shown when there are 2+ distinct categories
+          (single-category merchants don't need to filter). */}
+      {!loading && !error && availableCategories.length >= 2 && (
+        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCategoryFilter(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              categoryFilter === null
+                ? 'bg-tone-ink text-white border-tone-ink'
+                : 'bg-tone-surface text-grey-75 border-grey-15 hover:bg-grey-5'
+            }`}
+          >
+            All ({services.length})
+          </button>
+          {availableCategories.map((c) => {
+            const selected = categoryFilter === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setCategoryFilter(selected ? null : c.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  selected
+                    ? 'bg-tone-ink text-white border-tone-ink'
+                    : 'bg-tone-surface text-grey-75 border-grey-15 hover:bg-grey-5'
+                }`}
+              >
+                {c.label} ({categoryCounts[c.value]})
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {loading && <Spinner />}
 
@@ -464,9 +517,24 @@ export default function ServicesPage() {
         </div>
       )}
 
-      {!loading && !error && services.length > 0 && (
+      {!loading && !error && services.length > 0 && visibleServices.length === 0 && (
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-10 text-center">
+          <p className="text-sm text-grey-60 mb-3">
+            No services in this category. Try a different filter.
+          </p>
+          <button
+            type="button"
+            onClick={() => setCategoryFilter(null)}
+            className="text-xs font-medium text-tone-sage hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && visibleServices.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {services.map((service) => (
+          {visibleServices.map((service) => (
             <div key={service.id} className="bg-tone-surface rounded-xl border border-grey-15 p-5 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className="flex-1 min-w-0">
