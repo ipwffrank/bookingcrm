@@ -47,6 +47,9 @@ interface Service {
   category: string;
   slotType: 'standard' | 'consult' | 'treatment';
   requiresConsultFirst: boolean;
+  // Optional pointer to a specific consultation service that gates this one.
+  // When null, any service with slotType='consult' is offered as the consult.
+  consultServiceId: string | null;
   discountPct: number | null;
   discountShowOnline: boolean;
   firstTimerDiscountPct: number | null;
@@ -1889,41 +1892,85 @@ export default function BookingWidget({
       )}
 
       {/* Consult-first gate — shown when the customer taps a treatment that
-          can only be booked after an in-person consultation. */}
-      {consultBlocked && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-tone-ink/40 backdrop-blur-sm px-4">
-          <div className="bg-tone-surface rounded-2xl shadow-xl border border-grey-5 max-w-sm w-full overflow-hidden">
-            <div className="bg-semantic-warn/10 px-5 py-4 border-b border-semantic-warn/20">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-semantic-warn" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <h3 className="text-sm font-semibold text-tone-ink">Consultation required</h3>
+          can only be booked after an in-person consultation. Resolves the
+          consult target either via consultServiceId (specific link) or by
+          falling back to any service with slotType='consult'. */}
+      {consultBlocked && (() => {
+        const consultService =
+          (consultBlocked.consultServiceId &&
+            services.find((s) => s.id === consultBlocked.consultServiceId)) ||
+          services.find((s) => s.slotType === 'consult') ||
+          null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-tone-ink/40 backdrop-blur-sm px-4">
+            <div className="bg-tone-surface rounded-2xl shadow-xl border border-grey-5 max-w-sm w-full overflow-hidden">
+              <div className="bg-semantic-warn/10 px-5 py-4 border-b border-semantic-warn/20">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-semantic-warn" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <h3 className="text-sm font-semibold text-tone-ink">Consultation required</h3>
+                </div>
+              </div>
+              <div className="p-5 space-y-3 text-sm text-grey-75">
+                <p>
+                  <span className="font-semibold text-tone-ink">{consultBlocked.name}</span> can&apos;t be
+                  booked directly online. {merchant.name} needs to assess you in person before
+                  confirming this treatment.
+                </p>
+                <p className="text-xs text-grey-60">
+                  After the consult, the clinic will send you a personalised quote with a secure
+                  payment link.
+                </p>
+                {consultService && (
+                  <div className="rounded-lg bg-tone-sage/10 border border-tone-sage/20 px-3 py-2.5">
+                    <p className="text-[11px] uppercase tracking-wider text-tone-sage font-semibold mb-0.5">
+                      Recommended next step
+                    </p>
+                    <p className="text-sm font-medium text-tone-ink">{consultService.name}</p>
+                    <p className="text-xs text-grey-60 mt-0.5">
+                      {consultService.durationMinutes} min &middot; SGD {parseFloat(consultService.priceSgd).toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="px-5 pb-5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConsultBlocked(null)}
+                  className="flex-1 rounded-xl border border-grey-15 py-2.5 text-sm font-medium text-grey-75 hover:border-tone-sage/50 transition-colors"
+                >
+                  Cancel
+                </button>
+                {consultService ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConsultBlocked(null);
+                      // Drop directly into the wizard at step 2 with the
+                      // consult service preselected. handleServiceSelect
+                      // safely re-checks the gate; consult services have
+                      // requiresConsultFirst=false so it advances cleanly.
+                      handleServiceSelect(consultService);
+                    }}
+                    className="flex-1 rounded-xl bg-tone-ink text-tone-surface py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity"
+                  >
+                    Book consultation
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConsultBlocked(null)}
+                    className="flex-1 rounded-xl bg-tone-ink text-tone-surface py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity"
+                  >
+                    Got it
+                  </button>
+                )}
               </div>
             </div>
-            <div className="p-5 space-y-3 text-sm text-grey-75">
-              <p>
-                <span className="font-semibold text-tone-ink">{consultBlocked.name}</span> can&apos;t be
-                booked directly online. {merchant.name} needs to assess you in person before
-                confirming this treatment.
-              </p>
-              <p className="text-xs text-grey-60">
-                Please book a consultation first. After the consult, the clinic will send you a
-                personalised quote with a secure payment link.
-              </p>
-            </div>
-            <div className="px-5 pb-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setConsultBlocked(null)}
-                className="flex-1 rounded-xl border border-grey-15 py-2.5 text-sm font-medium text-grey-75 hover:border-tone-sage/50 transition-colors"
-              >
-                Got it
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

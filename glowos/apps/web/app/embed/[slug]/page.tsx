@@ -34,6 +34,7 @@ interface SalonData {
     category: string;
     slotType: 'standard' | 'consult' | 'treatment';
     requiresConsultFirst: boolean;
+    consultServiceId: string | null;
     discountPct: number | null;
     discountShowOnline: boolean;
     firstTimerDiscountPct: number | null;
