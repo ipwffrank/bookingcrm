@@ -655,18 +655,36 @@ analyticsRouter.get("/review-trend", requireMerchant, async (c) => {
 analyticsRouter.get("/first-timer-roi", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
+  const fromParam = c.req.query("from");
+  const toParam = c.req.query("to");
 
-  let days: number;
-  if (periodParam === "7d") days = 7;
-  else if (periodParam === "30d") days = 30;
-  else if (periodParam === "90d") days = 90;
-  else if (periodParam === "365d") days = 365;
-  else if (periodParam === "all") days = 36500;
-  else return c.json({ error: "Bad Request", message: "invalid period" }, 400);
+  let start: Date;
+  let end: Date;
 
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-  const thirtyDaysAgo = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  if (periodParam === "custom") {
+    if (!fromParam || !toParam) {
+      return c.json({ error: "Bad Request", message: "custom period requires from and to" }, 400);
+    }
+    const f = new Date(fromParam);
+    const t = new Date(toParam);
+    if (Number.isNaN(f.getTime()) || Number.isNaN(t.getTime()) || f.getTime() > t.getTime()) {
+      return c.json({ error: "Bad Request", message: "invalid from/to dates" }, 400);
+    }
+    start = f;
+    end = t;
+  } else {
+    let days: number;
+    if (periodParam === "7d") days = 7;
+    else if (periodParam === "30d") days = 30;
+    else if (periodParam === "90d") days = 90;
+    else if (periodParam === "365d") days = 365;
+    else if (periodParam === "all") days = 36500;
+    else return c.json({ error: "Bad Request", message: "invalid period" }, 400);
+    end = new Date();
+    start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   // 1. First-timer bookings in period (with join to services for base price)
   const firstTimerRows = await db
