@@ -9,7 +9,20 @@ export function getDb() {
     const connectionString =
       process.env.DATABASE_URL ??
       "postgresql://glowos:glowos_dev@localhost:5432/glowos_dev";
-    const pool = new Pool({ connectionString });
+    // Neon closes idle Postgres connections after ~5 minutes. With a vanilla
+    // `pg` Pool that doesn't recycle, the next query picks up a dead socket
+    // and stalls ~15s on TCP timeout before reconnecting — that's the
+    // intermittent slowness symptom. Tuning below avoids it.
+    const pool = new Pool({
+      connectionString,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      keepAlive: true,
+      max: 10,
+    });
+    pool.on("error", (err) => {
+      console.error("[db] idle client error", err.message);
+    });
     _db = drizzle(pool, { schema });
   }
   return _db;
