@@ -21,6 +21,7 @@ import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { getAvailability, invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import { generateBookingToken, verifyBookingToken } from "../lib/jwt.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
@@ -374,6 +375,93 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
     refund_type: refundType,
     refund_percentage: refundPercentage,
   });
+});
+
+// ─── Public: GET /booking/confirm/:token ─────────────────────────────────────
+// Lookup-only — used by the customer page to fetch booking details before they
+// click 'Confirm' (or to render an "already confirmed" state if they already
+// did). No state change.
+
+bookingsRouter.get("/confirm/:token", async (c) => {
+  const token = c.req.param("token")!;
+  if (!token || token.length < 16) {
+    return c.json({ error: "Bad Request", message: "Invalid confirmation token" }, 400);
+  }
+  const [row] = await db
+    .select({
+      booking: bookings,
+      merchant: { name: merchants.name, slug: merchants.slug, logoUrl: merchants.logoUrl },
+      service: { name: services.name, durationMinutes: services.durationMinutes },
+      staffMember: { name: staff.name },
+    })
+    .from(bookings)
+    .innerJoin(merchants, eq(bookings.merchantId, merchants.id))
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .innerJoin(staff, eq(bookings.staffId, staff.id))
+    .where(eq(bookings.confirmationToken, token))
+    .limit(1);
+  if (!row) {
+    return c.json({ error: "Not Found", message: "Confirmation link expired or invalid" }, 404);
+  }
+  return c.json({
+    booking: {
+      id: row.booking.id,
+      status: row.booking.status,
+      startTime: row.booking.startTime,
+      endTime: row.booking.endTime,
+      priceSgd: row.booking.priceSgd,
+      confirmedAt: row.booking.confirmedAt,
+    },
+    merchant: row.merchant,
+    service: row.service,
+    staff: row.staffMember,
+  });
+});
+
+// ─── Public: POST /booking/confirm/:token ────────────────────────────────────
+// Customer clicks the WhatsApp/email confirm link and lands on /confirm/:token.
+// The page POSTs here, which flips status pending → confirmed and notifies the
+// merchant. Idempotent — already-confirmed bookings return success.
+
+bookingsRouter.post("/confirm/:token", async (c) => {
+  const token = c.req.param("token")!;
+  if (!token || token.length < 16) {
+    return c.json({ error: "Bad Request", message: "Invalid confirmation token" }, 400);
+  }
+  const [row] = await db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.confirmationToken, token))
+    .limit(1);
+  if (!row) {
+    return c.json({ error: "Not Found", message: "Confirmation link expired or invalid" }, 404);
+  }
+  if (row.status === "cancelled" || row.status === "no_show") {
+    return c.json(
+      { error: "Conflict", message: `Booking is ${row.status} — cannot confirm` },
+      409,
+    );
+  }
+  // Already confirmed (or further along) — idempotent success.
+  if (row.status !== "pending") {
+    return c.json({ booking: { id: row.id, status: row.status, confirmedAt: row.confirmedAt } });
+  }
+
+  const now = new Date();
+  await db
+    .update(bookings)
+    .set({ status: "confirmed", confirmedAt: now, updatedAt: now })
+    .where(eq(bookings.id, row.id));
+
+  // Tell the merchant the customer confirmed (WhatsApp + email + dashboard
+  // banner via notification_log polling). Handler added in Commit B.
+  await addJob("notifications", "booking_confirmed_by_client", {
+    booking_id: row.id,
+  }).catch((err: unknown) => {
+    console.error("[booking-confirm] notify failed", err);
+  });
+
+  return c.json({ booking: { id: row.id, status: "confirmed", confirmedAt: now } });
 });
 
 // ─── Public: POST /booking/reschedule/:bookingToken ─────────────────────────
@@ -1628,7 +1716,9 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
 
   const priceSgdFinal = computedPrice.toFixed(2);
 
-  // Create booking
+  // Create booking. Public widget bookings start as 'pending' — the T-24h
+  // reminder asks the customer to click confirm, which flips status to
+  // 'confirmed'. confirmation_token is the unguessable handle for that flow.
   const [booking] = await db
     .insert(bookings)
     .values({
@@ -1639,7 +1729,8 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       startTime: lease.startTime,
       endTime: lease.endTime,
       durationMinutes: service.durationMinutes,
-      status: "confirmed",
+      status: "pending",
+      confirmationToken: generateConfirmationToken(),
       priceSgd: priceSgdFinal,
       paymentMethod: body.payment_method,
       bookingSource: body.booking_source ?? "direct_widget",

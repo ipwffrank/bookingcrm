@@ -317,12 +317,28 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
 
-  const message = [
-    `Reminder: You have an appointment tomorrow at ${merchant.name}`,
-    `📅 ${dateStr} at ${timeStr}`,
-    `✂️ ${service.name} with ${staffMember.name}`,
-    `See you there! 😊`,
-  ].join("\n");
+  // If the booking is still pending (customer hasn't yet clicked confirm),
+  // turn the T-24h reminder into a confirm prompt with the confirm link.
+  // Already-confirmed bookings get the original soft reminder.
+  const isPending = booking.status === "pending" && !!booking.confirmationToken;
+  const confirmUrl = isPending
+    ? `${config.frontendUrl}/confirm/${booking.confirmationToken}`
+    : null;
+
+  const message = isPending
+    ? [
+        `Hi! Just confirming your appointment tomorrow at ${merchant.name}.`,
+        `📅 ${dateStr} at ${timeStr}`,
+        `✂️ ${service.name} with ${staffMember.name}`,
+        ``,
+        `Please confirm you'll be there → ${confirmUrl}`,
+      ].join("\n")
+    : [
+        `Reminder: You have an appointment tomorrow at ${merchant.name}`,
+        `📅 ${dateStr} at ${timeStr}`,
+        `✂️ ${service.name} with ${staffMember.name}`,
+        `See you there! 😊`,
+      ].join("\n");
 
   const sid = await sendWhatsApp(client.phone, message);
 
@@ -338,7 +354,7 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
     twilioSid: sid || undefined,
   });
 
-  console.log("[NotificationWorker] appointment_reminder handled", { bookingId });
+  console.log("[NotificationWorker] appointment_reminder handled", { bookingId, withConfirm: isPending });
 }
 
 async function handleCancellationNotification(bookingId: string): Promise<void> {

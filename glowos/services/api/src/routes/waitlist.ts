@@ -15,6 +15,7 @@ import {
 import { zValidator } from "../middleware/validate.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { addJob } from "../lib/queue.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import { requireMerchant } from "../middleware/auth.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
 import type { AppVariables } from "../lib/types.js";
@@ -195,7 +196,8 @@ waitlistRouter.post("/:id/confirm", async (c) => {
         startTime,
         endTime,
         durationMinutes,
-        status: "confirmed",
+        status: "pending",
+        confirmationToken: generateConfirmationToken(),
         priceSgd: svc.priceSgd,
         paymentMethod: null,
         bookingSource: "direct_widget",

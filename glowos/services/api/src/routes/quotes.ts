@@ -16,6 +16,7 @@ import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { addJob } from "../lib/queue.js";
 import { stripe } from "../lib/stripe.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import type { AppVariables } from "../lib/types.js";
 
 // ─── Merchant-facing router ───────────────────────────────────────────────────
@@ -309,7 +310,8 @@ publicQuotesRouter.post("/:token/accept", zValidator(acceptSchema), async (c) =>
       staffId: body.staff_id ?? null,
       startTime,
       endTime,
-      status: "confirmed",
+      status: "pending",
+      confirmationToken: generateConfirmationToken(),
       priceSgd: row.priceSgd,
       paymentMethod: "card",
       paymentStatus: "pending",

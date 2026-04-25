@@ -17,6 +17,7 @@ import {
 import { verifyCallbackSignature } from "../lib/ipay88.js";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
@@ -276,7 +277,8 @@ webhooksRouter.post("/stripe", async (c) => {
             startTime: lease.startTime,
             endTime: lease.endTime,
             durationMinutes: service.durationMinutes,
-            status: "confirmed",
+            status: "pending",
+            confirmationToken: generateConfirmationToken(),
             priceSgd: service.priceSgd,
             paymentStatus: "paid",
             paymentMethod: "card",

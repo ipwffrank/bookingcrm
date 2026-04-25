@@ -24,6 +24,7 @@ import { incrementPackageSessionsUsed, decrementPackageSessionsUsed } from "../l
 import { normalizePhone } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { scheduleWaitlistMatchJob } from "../lib/waitlist-scheduler.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const bookingGroupsRouter = new Hono<{ Variables: AppVariables }>();
@@ -58,6 +59,11 @@ const createGroupSchema = z.object({
   client_phone: z.string().min(1),
   payment_method: z.enum(["cash", "card", "paynow", "other"]),
   notes: z.string().optional(),
+  // 'walkin'  → customer is at the counter right now → status='confirmed'.
+  // 'prebook' → staff scheduling on customer's behalf → status='pending'
+  //             so the cascade reminders nudge them to confirm.
+  // Defaults to 'walkin' for backwards compat with older clients.
+  intent: z.enum(["walkin", "prebook"]).optional(),
   services: z.array(serviceItemSchema).min(1),
   sell_package: z
     .object({
@@ -348,6 +354,8 @@ bookingGroupsRouter.post(
           }
 
           const effectivePrice = redeemSessionId ? "0.00" : p.priceSgd;
+          const intent = body.intent ?? "walkin";
+          const isPrebook = intent === "prebook";
 
           const [b] = await tx
             .insert(bookings)
@@ -359,10 +367,14 @@ bookingGroupsRouter.post(
               startTime: p.startTime,
               endTime: p.endTime,
               durationMinutes: p.durationMinutes,
-              status: "confirmed",
+              // Walk-ins are implicitly confirmed (customer is at the
+              // counter). Pre-books need the customer to confirm via the
+              // T-24h reminder cascade.
+              status: isPrebook ? "pending" : "confirmed",
+              confirmationToken: isPrebook ? generateConfirmationToken() : null,
               priceSgd: effectivePrice,
               paymentMethod: body.payment_method,
-              bookingSource: "walkin_manual",
+              bookingSource: isPrebook ? "manual_prebook" : "walkin_manual",
               commissionRate: "0",
               commissionSgd: "0",
               groupId: group.id,

@@ -16,6 +16,7 @@ import { requireMerchant } from "../middleware/auth.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { addJob } from "../lib/queue.js";
 import { stripe } from "../lib/stripe.js";
+import { generateConfirmationToken } from "../lib/confirmation-token.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const packagesRouter = new Hono<{ Variables: AppVariables }>();
@@ -627,7 +628,8 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
           startTime: firstSessionStart,
           endTime: firstSessionEnd,
           durationMinutes: firstSessionService.durationMinutes,
-          status: "confirmed",
+          status: "pending",
+          confirmationToken: generateConfirmationToken(),
           priceSgd: "0", // package session — no separate booking price
           paymentStatus: paymentMethod === "online" ? "pending" : "waived",
           paymentMethod: "package",
@@ -944,7 +946,8 @@ publicPackagesRouter.post("/:slug/use-package-session", async (c) => {
       startTime,
       endTime,
       durationMinutes: service.durationMinutes,
-      status: "confirmed",
+      status: "pending",
+      confirmationToken: generateConfirmationToken(),
       priceSgd: "0", // paid via package
       paymentMethod: "package",
       paymentStatus: "completed",

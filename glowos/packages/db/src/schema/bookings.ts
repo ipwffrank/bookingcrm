@@ -34,10 +34,20 @@ export const bookings = pgTable(
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),
     endTime: timestamp("end_time", { withTimezone: true }).notNull(),
     durationMinutes: integer("duration_minutes").notNull(),
+    // 'pending'   = booking created but customer hasn't yet clicked the
+    //               WhatsApp/email confirm link. Cascade reminders fire at
+    //               T-24h / T-12h / T-2h until confirmed or appointment passes.
+    // 'confirmed' = customer has confirmed (or this is a walk-in / staff-side
+    //               booking where confirmation is implicit).
+    // The remaining statuses are unchanged.
     status: varchar("status", { length: 20 })
       .notNull()
-      .default("confirmed")
-      .$type<"confirmed" | "in_progress" | "completed" | "cancelled" | "no_show">(),
+      .default("pending")
+      .$type<"pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show">(),
+    // Signed token used by the public /confirm/:token endpoint. Generated at
+    // booking creation; null for legacy rows pre-migration.
+    confirmationToken: varchar("confirmation_token", { length: 64 }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     priceSgd: numeric("price_sgd", { precision: 10, scale: 2 }).notNull(),
     paymentStatus: varchar("payment_status", { length: 20 }).notNull().default("pending"),
     paymentMethod: varchar("payment_method", { length: 50 }),

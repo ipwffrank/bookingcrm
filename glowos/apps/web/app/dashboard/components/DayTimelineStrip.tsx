@@ -1,6 +1,6 @@
 'use client';
 
-type BookingStatus = 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+type BookingStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
 
 interface Booking {
   id: string;

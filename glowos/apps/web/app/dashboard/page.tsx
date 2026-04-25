@@ -12,7 +12,7 @@ import { StaffContributionCard } from './components/StaffContributionCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type BookingStatus = 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+type BookingStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
 type VipTier = 'bronze' | 'silver' | 'gold' | 'platinum' | null;
 
 interface BookingRow {
@@ -49,6 +49,7 @@ function formatDateLong(dateStr: string) {
 // ─── Status Badge — typographic state (no colored pill) ──────────────────────
 
 const STATUS_CONFIG: Record<BookingStatus, { label: string; stateClass: string }> = {
+  pending:     { label: 'Pending',     stateClass: 'state-notified' },
   confirmed:   { label: 'Confirmed',   stateClass: 'state-default' },
   in_progress: { label: 'In Progress', stateClass: 'state-active' },
   completed:   { label: 'Completed',   stateClass: 'state-completed' },
@@ -364,12 +365,13 @@ function DashboardPageInner() {
     }
   }
 
+  const pending = bookings.filter((b) => b.booking.status === 'pending');
   const confirmed = bookings.filter((b) => b.booking.status === 'confirmed');
   const inProgress = bookings.filter((b) => b.booking.status === 'in_progress');
   const completed = bookings.filter((b) => b.booking.status === 'completed');
   const noShow = bookings.filter((b) => b.booking.status === 'no_show');
 
-  const VALID_STATUSES: BookingStatus[] = ['confirmed', 'in_progress', 'completed', 'no_show'];
+  const VALID_STATUSES: BookingStatus[] = ['pending', 'confirmed', 'in_progress', 'completed', 'no_show'];
   const rawFilter = searchParams.get('status');
   const statusFilter: BookingStatus | null = VALID_STATUSES.includes(rawFilter as BookingStatus)
     ? (rawFilter as BookingStatus)
@@ -406,8 +408,9 @@ function DashboardPageInner() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-6">
         {[
+          { key: 'pending' as const,     label: 'Pending',     value: pending.length,    tone: 'pending' as const },
           { key: 'confirmed' as const,   label: 'Confirmed',   value: confirmed.length,  tone: 'neutral' as const },
           { key: 'in_progress' as const, label: 'In Progress', value: inProgress.length, tone: 'neutral' as const },
           { key: 'completed' as const,   label: 'Completed',   value: completed.length,  tone: 'muted' as const },
@@ -417,9 +420,11 @@ function DashboardPageInner() {
           const toneClass =
             stat.tone === 'danger'
               ? 'text-semantic-danger border-semantic-danger/30 bg-semantic-danger/5'
-              : stat.tone === 'muted'
-                ? 'text-grey-60 border-grey-15 bg-tone-surface'
-                : 'text-tone-ink border-grey-15 bg-tone-surface';
+              : stat.tone === 'pending'
+                ? 'text-semantic-warn border-semantic-warn/30 bg-semantic-warn/5'
+                : stat.tone === 'muted'
+                  ? 'text-grey-60 border-grey-15 bg-tone-surface'
+                  : 'text-tone-ink border-grey-15 bg-tone-surface';
           return (
             <button
               key={stat.key}

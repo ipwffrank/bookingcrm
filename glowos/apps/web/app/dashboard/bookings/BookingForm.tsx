@@ -308,6 +308,10 @@ export function BookingForm(props: BookingFormProps) {
             client_phone: clientPhone,
             payment_method: paymentMethod,
             notes: notes || undefined,
+            // Pre-bookings should land as 'pending' so the customer gets the
+            // confirm-reminder cascade; walk-ins land as 'confirmed' since
+            // the customer is physically present at the counter.
+            intent: props.intent ?? 'walkin',
             services: rows.map((r) => ({
               service_id: r.serviceId,
               staff_id: r.staffId,
