@@ -327,34 +327,38 @@ analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => 
   const days = getPeriodDays(periodParam);
   const { start, end } = getPeriodBounds(days);
 
-  const rows = await db
-    .select({
-      segment: sql<"walkin" | "new" | "returning">`
+  // Raw SQL via db.execute — Drizzle's groupBy(sql`segment`) doesn't reliably
+  // resolve to the CASE alias across all builders. CTE wrap also makes the
+  // correlated EXISTS subquery against the bookings table unambiguous.
+  const result = await db.execute(sql`
+    WITH classified AS (
+      SELECT
         CASE
-          WHEN ${bookings.bookingSource} IN ('walkin_manual', 'walkin') THEN 'walkin'
+          WHEN b.booking_source IN ('walkin_manual', 'walkin') THEN 'walkin'
           WHEN NOT EXISTS (
             SELECT 1 FROM bookings b2
-            WHERE b2.merchant_id = ${bookings.merchantId}
-              AND b2.client_id = ${bookings.clientId}
-              AND b2.start_time < ${bookings.startTime}
+            WHERE b2.merchant_id = b.merchant_id
+              AND b2.client_id   = b.client_id
+              AND b2.start_time  < b.start_time
               AND b2.status NOT IN ('cancelled', 'no_show')
           ) THEN 'new'
           ELSE 'returning'
-        END
-      `,
-      count: sql<number>`cast(count(*) as int)`,
-      revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
-    })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.merchantId, merchantId),
-        gte(bookings.startTime, start),
-        lte(bookings.startTime, end),
-        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
-      ),
+        END AS segment,
+        b.price_sgd
+      FROM bookings b
+      WHERE b.merchant_id = ${merchantId}
+        AND b.start_time >= ${start.toISOString()}
+        AND b.start_time <= ${end.toISOString()}
+        AND b.status NOT IN ('cancelled', 'no_show')
     )
-    .groupBy(sql`segment`);
+    SELECT
+      segment,
+      cast(count(*) as int) AS count,
+      coalesce(sum(price_sgd::numeric), 0) AS revenue
+    FROM classified
+    GROUP BY segment
+  `);
+  const rows = (result.rows ?? []) as Array<{ segment: string; count: number; revenue: string | number }>;
 
   // Backfill any missing segment with zeros so the frontend doesn't need
   // null-checks per bucket.
