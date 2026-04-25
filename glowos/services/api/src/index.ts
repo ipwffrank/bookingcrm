@@ -47,10 +47,12 @@ app.use(
   })
 );
 
-// Auto-log every write performed by an impersonating superadmin. Mounted at
-// the /merchant/* prefix because that's where every admin action lives; the
-// middleware itself no-ops unless requireMerchant later sets impersonating=true.
-app.use("/merchant/*", auditImpersonatedWrites);
+// Auto-log every write performed by an impersonating superadmin. Mounted on
+// `*` (path filtering happens inside the middleware) so we don't depend on
+// Hono's prefix matcher composing correctly with the many `/merchant/*`
+// sub-routers below — those mount via app.route which has subtly different
+// matching semantics from app.use prefix patterns.
+app.use("*", auditImpersonatedWrites);
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
