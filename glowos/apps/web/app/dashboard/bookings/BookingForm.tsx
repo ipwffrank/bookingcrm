@@ -63,6 +63,38 @@ export function BookingForm(props: BookingFormProps) {
       setStaffList(props.staffList);
     }
   }, [mode, props.services, props.staffList]);
+
+  // Defensive fallback — if the parent didn't pass services/staff (or passed
+  // empty arrays and never updated), fetch them ourselves. Covers the case
+  // where the parent's fetch failed silently or the form was mounted from a
+  // different surface that doesn't pre-load.
+  useEffect(() => {
+    if (mode === 'edit') return;
+    if (services.length > 0 && staffList.length > 0) return;
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    let cancelled = false;
+    Promise.all([
+      services.length === 0
+        ? apiFetch('/merchant/services', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ services: ServiceOption[] }>
+        : Promise.resolve(null),
+      staffList.length === 0
+        ? apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: StaffOption[] }>
+        : Promise.resolve(null),
+    ])
+      .then(([svcRes, staffRes]) => {
+        if (cancelled) return;
+        if (svcRes && svcRes.services && svcRes.services.length > 0) {
+          setServices(svcRes.services);
+        }
+        if (staffRes && staffRes.staff && staffRes.staff.length > 0) {
+          setStaffList(staffRes.staff);
+        }
+      })
+      .catch(() => { /* surfaces below via the empty-state guard */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
   const [activePackages, setActivePackages] = useState<ActivePackage[]>([]);
   const [rows, setRows] = useState<ServiceRowState[]>([]);
   const [dayBookings, setDayBookings] = useState<DayBooking[]>([]);
@@ -236,7 +268,16 @@ export function BookingForm(props: BookingFormProps) {
     const prev = rows[rows.length - 1];
     const defaultSvc = services[0];
     const defaultStaff = staffList[0];
-    if (!defaultSvc || !defaultStaff) return;
+    if (!defaultSvc || !defaultStaff) {
+      setApiError(
+        services.length === 0
+          ? 'No services configured for this merchant yet. Add a service in Services first.'
+          : staffList.length === 0
+            ? 'No staff configured for this merchant yet. Add a staff member first.'
+            : 'Could not load services. Try closing this and reopening.',
+      );
+      return;
+    }
     const prevSvc = prev ? services.find((s) => s.id === prev.serviceId) : undefined;
     const offsetMinutes = (prevSvc?.durationMinutes ?? 30) + (prevSvc?.bufferMinutes ?? 0);
     const anchor = prev
