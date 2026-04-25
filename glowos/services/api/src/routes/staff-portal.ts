@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
-import { db, staff, merchants, bookings, services, clients, clientPackages } from "@glowos/db";
+import { eq, and, gte, lte, inArray, sql, desc } from "drizzle-orm";
+import { db, staff, merchants, bookings, services, clients, clientPackages, clientProfiles } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -193,6 +193,64 @@ staffPortalRouter.get("/my-contribution", async (c) => {
     servicesDelivered: servicesDelivered.toFixed(2),
     packagesSold: packagesSold.toFixed(2),
     total: (servicesDelivered + packagesSold).toFixed(2),
+  });
+});
+
+// GET /staff/top-vip-clients — top 5 clients THIS staff member has served,
+// ordered by merchant-wide VIP score. Scope is critical: we only show
+// clients who've had at least one non-cancelled booking with this specific
+// staff. Otherwise junior staff would see a list of clients they've never
+// touched, which isn't useful and leaks customer relationships across the
+// team.
+staffPortalRouter.get("/top-vip-clients", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const staffId = c.get("staffId");
+  if (!staffId) {
+    return c.json({ error: "Forbidden", message: "Staff access required" }, 403);
+  }
+
+  const rows = await db
+    .select({
+      clientId: clients.id,
+      name: clients.name,
+      phone: clients.phone,
+      vipTier: clientProfiles.vipTier,
+      vipScore: clientProfiles.vipScore,
+      lastVisitDate: clientProfiles.lastVisitDate,
+      rfmFrequency: clientProfiles.rfmFrequency,
+      rfmMonetary: clientProfiles.rfmMonetary,
+    })
+    .from(clientProfiles)
+    .innerJoin(clients, eq(clientProfiles.clientId, clients.id))
+    .where(
+      and(
+        eq(clientProfiles.merchantId, merchantId),
+        // At-least-one booking with this staff that wasn't cancelled / no-show.
+        // EXISTS keeps the result scoped to "served by this staff" without
+        // duplicating client rows.
+        sql`EXISTS (
+          SELECT 1 FROM bookings b
+          WHERE b.merchant_id = ${clientProfiles.merchantId}
+            AND b.client_id   = ${clientProfiles.clientId}
+            AND b.staff_id    = ${staffId}
+            AND b.status NOT IN ('cancelled', 'no_show')
+        )`,
+      ),
+    )
+    .orderBy(desc(sql`cast(${clientProfiles.vipScore} as numeric)`))
+    .limit(5);
+
+  return c.json({
+    clients: rows.map((r) => ({
+      clientId: r.clientId,
+      name: r.name,
+      phone: r.phone,
+      vipTier: r.vipTier,
+      vipScore: r.vipScore !== null ? Number(r.vipScore) : 0,
+      lastVisitDate: r.lastVisitDate,
+      visits: r.rfmFrequency ?? 0,
+      totalSpent: r.rfmMonetary !== null ? Number(r.rfmMonetary) : 0,
+    })),
   });
 });
 

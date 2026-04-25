@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 
 type Period = 'today' | '7d' | '30d' | '90d' | 'all';
+type VipTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 
 interface Contribution {
   staffName: string | null;
@@ -12,6 +13,24 @@ interface Contribution {
   packagesSold: string;
   total: string;
 }
+
+interface TopVipClient {
+  clientId: string;
+  name: string | null;
+  phone: string;
+  vipTier: VipTier;
+  vipScore: number;
+  lastVisitDate: string | null;
+  visits: number;
+  totalSpent: number;
+}
+
+const TIER_EMOJI: Record<VipTier, string> = {
+  platinum: '💎',
+  gold:     '🥇',
+  silver:   '🥈',
+  bronze:   '🥉',
+};
 
 const PERIOD_LABEL: Record<Period, string> = {
   today: 'Today',
@@ -26,6 +45,7 @@ export default function StaffDashboard() {
   const [month, setMonth] = useState<Contribution | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [selectedContribution, setSelectedContribution] = useState<Contribution | null>(null);
+  const [topVip, setTopVip] = useState<TopVipClient[] | null>(null);
 
   async function load(period: Period): Promise<Contribution | null> {
     try {
@@ -42,6 +62,17 @@ export default function StaffDashboard() {
   useEffect(() => {
     load('today').then(setToday);
     load('30d').then(setMonth);
+    (async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        const d = await apiFetch('/staff/top-vip-clients', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setTopVip((d as { clients: TopVipClient[] }).clients ?? []);
+      } catch {
+        setTopVip([]);
+      }
+    })();
   }, []);
 
   async function pickPeriod(p: Period) {
@@ -96,6 +127,43 @@ export default function StaffDashboard() {
           );
         })}
       </div>
+
+      {/* Top 5 VIP clients THIS staff has served. Each row links straight into
+          the staff client profile so they can pull up history with a single tap.
+          Hidden when nothing yet — junior staff who haven't run a service won't
+          see an empty card. */}
+      {topVip && topVip.length > 0 && (
+        <div className="bg-tone-surface border border-grey-15 rounded-xl p-4 mb-6">
+          <h2 className="text-sm font-semibold text-tone-ink mb-1">Your top clients</h2>
+          <p className="text-xs text-grey-60 mb-3">
+            Top 5 of your clients by VIP score (recency + frequency + spend).
+          </p>
+          <div className="space-y-1.5">
+            {topVip.map((c, i) => (
+              <Link
+                key={c.clientId}
+                href={`/staff/clients/${c.clientId}`}
+                className="flex items-center gap-3 rounded-lg border border-grey-15 px-3 py-2.5 hover:border-tone-sage/50 hover:bg-tone-sage/5 transition-colors"
+              >
+                <span className="w-5 text-xs font-semibold text-grey-45 text-center flex-shrink-0">
+                  {i + 1}
+                </span>
+                <span className="text-base flex-shrink-0">{TIER_EMOJI[c.vipTier]}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-tone-ink truncate">{c.name ?? c.phone}</p>
+                  <p className="text-[11px] text-grey-60 truncate">
+                    {c.visits} visit{c.visits === 1 ? '' : 's'} · S${c.totalSpent.toLocaleString('en-SG', { maximumFractionDigits: 0 })} total
+                  </p>
+                </div>
+                <span className="text-xs text-grey-45 capitalize flex-shrink-0">{c.vipTier}</span>
+                <svg className="w-4 h-4 text-grey-30 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Link href="/staff/bookings" className="block text-sm text-tone-sage hover:underline">
