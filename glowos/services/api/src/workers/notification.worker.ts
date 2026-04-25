@@ -1332,6 +1332,7 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
     .limit(1);
 
   let firstBookingLine = "";
+  let firstBookingCancelLine = "";
   if (firstSession?.bookingId) {
     const [b] = await db
       .select({ booking: bookings, service: services, staffMember: staff })
@@ -1343,6 +1344,10 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
     if (b) {
       const when = format(b.booking.startTime, "EEE, d MMM 'at' h:mma");
       firstBookingLine = `\n📅 First session: ${b.service.name} with ${b.staffMember.name} — ${when}`;
+      // Same signed-token cancel/reschedule link the booking_confirmation
+      // handler uses, so package customers get the same self-service flow.
+      const bookingToken = generateBookingToken(b.booking.id);
+      firstBookingCancelLine = `${config.frontendUrl}/cancel/${bookingToken}`;
     }
   }
 
@@ -1353,19 +1358,22 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
 
   // WhatsApp — freeform within the session window.
   if (client.phone) {
-    const msg = [
+    const lines = [
       `Hi ${firstName}, your ${pkg.name} is confirmed at ${merchant.name}.`,
       ``,
       `📦 ${cp.sessionsTotal} sessions · valid until ${expiresAt}`,
       paymentLine + firstBookingLine,
-      ``,
-      `See you soon!`,
-    ].join("\n");
+    ];
+    if (firstBookingCancelLine) {
+      lines.push(``, `Reschedule or cancel your first session? → ${firstBookingCancelLine}`);
+    }
+    lines.push(``, `See you soon!`);
+    const msg = lines.join("\n");
     const sid = await sendWhatsApp(client.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
-      bookingId: null,
+      bookingId: firstSession?.bookingId ?? null,
       type: "package_purchased",
       channel: "whatsapp",
       recipient: client.phone,
@@ -1402,7 +1410,8 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
               <span style="color:#111;font-weight:500;">${expiresAt}</span>
             </div>
           </div>
-          ${firstBookingLine ? `<p style="margin:0 0 20px;color:#555;line-height:1.6;font-size:13px;">Your first session is booked.<br><strong style="color:#111;">${firstBookingLine.replace(/^\n📅 First session: /, "")}</strong></p>` : ""}
+          ${firstBookingLine ? `<p style="margin:0 0 12px;color:#555;line-height:1.6;font-size:13px;">Your first session is booked.<br><strong style="color:#111;">${firstBookingLine.replace(/^\n📅 First session: /, "")}</strong></p>` : ""}
+          ${firstBookingCancelLine ? `<p style="margin:0 0 20px;color:#555;line-height:1.6;font-size:13px;">Need to reschedule or cancel that session? <a href="${firstBookingCancelLine}" style="color:#456466;text-decoration:underline;">Manage your booking</a>.</p>` : ""}
         </div>
       </div>
     </body></html>`;
