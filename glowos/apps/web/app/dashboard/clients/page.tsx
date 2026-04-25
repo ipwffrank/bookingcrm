@@ -60,11 +60,39 @@ interface ClientDetail {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const VIP_CONFIG: Record<VipTier, { emoji: string; label: string; className: string }> = {
-  platinum: { emoji: '💎', label: 'Platinum', className: 'bg-grey-15 text-grey-75 border-grey-15' },
-  gold:     { emoji: '🥇', label: 'Gold',     className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30' },
-  silver:   { emoji: '🥈', label: 'Silver',   className: 'bg-grey-15 text-grey-75 border-grey-15' },
-  bronze:   { emoji: '🥉', label: 'Bronze',   className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30' },
+// Tier criteria reflect the RFM (Recency, Frequency, Monetary) scoring done
+// by services/api/src/workers/vip.worker.ts. Score = R*0.3 + F*0.35 + M*0.35,
+// each on a 1-5 scale relative to this merchant's client base. Cutoffs:
+// Platinum ≥ 4.2, Gold ≥ 3.5, Silver ≥ 2.5, Bronze < 2.5.
+const VIP_CONFIG: Record<VipTier, { emoji: string; label: string; className: string; criteria: string; tooltip: string }> = {
+  platinum: {
+    emoji: '💎',
+    label: 'Platinum',
+    className: 'bg-grey-15 text-grey-75 border-grey-15',
+    criteria: 'Top spenders, recent & loyal',
+    tooltip: 'RFM score ≥ 4.2 / 5 — best 5–10% of your client base on recency, frequency, and spend combined.',
+  },
+  gold: {
+    emoji: '🥇',
+    label: 'Gold',
+    className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30',
+    criteria: 'Frequent visits, strong spend',
+    tooltip: 'RFM score 3.5–4.2 — regulars with above-average frequency and revenue.',
+  },
+  silver: {
+    emoji: '🥈',
+    label: 'Silver',
+    className: 'bg-grey-15 text-grey-75 border-grey-15',
+    criteria: 'Steady, periodic customers',
+    tooltip: 'RFM score 2.5–3.5 — active clients who visit moderately and spend at typical levels.',
+  },
+  bronze: {
+    emoji: '🥉',
+    label: 'Bronze',
+    className: 'bg-semantic-warn/10 text-semantic-warn border-semantic-warn/30',
+    criteria: 'New, occasional, or dormant',
+    tooltip: 'RFM score < 2.5 — new sign-ups, one-time visits, or clients whose last visit was long ago.',
+  },
 };
 
 const CHURN_CONFIG: Record<ChurnRisk, { label: string; className: string }> = {
@@ -492,6 +520,7 @@ export default function ClientsPage() {
           <button
             key={tier}
             onClick={() => setTierFilter(tierFilter === tier ? '' : tier)}
+            title={cfg.tooltip}
             className={`rounded-xl border p-3 text-left transition-all ${
               tierFilter === tier
                 ? `${cfg.className} ring-2 ring-tone-sage`
@@ -503,6 +532,7 @@ export default function ClientsPage() {
               <span className="text-sm font-semibold text-tone-ink">{cfg.label}</span>
             </div>
             <p className="text-xs text-grey-60">{tierCounts[tier]} client{tierCounts[tier] !== 1 ? 's' : ''}</p>
+            <p className="text-[11px] text-grey-60 mt-1 leading-snug">{cfg.criteria}</p>
           </button>
         ))}
       </div>
