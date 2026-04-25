@@ -863,6 +863,9 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
         </div>
       </div>
 
+      {/* Connect to Google card */}
+      <ConnectToGoogleCard bookingUrl={bookingUrl} merchantName={merchant.name} />
+
       {/* QR Code Card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-1">QR Code</h3>
@@ -934,6 +937,166 @@ function BookingPageTab({ merchant }: { merchant: Merchant }) {
           Adjust the height if your customers need more room.
         </p>
       </div>
+    </div>
+  );
+}
+
+// ─── Connect to Google card ────────────────────────────────────────────────────
+//
+// Walks merchants through pasting their public booking URL into Google Business
+// Profile's "Booking link" field. Result: a "Book online" button on Google
+// Search + Maps that deep-links to the GlowOS widget. NOT the official Reserve
+// with Google integration (that's a partner-tier program GlowOS hasn't applied
+// for yet) — but visually identical to the customer.
+
+const SAGE = '#456466';
+const SAGE_RGB = '69, 100, 102';
+const INK_RGB = '26, 35, 19';
+
+function ConnectToGoogleCard({ bookingUrl, merchantName }: { bookingUrl: string; merchantName: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(bookingUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  const steps = [
+    {
+      title: 'Open your Google Business Profile',
+      body: 'Sign in at business.google.com and select your listing.',
+      cta: { label: 'Open Business Profile →', href: 'https://business.google.com' },
+    },
+    {
+      title: 'Find the Booking link field',
+      body: 'On your profile, click "Edit profile" → "More" → "Booking link". (On older layouts it may be under "Hours and more" or shown as an "Add a booking link" tile.)',
+    },
+    {
+      title: 'Paste your booking URL',
+      body: 'Use the URL above. Google may take a few hours to a couple of days to surface a "Book online" button on Search and Maps.',
+    },
+    {
+      title: 'Verify it works',
+      body: `Search "${merchantName}" on Google. The button should deep-link straight to your GlowOS booking page.`,
+    },
+  ];
+
+  return (
+    <div
+      className="rounded-xl p-6"
+      style={{
+        backgroundColor: '#ffffff',
+        border: `1px solid rgba(${INK_RGB}, 0.08)`,
+      }}
+    >
+      <div className="flex items-start gap-3 mb-4">
+        <div
+          className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.14)` }}
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" style={{ color: SAGE }} fill="currentColor">
+            <path d="M21.35 11.1h-9.17v2.85h5.27c-.23 1.45-1.62 4.25-5.27 4.25-3.17 0-5.76-2.62-5.76-5.85s2.59-5.85 5.76-5.85c1.8 0 3.01.77 3.7 1.43l2.52-2.43C16.85 3.95 14.74 3 12.18 3 7.13 3 3.05 7.08 3.05 12.13s4.08 9.13 9.13 9.13c5.27 0 8.76-3.7 8.76-8.92 0-.6-.07-1.05-.16-1.5l-.43-.74z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-sm font-semibold" style={{ color: '#1a2313' }}>Connect to Google</h3>
+          <p className="text-xs mt-0.5" style={{ color: `rgba(${INK_RGB}, 0.6)` }}>
+            Add a &ldquo;Book online&rdquo; button to your Google Business Profile. Customers can book directly from Google Search and Maps in 4 steps.
+          </p>
+        </div>
+      </div>
+
+      {/* URL row mirroring the one above so the merchant has it right where the steps reference it */}
+      <div
+        className="flex items-center gap-2 p-3 rounded-lg mb-5"
+        style={{
+          backgroundColor: `rgba(${SAGE_RGB}, 0.06)`,
+          border: `1px solid rgba(${SAGE_RGB}, 0.25)`,
+        }}
+      >
+        <span className="flex-1 text-sm font-mono truncate" style={{ color: SAGE }}>{bookingUrl}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex-shrink-0"
+          style={{
+            backgroundColor: copied ? `rgba(${SAGE_RGB}, 0.18)` : '#ffffff',
+            color: copied ? SAGE : `rgba(${INK_RGB}, 0.75)`,
+            border: copied ? `1px solid rgba(${SAGE_RGB}, 0.45)` : `1px solid rgba(${INK_RGB}, 0.18)`,
+          }}
+        >
+          {copied ? (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              Copied!
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+              </svg>
+              Copy URL
+            </>
+          )}
+        </button>
+      </div>
+
+      <ol className="space-y-3">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-3">
+            <span
+              className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold"
+              style={{ backgroundColor: SAGE, color: '#ffffff' }}
+            >
+              {i + 1}
+            </span>
+            <div className="flex-1 pt-0.5">
+              <p className="text-sm font-medium" style={{ color: '#1a2313' }}>{s.title}</p>
+              <p className="text-xs mt-0.5 leading-relaxed" style={{ color: `rgba(${INK_RGB}, 0.65)` }}>
+                {s.body}
+              </p>
+              {s.cta && (
+                <a
+                  href={s.cta.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-1.5 text-xs font-semibold"
+                  style={{ color: SAGE }}
+                >
+                  {s.cta.label}
+                </a>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <details
+        className="mt-5 pt-4 group"
+        style={{ borderTop: `1px solid rgba(${INK_RGB}, 0.08)` }}
+      >
+        <summary
+          className="text-xs font-medium cursor-pointer select-none list-none flex items-center gap-1.5"
+          style={{ color: `rgba(${INK_RGB}, 0.7)` }}
+        >
+          <svg
+            className="w-3 h-3 transition-transform group-open:rotate-90"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+          Is this the same as &ldquo;Reserve with Google&rdquo;?
+        </summary>
+        <p className="text-xs mt-2 leading-relaxed" style={{ color: `rgba(${INK_RGB}, 0.6)` }}>
+          Not technically. &ldquo;Reserve with Google&rdquo; is a partner programme run with platforms like OpenTable, Fresha, and Booksy where the booking happens inside a Google modal. The Booking link approach above renders an identical-looking &ldquo;Book online&rdquo; button on your Google profile, but the booking itself happens on your GlowOS page. From the customer&rsquo;s perspective the experience is the same; from yours, you keep full control of the booking flow and pay no aggregator fees.
+        </p>
+      </details>
     </div>
   );
 }
