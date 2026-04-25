@@ -94,6 +94,19 @@ interface ClientRetentionData {
 interface RevByDowRow { dow: number; label: string; revenue: number; count: number; }
 interface RevByDowData { period: string; revenue_by_dow: RevByDowRow[]; }
 
+interface ClientSegmentRow {
+  key: 'new' | 'returning' | 'walkin';
+  label: string;
+  bookings: number;
+  revenue: number;
+}
+interface RevenueByClientSegmentData {
+  period: string;
+  currency: string;
+  segments: ClientSegmentRow[];
+  totals: { bookings: number; revenue: number };
+}
+
 interface ReviewDistributionRow { rating: number; count: number; percentage: number; }
 interface ReviewDistributionData { period: string; distribution: ReviewDistributionRow[]; }
 
@@ -636,6 +649,88 @@ function ClientRetention({ data, loading }: { data: ClientRetentionData | null; 
   );
 }
 
+// ─── Revenue by Client Segment ────────────────────────────────────────────────
+// Three-way split (new / returning / walk-in). Walk-in trumps tenure — even if
+// a returning customer walks in, that booking counts in walk-in revenue
+// because the operational pattern is what matters here.
+
+function RevenueByClientSegment({
+  data,
+  loading,
+}: {
+  data: RevenueByClientSegmentData | null;
+  loading: boolean;
+}) {
+  const total = data?.totals.revenue ?? 0;
+  // Tone palette per segment — restricted to the three allowed dashboard tones
+  // (no chromatic colors).
+  const toneClass: Record<ClientSegmentRow['key'], string> = {
+    new:       'bg-tone-ink',
+    returning: 'bg-tone-sage',
+    walkin:    'bg-grey-45',
+  };
+  const dotClass: Record<ClientSegmentRow['key'], string> = {
+    new:       'bg-tone-ink',
+    returning: 'bg-tone-sage',
+    walkin:    'bg-grey-45',
+  };
+
+  return (
+    <div className="bg-tone-surface rounded-xl border border-grey-15 p-6">
+      <h2 className="text-sm font-semibold text-grey-75 mb-1">Revenue by Client Segment</h2>
+      <p className="text-xs text-grey-60 mb-4">
+        How revenue splits across walk-ins, first-time bookers, and your repeat clients.
+      </p>
+      {loading ? (
+        <SkeletonTable rows={2} />
+      ) : !data || total === 0 ? (
+        <p className="text-sm text-grey-45 py-6 text-center">No revenue data for this period</p>
+      ) : (
+        <div className="space-y-4">
+          {/* Stacked bar */}
+          <div className="flex rounded-xl overflow-hidden h-8">
+            {data.segments.map((seg) => {
+              const pct = total > 0 ? (seg.revenue / total) * 100 : 0;
+              if (pct === 0) return null;
+              return (
+                <div
+                  key={seg.key}
+                  className={`flex items-center justify-center text-xs font-semibold text-white ${toneClass[seg.key]} transition-all`}
+                  style={{ width: `${pct}%` }}
+                  title={`${seg.label}: SGD ${seg.revenue.toFixed(2)} (${pct.toFixed(0)}%)`}
+                >
+                  {pct > 12 ? `${pct.toFixed(0)}%` : ''}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Per-segment summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {data.segments.map((seg) => {
+              const pct = total > 0 ? (seg.revenue / total) * 100 : 0;
+              return (
+                <div key={seg.key} className="flex items-start gap-2">
+                  <span className={`w-3 h-3 rounded-full ${dotClass[seg.key]} flex-shrink-0 mt-1.5`} />
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-tone-ink">
+                      SGD {seg.revenue.toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </p>
+                    <p className="text-xs text-grey-60">{seg.label}</p>
+                    <p className="text-[11px] text-grey-45 mt-0.5">
+                      {seg.bookings} booking{seg.bookings === 1 ? '' : 's'} · {pct.toFixed(0)}%
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Revenue by Day of Week ────────────────────────────────────────────────────
 
 function RevByDow({ data, loading }: { data: RevByDowData | null; loading: boolean }) {
@@ -1017,6 +1112,7 @@ export default function AnalyticsPage() {
   const [cancelData, setCancelData]             = useState<CancellationRateData | null>(null);
   const [peakData, setPeakData]                 = useState<PeakHoursData | null>(null);
   const [retentionData, setRetentionData]       = useState<ClientRetentionData | null>(null);
+  const [segmentData, setSegmentData]           = useState<RevenueByClientSegmentData | null>(null);
   const [revDowData, setRevDowData]             = useState<RevByDowData | null>(null);
   const [reviewDistribution, setReviewDistribution] = useState<ReviewDistributionData | null>(null);
   const [reviewTrend, setReviewTrend]           = useState<ReviewTrendData | null>(null);
@@ -1030,6 +1126,7 @@ export default function AnalyticsPage() {
   const [loadingCancel, setLoadingCancel]       = useState(true);
   const [loadingPeak, setLoadingPeak]           = useState(true);
   const [loadingRetention, setLoadingRetention] = useState(true);
+  const [loadingSegment, setLoadingSegment]     = useState(true);
   const [loadingRevDow, setLoadingRevDow]       = useState(true);
   const [firstTimerROILoading, setFirstTimerROILoading] = useState(true);
 
@@ -1121,6 +1218,13 @@ export default function AnalyticsPage() {
           const data = await apiFetch(`/merchant/analytics/client-retention?period=${p}`, { headers }) as ClientRetentionData;
           setRetentionData(data);
         } catch (e) { handleError(e); } finally { setLoadingRetention(false); }
+      })();
+
+      void (async () => {
+        try {
+          const data = await apiFetch(`/merchant/analytics/revenue-by-client-segment?period=${p}`, { headers }) as RevenueByClientSegmentData;
+          setSegmentData(data);
+        } catch (e) { handleError(e); } finally { setLoadingSegment(false); }
       })();
 
       void (async () => {
@@ -1220,6 +1324,11 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <CancellationRates data={cancelData} loading={loadingCancel} />
         <ClientRetention   data={retentionData} loading={loadingRetention} />
+      </div>
+
+      {/* Revenue split by client segment — answers "where is my money coming from?" */}
+      <div className="mb-6">
+        <RevenueByClientSegment data={segmentData} loading={loadingSegment} />
       </div>
 
       {/* Revenue by Day of Week */}

@@ -307,6 +307,86 @@ analyticsRouter.get("/booking-sources", requireMerchant, async (c) => {
   });
 });
 
+// ─── GET /merchant/analytics/revenue-by-client-segment ────────────────────────
+// Splits revenue into three mutually-exclusive buckets so the merchant can see
+// where money is actually coming from, beyond just channel:
+//   walk-in    booking_source IN ('walkin_manual', 'walkin') — physical
+//              counter trade, regardless of whether the client is new or old
+//   new        client's first ever non-cancelled booking at this merchant
+//   returning  client has a prior non-cancelled booking
+//
+// Walk-in deliberately trumps new/returning — a returning customer who walks
+// in still belongs in the walk-in bucket because the operational pattern is
+// different (no slot held, no advance notice). The existing /booking-sources
+// endpoint shows channel mix; /client-retention shows new-vs-returning
+// counts. This is the missing combination: revenue × client segment.
+
+analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const days = getPeriodDays(periodParam);
+  const { start, end } = getPeriodBounds(days);
+
+  const rows = await db
+    .select({
+      segment: sql<"walkin" | "new" | "returning">`
+        CASE
+          WHEN ${bookings.bookingSource} IN ('walkin_manual', 'walkin') THEN 'walkin'
+          WHEN NOT EXISTS (
+            SELECT 1 FROM bookings b2
+            WHERE b2.merchant_id = ${bookings.merchantId}
+              AND b2.client_id = ${bookings.clientId}
+              AND b2.start_time < ${bookings.startTime}
+              AND b2.status NOT IN ('cancelled', 'no_show')
+          ) THEN 'new'
+          ELSE 'returning'
+        END
+      `,
+      count: sql<number>`cast(count(*) as int)`,
+      revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchantId),
+        gte(bookings.startTime, start),
+        lte(bookings.startTime, end),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
+      ),
+    )
+    .groupBy(sql`segment`);
+
+  // Backfill any missing segment with zeros so the frontend doesn't need
+  // null-checks per bucket.
+  const byKey = new Map<string, { count: number; revenue: number }>();
+  for (const r of rows) {
+    byKey.set(r.segment, { count: Number(r.count), revenue: Number(r.revenue) });
+  }
+  const segmentDefs: Array<{ key: "new" | "returning" | "walkin"; label: string }> = [
+    { key: "new",       label: "New clients" },
+    { key: "returning", label: "Returning clients" },
+    { key: "walkin",    label: "Walk-ins" },
+  ];
+  const segments = segmentDefs.map((s) => {
+    const v = byKey.get(s.key) ?? { count: 0, revenue: 0 };
+    return {
+      key: s.key,
+      label: s.label,
+      bookings: v.count,
+      revenue: parseFloat(v.revenue.toFixed(2)),
+    };
+  });
+  const totalBookings = segments.reduce((sum, s) => sum + s.bookings, 0);
+  const totalRevenue = segments.reduce((sum, s) => sum + s.revenue, 0);
+
+  return c.json({
+    period: periodParam,
+    currency: "SGD",
+    segments,
+    totals: { bookings: totalBookings, revenue: parseFloat(totalRevenue.toFixed(2)) },
+  });
+});
+
 // ─── GET /merchant/analytics/cancellation-rate ────────────────────────────────
 
 analyticsRouter.get("/cancellation-rate", requireMerchant, async (c) => {
