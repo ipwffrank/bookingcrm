@@ -224,7 +224,7 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
 auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
   const body = c.get("body") as z.infer<typeof refreshSchema>;
 
-  let payload: { userId: string };
+  let payload: ReturnType<typeof verifyRefreshToken>;
   try {
     payload = verifyRefreshToken(body.refresh_token);
   } catch {
@@ -246,14 +246,42 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
   const { user, merchant } = row;
 
   const superAdmin = isSuperAdminEmail(user.email);
+
+  // If the refresh token was issued during impersonation, re-validate the
+  // actor against the current allowlist (rotating SUPER_ADMIN_EMAILS revokes
+  // mid-flight impersonation) and forward the claims to the new access token.
+  // Otherwise the access token would silently lose impersonation context after
+  // 15 minutes and any subsequent writes would no longer be audited.
+  const isImpersonating =
+    payload.impersonating === true &&
+    typeof payload.actorEmail === "string" &&
+    typeof payload.actorUserId === "string" &&
+    isSuperAdminEmail(payload.actorEmail);
+
   const accessToken = generateAccessToken({
     userId: user.id,
     merchantId: merchant.id,
     role: user.role,
     ...(user.staffId ? { staffId: user.staffId } : {}),
-    ...(superAdmin ? { superAdmin: true } : {}),
+    ...(superAdmin || isImpersonating ? { superAdmin: true } : {}),
+    ...(isImpersonating
+      ? {
+          impersonating: true,
+          actorUserId: payload.actorUserId!,
+          actorEmail: payload.actorEmail!,
+        }
+      : {}),
   });
-  const refreshToken = generateRefreshToken({ userId: user.id });
+  const refreshToken = generateRefreshToken(
+    isImpersonating
+      ? {
+          userId: user.id,
+          impersonating: true,
+          actorUserId: payload.actorUserId!,
+          actorEmail: payload.actorEmail!,
+        }
+      : { userId: user.id },
+  );
 
   return c.json({
     access_token: accessToken,

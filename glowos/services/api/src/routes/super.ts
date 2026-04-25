@@ -123,7 +123,12 @@ superRouter.post("/impersonate", zValidator(impersonateSchema), async (c) => {
     actorUserId,
     actorEmail: actor.email,
   });
-  const refreshToken = generateRefreshToken({ userId: targetUser.id });
+  const refreshToken = generateRefreshToken({
+    userId: targetUser.id,
+    impersonating: true,
+    actorUserId,
+    actorEmail: actor.email,
+  });
 
   await logAudit({
     actorUserId,

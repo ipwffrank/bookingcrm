@@ -20,6 +20,13 @@ export interface AccessTokenPayload {
 
 export interface RefreshTokenPayload {
   userId: string;
+  // Impersonation claims must round-trip through the refresh token because
+  // the access token expires in ~15 min — without these, a silent refresh
+  // mid-impersonation would strip the audit trail and downstream writes
+  // would no longer be flagged as impersonated.
+  impersonating?: boolean;
+  actorUserId?: string;
+  actorEmail?: string;
 }
 
 export function generateAccessToken(payload: AccessTokenPayload): string {
