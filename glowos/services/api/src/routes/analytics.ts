@@ -22,6 +22,33 @@ function getPeriodBounds(days: number): { start: Date; end: Date; prevStart: Dat
   return { start, end, prevStart, prevEnd };
 }
 
+/**
+ * Resolve the date window for an analytics request. Accepts either:
+ *   from / to   explicit ISO dates (YYYY-MM-DD or full ISO timestamp)
+ *   period      shorthand: '7d' | '30d' | '90d' (used as fallback)
+ *
+ * The previous-period bounds are calculated as a window of equal length
+ * immediately preceding the current window — used by the YoY/% change
+ * comparison badges throughout the analytics page.
+ */
+function resolveBounds(
+  from: string | undefined,
+  to: string | undefined,
+  period: string,
+): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
+  if (from && to) {
+    const start = new Date(from);
+    const end = new Date(to);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start.getTime() <= end.getTime()) {
+      const span = end.getTime() - start.getTime();
+      const prevEnd = new Date(start.getTime() - 1);
+      const prevStart = new Date(prevEnd.getTime() - span);
+      return { start, end, prevStart, prevEnd };
+    }
+  }
+  return getPeriodBounds(getPeriodDays(period));
+}
+
 function pctChange(current: number, previous: number): number | null {
   if (previous === 0) return current > 0 ? 100 : null;
   return parseFloat((((current - previous) / previous) * 100).toFixed(1));
@@ -32,8 +59,7 @@ function pctChange(current: number, previous: number): number | null {
 analyticsRouter.get("/summary", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end, prevStart, prevEnd } = getPeriodBounds(days);
+  const { start, end, prevStart, prevEnd } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   // Current period aggregates
   const [currentAgg] = await db
@@ -140,8 +166,7 @@ analyticsRouter.get("/summary", requireMerchant, async (c) => {
 analyticsRouter.get("/revenue", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -176,8 +201,7 @@ analyticsRouter.get("/revenue", requireMerchant, async (c) => {
 analyticsRouter.get("/staff-performance", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -237,8 +261,7 @@ analyticsRouter.get("/staff-performance", requireMerchant, async (c) => {
 analyticsRouter.get("/top-services", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -276,8 +299,7 @@ analyticsRouter.get("/top-services", requireMerchant, async (c) => {
 analyticsRouter.get("/booking-sources", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -324,8 +346,7 @@ analyticsRouter.get("/booking-sources", requireMerchant, async (c) => {
 analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   // Raw SQL via db.execute — Drizzle's groupBy(sql`segment`) doesn't reliably
   // resolve to the CASE alias across all builders. CTE wrap also makes the
@@ -396,8 +417,7 @@ analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => 
 analyticsRouter.get("/cancellation-rate", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const [totals] = await db
     .select({
@@ -435,8 +455,7 @@ analyticsRouter.get("/cancellation-rate", requireMerchant, async (c) => {
 analyticsRouter.get("/peak-hours", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -474,8 +493,7 @@ analyticsRouter.get("/peak-hours", requireMerchant, async (c) => {
 analyticsRouter.get("/client-retention", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   // Clients with bookings in this period
   const activeInPeriod = await db
@@ -527,8 +545,7 @@ analyticsRouter.get("/client-retention", requireMerchant, async (c) => {
 analyticsRouter.get("/revenue-by-dow", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -566,8 +583,7 @@ analyticsRouter.get("/revenue-by-dow", requireMerchant, async (c) => {
 analyticsRouter.get("/review-distribution", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({
@@ -605,8 +621,7 @@ analyticsRouter.get("/review-distribution", requireMerchant, async (c) => {
 analyticsRouter.get("/review-trend", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const periodParam = c.req.query("period") ?? "30d";
-  const days = getPeriodDays(periodParam);
-  const { start, end } = getPeriodBounds(days);
+  const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
   const rows = await db
     .select({

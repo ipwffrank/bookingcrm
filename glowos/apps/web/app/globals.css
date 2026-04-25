@@ -686,3 +686,16 @@
     transform: none !important;
   }
 }
+
+/* Print: preserve background colors + text so PDF exports of the
+   analytics + client profile pages keep their visual hierarchy.
+   Without this Chrome strips backgrounds (saves ink), which makes
+   white text on dark cards (Total Revenue summary, etc.) invisible. */
+@media print {
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

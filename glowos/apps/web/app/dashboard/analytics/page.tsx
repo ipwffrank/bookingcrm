@@ -6,7 +6,34 @@ import { apiFetch, ApiError } from '../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type Period = '7d' | '30d' | '90d';
+type Period = '7d' | '30d' | '90d' | 'custom';
+
+interface DateWindow {
+  period: Period;
+  from?: string; // YYYY-MM-DD when period === 'custom'
+  to?: string;   // YYYY-MM-DD when period === 'custom'
+}
+
+// Build the query string suffix for analytics fetches. For preset periods
+// just sends ?period=30d; for custom adds ?from&to which the backend's
+// resolveBounds() picks up over the period fallback.
+function buildWindowQuery(w: DateWindow): string {
+  if (w.period === 'custom' && w.from && w.to) {
+    return `period=custom&from=${encodeURIComponent(w.from)}&to=${encodeURIComponent(w.to)}`;
+  }
+  return `period=${w.period}`;
+}
+
+function todayLocalDateString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function daysAgoLocalDateString(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 interface AnalyticsSummary {
   period: string;
@@ -1067,33 +1094,72 @@ function FirstTimerROI({
 // ─── Period Selector ───────────────────────────────────────────────────────────
 
 function PeriodSelector({
-  period,
+  windowState,
   onChange,
 }: {
-  period: Period;
-  onChange: (p: Period) => void;
+  windowState: DateWindow;
+  onChange: (next: DateWindow) => void;
 }) {
   const options: { value: Period; label: string }[] = [
-    { value: '7d', label: 'Last 7 days' },
-    { value: '30d', label: 'Last 30 days' },
-    { value: '90d', label: 'Last 90 days' },
+    { value: '7d', label: '7 days' },
+    { value: '30d', label: '30 days' },
+    { value: '90d', label: '90 days' },
+    { value: 'custom', label: 'Custom' },
   ];
 
   return (
-    <div className="flex gap-1 bg-grey-15 rounded-xl p-1">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-            period === opt.value
-              ? 'bg-tone-surface text-tone-sage shadow-sm'
-              : 'text-grey-60 hover:text-grey-75'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
+    <div className="space-y-2">
+      <div className="flex gap-1 bg-grey-15 rounded-xl p-1">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => {
+              if (opt.value === 'custom') {
+                onChange({
+                  period: 'custom',
+                  from: windowState.from ?? daysAgoLocalDateString(30),
+                  to: windowState.to ?? todayLocalDateString(),
+                });
+              } else {
+                onChange({ period: opt.value });
+              }
+            }}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              windowState.period === opt.value
+                ? 'bg-tone-surface text-tone-sage shadow-sm'
+                : 'text-grey-60 hover:text-grey-75'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom range — two date inputs that commit on blur or Enter */}
+      {windowState.period === 'custom' && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={windowState.from ?? ''}
+            max={windowState.to ?? todayLocalDateString()}
+            onChange={(e) =>
+              onChange({ ...windowState, from: e.target.value })
+            }
+            className="flex-1 rounded-lg border border-grey-15 bg-tone-surface px-2.5 py-1.5 text-xs text-tone-ink outline-none focus:ring-2 focus:ring-tone-sage"
+          />
+          <span className="text-xs text-grey-60">to</span>
+          <input
+            type="date"
+            value={windowState.to ?? ''}
+            min={windowState.from}
+            max={todayLocalDateString()}
+            onChange={(e) =>
+              onChange({ ...windowState, to: e.target.value })
+            }
+            className="flex-1 rounded-lg border border-grey-15 bg-tone-surface px-2.5 py-1.5 text-xs text-tone-ink outline-none focus:ring-2 focus:ring-tone-sage"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1102,7 +1168,8 @@ function PeriodSelector({
 
 export default function AnalyticsPage() {
   const router = useRouter();
-  const [period, setPeriod] = useState<Period>('30d');
+  const [windowState, setWindowState] = useState<DateWindow>({ period: '30d' });
+  const period = windowState.period;
 
   const [summaryData, setSummaryData]           = useState<AnalyticsSummary | null>(null);
   const [revenueData, setRevenueData]           = useState<RevenueData | null>(null);
@@ -1133,13 +1200,21 @@ export default function AnalyticsPage() {
   const [error, setError] = useState('');
 
   const fetchAll = useCallback(
-    async (p: Period) => {
+    async (w: DateWindow) => {
       const token = localStorage.getItem('access_token');
       if (!token) {
         router.push('/login');
         return;
       }
 
+      // Custom range without both ends set → don't fetch yet, wait for user
+      // to finish picking. Avoids spamming the API on every keystroke as
+      // they scroll the date picker.
+      if (w.period === 'custom' && (!w.from || !w.to)) return;
+
+      const qs = buildWindowQuery(w);
+      const p = w.period; // back-compat alias for endpoints that echo it back
+      void p; // some local closures reference `p`; keep TS happy
       const headers = { Authorization: `Bearer ${token}` };
 
       setLoadingSummary(true);
@@ -1166,91 +1241,91 @@ export default function AnalyticsPage() {
       // Fetch all in parallel, each independently so partial failures don't block others
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/summary?period=${p}`, { headers }) as AnalyticsSummary;
+          const data = await apiFetch(`/merchant/analytics/summary?${qs}`, { headers }) as AnalyticsSummary;
           setSummaryData(data);
         } catch (e) { handleError(e); } finally { setLoadingSummary(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/revenue?period=${p}`, { headers }) as RevenueData;
+          const data = await apiFetch(`/merchant/analytics/revenue?${qs}`, { headers }) as RevenueData;
           setRevenueData(data);
         } catch (e) { handleError(e); } finally { setLoadingRevenue(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/staff-performance?period=${p}`, { headers }) as StaffPerformanceData;
+          const data = await apiFetch(`/merchant/analytics/staff-performance?${qs}`, { headers }) as StaffPerformanceData;
           setStaffData(data);
         } catch (e) { handleError(e); } finally { setLoadingStaff(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/top-services?period=${p}`, { headers }) as TopServicesData;
+          const data = await apiFetch(`/merchant/analytics/top-services?${qs}`, { headers }) as TopServicesData;
           setServicesData(data);
         } catch (e) { handleError(e); } finally { setLoadingServices(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/booking-sources?period=${p}`, { headers }) as BookingSourcesData;
+          const data = await apiFetch(`/merchant/analytics/booking-sources?${qs}`, { headers }) as BookingSourcesData;
           setSourcesData(data);
         } catch (e) { handleError(e); } finally { setLoadingSources(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/cancellation-rate?period=${p}`, { headers }) as CancellationRateData;
+          const data = await apiFetch(`/merchant/analytics/cancellation-rate?${qs}`, { headers }) as CancellationRateData;
           setCancelData(data);
         } catch (e) { handleError(e); } finally { setLoadingCancel(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/peak-hours?period=${p}`, { headers }) as PeakHoursData;
+          const data = await apiFetch(`/merchant/analytics/peak-hours?${qs}`, { headers }) as PeakHoursData;
           setPeakData(data);
         } catch (e) { handleError(e); } finally { setLoadingPeak(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/client-retention?period=${p}`, { headers }) as ClientRetentionData;
+          const data = await apiFetch(`/merchant/analytics/client-retention?${qs}`, { headers }) as ClientRetentionData;
           setRetentionData(data);
         } catch (e) { handleError(e); } finally { setLoadingRetention(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/revenue-by-client-segment?period=${p}`, { headers }) as RevenueByClientSegmentData;
+          const data = await apiFetch(`/merchant/analytics/revenue-by-client-segment?${qs}`, { headers }) as RevenueByClientSegmentData;
           setSegmentData(data);
         } catch (e) { handleError(e); } finally { setLoadingSegment(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/revenue-by-dow?period=${p}`, { headers }) as RevByDowData;
+          const data = await apiFetch(`/merchant/analytics/revenue-by-dow?${qs}`, { headers }) as RevByDowData;
           setRevDowData(data);
         } catch (e) { handleError(e); } finally { setLoadingRevDow(false); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/review-distribution?period=${p}`, { headers }) as ReviewDistributionData;
+          const data = await apiFetch(`/merchant/analytics/review-distribution?${qs}`, { headers }) as ReviewDistributionData;
           setReviewDistribution(data);
         } catch (e) { handleError(e); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/review-trend?period=${p}`, { headers }) as ReviewTrendData;
+          const data = await apiFetch(`/merchant/analytics/review-trend?${qs}`, { headers }) as ReviewTrendData;
           setReviewTrend(data);
         } catch (e) { handleError(e); }
       })();
 
       void (async () => {
         try {
-          const data = await apiFetch(`/merchant/analytics/first-timer-roi?period=${p}`, { headers }) as FirstTimerROIData;
+          const data = await apiFetch(`/merchant/analytics/first-timer-roi?${qs}`, { headers }) as FirstTimerROIData;
           setFirstTimerROIData(data);
         } catch (e) {
           setFirstTimerROIData(null);
@@ -1267,11 +1342,11 @@ export default function AnalyticsPage() {
       router.push('/login');
       return;
     }
-    void fetchAll(period);
-  }, [period, fetchAll, router]);
+    void fetchAll(windowState);
+  }, [windowState, fetchAll, router]);
 
-  function handlePeriodChange(p: Period) {
-    setPeriod(p);
+  function handleWindowChange(next: DateWindow) {
+    setWindowState(next);
   }
 
   return (
@@ -1285,7 +1360,15 @@ export default function AnalyticsPage() {
               period selector with a static caption so the PDF reflects which
               window the data covers. */}
           <p className="hidden print:block text-sm text-grey-75 mt-1">
-            Period: <strong className="text-tone-ink capitalize">{period === '7d' ? 'Last 7 days' : period === '30d' ? 'Last 30 days' : 'Last 90 days'}</strong>
+            Period:{' '}
+            <strong className="text-tone-ink">
+              {windowState.period === '7d' && 'Last 7 days'}
+              {windowState.period === '30d' && 'Last 30 days'}
+              {windowState.period === '90d' && 'Last 90 days'}
+              {windowState.period === 'custom' && windowState.from && windowState.to && (
+                <>{windowState.from} to {windowState.to}</>
+              )}
+            </strong>
             <span className="text-grey-60 ml-2">
               · Generated {new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
@@ -1304,7 +1387,7 @@ export default function AnalyticsPage() {
             Export PDF
           </button>
           <div className="sm:w-72">
-            <PeriodSelector period={period} onChange={handlePeriodChange} />
+            <PeriodSelector windowState={windowState} onChange={handleWindowChange} />
           </div>
         </div>
       </div>
@@ -1313,7 +1396,7 @@ export default function AnalyticsPage() {
         <div className="mb-6 rounded-xl bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger flex items-center justify-between">
           <span>{error}</span>
           <button
-            onClick={() => { setError(''); void fetchAll(period); }}
+            onClick={() => { setError(''); void fetchAll(windowState); }}
             className="ml-4 text-xs font-medium underline hover:no-underline flex-shrink-0"
           >
             Retry
