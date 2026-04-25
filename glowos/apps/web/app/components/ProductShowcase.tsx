@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react';
 
 const SAGE = '#456466';
 const SAGE_RGB = '69, 100, 102';
+const INK = '#1a2313';
+const INK_RGB = '26, 35, 19';
+const CREAM = '#fcfaef';
 
 const SCREENS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'booking', label: 'Booking' },
-  { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'staff', label: 'Staff' },
 ] as const;
 
@@ -24,7 +26,7 @@ function AnimatedChart({ active }: { active: boolean }) {
           className="flex-1 rounded-t transition-all duration-700 ease-out"
           style={{
             height: active ? `${h}%` : '4%',
-            backgroundColor: `rgba(${SAGE_RGB}, ${0.4 + (h / 100) * 0.6})`,
+            backgroundColor: `rgba(${SAGE_RGB}, ${0.5 + (h / 100) * 0.5})`,
             transitionDelay: `${i * 60}ms`,
           }}
         />
@@ -45,21 +47,30 @@ function AnalyticsScreen({ active }: { active: boolean }) {
         ].map((s, i) => (
           <div
             key={s.label}
-            className="bg-white/5 rounded-lg p-2.5 transition-all duration-500"
-            style={{ transform: active ? 'translateY(0)' : 'translateY(8px)', opacity: active ? 1 : 0, transitionDelay: `${i * 100}ms` }}
+            className="rounded-lg p-2.5 transition-all duration-500"
+            style={{
+              backgroundColor: '#ffffff',
+              border: `1px solid rgba(${INK_RGB}, 0.06)`,
+              transform: active ? 'translateY(0)' : 'translateY(8px)',
+              opacity: active ? 1 : 0,
+              transitionDelay: `${i * 100}ms`,
+            }}
           >
-            <p className="text-[10px] text-white/40">{s.label}</p>
-            <p className="text-sm font-bold text-white mt-0.5">{s.value}</p>
+            <p className="text-[10px]" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>{s.label}</p>
+            <p className="text-sm font-bold mt-0.5" style={{ color: INK }}>{s.value}</p>
             <p className="text-[10px] mt-0.5" style={{ color: SAGE }}>{s.delta}</p>
           </div>
         ))}
       </div>
-      <div className="bg-white/5 rounded-lg p-3">
-        <p className="text-[10px] text-white/40 mb-2">Monthly Revenue</p>
+      <div
+        className="rounded-lg p-3"
+        style={{ backgroundColor: '#ffffff', border: `1px solid rgba(${INK_RGB}, 0.06)` }}
+      >
+        <p className="text-[10px] mb-2" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>Monthly Revenue</p>
         <AnimatedChart active={active} />
         <div className="flex justify-between mt-1.5 px-1">
           {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(m => (
-            <span key={m} className="text-[7px] text-white/25">{m}</span>
+            <span key={m} className="text-[7px]" style={{ color: `rgba(${INK_RGB}, 0.3)` }}>{m}</span>
           ))}
         </div>
       </div>
@@ -86,19 +97,25 @@ function CalendarScreen({ active }: { active: boolean }) {
             className="text-center transition-all duration-500"
             style={{ transform: active ? 'translateY(0)' : 'translateY(-8px)', opacity: active ? 1 : 0, transitionDelay: `${i * 80}ms` }}
           >
-            <div className="w-6 h-6 rounded-full bg-white/10 mx-auto mb-1 flex items-center justify-center text-[8px] font-bold text-white/60">
+            <div
+              className="w-6 h-6 rounded-full mx-auto mb-1 flex items-center justify-center text-[8px] font-bold"
+              style={{ backgroundColor: `rgba(${INK_RGB}, 0.08)`, color: `rgba(${INK_RGB}, 0.6)` }}
+            >
               {name[0]}
             </div>
-            <p className="text-[9px] text-white/50">{name}</p>
+            <p className="text-[9px]" style={{ color: `rgba(${INK_RGB}, 0.55)` }}>{name}</p>
           </div>
         ))}
       </div>
-      <div className="relative bg-white/5 rounded-lg p-2" style={{ minHeight: 184 }}>
+      <div
+        className="relative rounded-lg p-2"
+        style={{ backgroundColor: '#ffffff', border: `1px solid rgba(${INK_RGB}, 0.06)`, minHeight: 184 }}
+      >
         {['9:00', '10:00', '11:00', '12:00'].map((t, i) => (
-          <div key={t} className="absolute left-1 text-[7px] text-white/25" style={{ top: 8 + i * 46 }}>{t}</div>
+          <div key={t} className="absolute left-1 text-[7px]" style={{ top: 8 + i * 46, color: `rgba(${INK_RGB}, 0.3)` }}>{t}</div>
         ))}
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="absolute left-6 right-2 border-t border-white/5" style={{ top: 8 + i * 46 }} />
+          <div key={i} className="absolute left-6 right-2 border-t" style={{ top: 8 + i * 46, borderColor: `rgba(${INK_RGB}, 0.06)` }} />
         ))}
         {slots.map((slot, i) => (
           <div
@@ -111,12 +128,12 @@ function CalendarScreen({ active }: { active: boolean }) {
               height: slot.h * 23,
               opacity: active ? 1 : 0,
               transitionDelay: `${200 + i * 120}ms`,
-              backgroundColor: `rgba(${SAGE_RGB}, ${0.18 + (i % 3) * 0.08})`,
+              backgroundColor: `rgba(${SAGE_RGB}, ${0.14 + (i % 3) * 0.06})`,
               borderColor: `rgba(${SAGE_RGB}, 0.45)`,
             }}
           >
-            <p className="text-[7px] font-medium text-white/85 truncate">{slot.client}</p>
-            <p className="text-[6px] text-white/45 truncate">{slot.service}</p>
+            <p className="text-[7px] font-medium truncate" style={{ color: INK }}>{slot.client}</p>
+            <p className="text-[6px] truncate" style={{ color: `rgba(${INK_RGB}, 0.55)` }}>{slot.service}</p>
           </div>
         ))}
       </div>
@@ -135,19 +152,24 @@ function CampaignsScreen({ active }: { active: boolean }) {
   return (
     <div className={`transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}>
       <div
-        className="bg-white/5 rounded-lg p-3 mb-3 transition-all duration-500"
-        style={{ transform: active ? 'translateY(0)' : 'translateY(12px)', opacity: active ? 1 : 0 }}
+        className="rounded-lg p-3 mb-3 transition-all duration-500"
+        style={{
+          backgroundColor: '#ffffff',
+          border: `1px solid rgba(${INK_RGB}, 0.06)`,
+          transform: active ? 'translateY(0)' : 'translateY(12px)',
+          opacity: active ? 1 : 0,
+        }}
       >
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-white/80">VIP Re-engagement</p>
+          <p className="text-xs font-medium" style={{ color: INK }}>VIP Re-engagement</p>
           <span
             className="text-[9px] px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.22)`, color: SAGE }}
+            style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.16)`, color: SAGE }}
           >
             Sent
           </span>
         </div>
-        <p className="text-[10px] text-white/40 leading-relaxed">
+        <p className="text-[10px] leading-relaxed" style={{ color: `rgba(${INK_RGB}, 0.55)` }}>
           &ldquo;We miss you! Book this week and enjoy 20% off your favourite treatment.&rdquo;
         </p>
         <div className="flex gap-3 mt-2.5">
@@ -157,8 +179,8 @@ function CampaignsScreen({ active }: { active: boolean }) {
             { label: 'Booked', value: '23' },
           ].map(s => (
             <div key={s.label}>
-              <p className="text-sm font-bold text-white">{s.value}</p>
-              <p className="text-[8px] text-white/30">{s.label}</p>
+              <p className="text-sm font-bold" style={{ color: INK }}>{s.value}</p>
+              <p className="text-[8px]" style={{ color: `rgba(${INK_RGB}, 0.4)` }}>{s.label}</p>
             </div>
           ))}
         </div>
@@ -167,16 +189,30 @@ function CampaignsScreen({ active }: { active: boolean }) {
         {recipients.map((r, i) => (
           <div
             key={r.name}
-            className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 transition-all duration-500"
-            style={{ transform: active ? 'translateX(0)' : 'translateX(16px)', opacity: active ? 1 : 0, transitionDelay: `${300 + i * 100}ms` }}
+            className="flex items-center justify-between rounded-lg px-3 py-2 transition-all duration-500"
+            style={{
+              backgroundColor: '#ffffff',
+              border: `1px solid rgba(${INK_RGB}, 0.05)`,
+              transform: active ? 'translateX(0)' : 'translateX(16px)',
+              opacity: active ? 1 : 0,
+              transitionDelay: `${300 + i * 100}ms`,
+            }}
           >
             <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[8px] text-white/50 font-medium">{r.name[0]}</div>
-              <span className="text-[10px] text-white/70">{r.name}</span>
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium"
+                style={{ backgroundColor: `rgba(${INK_RGB}, 0.08)`, color: `rgba(${INK_RGB}, 0.6)` }}
+              >
+                {r.name[0]}
+              </div>
+              <span className="text-[10px]" style={{ color: `rgba(${INK_RGB}, 0.75)` }}>{r.name}</span>
             </div>
             <span
               className="text-[9px]"
-              style={{ color: r.status === 'Booked!' ? SAGE : 'rgba(255,255,255,0.4)', fontWeight: r.status === 'Booked!' ? 500 : 400 }}
+              style={{
+                color: r.status === 'Booked!' ? SAGE : `rgba(${INK_RGB}, 0.5)`,
+                fontWeight: r.status === 'Booked!' ? 500 : 400,
+              }}
             >
               {r.emoji} {r.status}
             </span>
@@ -212,12 +248,17 @@ function BookingScreen({ active }: { active: boolean }) {
   return (
     <div className={`transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}>
       <div
-        className="bg-white/5 rounded-lg px-3 py-2 mb-2 flex items-center justify-between transition-all duration-500"
-        style={{ transform: active ? 'translateY(0)' : 'translateY(-8px)', opacity: active ? 1 : 0 }}
+        className="rounded-lg px-3 py-2 mb-2 flex items-center justify-between transition-all duration-500"
+        style={{
+          backgroundColor: '#ffffff',
+          border: `1px solid rgba(${INK_RGB}, 0.06)`,
+          transform: active ? 'translateY(0)' : 'translateY(-8px)',
+          opacity: active ? 1 : 0,
+        }}
       >
         <div>
-          <p className="text-[10px] font-semibold text-white/85">Glow Aesthetics</p>
-          <p className="text-[8px] text-white/40">Marina Bay · Singapore</p>
+          <p className="text-[10px] font-semibold" style={{ color: INK }}>Glow Aesthetics</p>
+          <p className="text-[8px]" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>Marina Bay · Singapore</p>
         </div>
         <span className="text-[8px]" style={{ color: SAGE }}>Book online</span>
       </div>
@@ -228,18 +269,18 @@ function BookingScreen({ active }: { active: boolean }) {
             key={s.name}
             className="rounded-lg px-2.5 py-1.5 flex items-center justify-between transition-all duration-500"
             style={{
-              backgroundColor: s.selected ? `rgba(${SAGE_RGB}, 0.18)` : 'rgba(255,255,255,0.04)',
-              border: s.selected ? `1px solid rgba(${SAGE_RGB}, 0.5)` : '1px solid rgba(255,255,255,0.05)',
+              backgroundColor: s.selected ? `rgba(${SAGE_RGB}, 0.12)` : '#ffffff',
+              border: s.selected ? `1px solid rgba(${SAGE_RGB}, 0.5)` : `1px solid rgba(${INK_RGB}, 0.06)`,
               transform: active ? 'translateX(0)' : 'translateX(-12px)',
               opacity: active ? 1 : 0,
               transitionDelay: `${100 + i * 80}ms`,
             }}
           >
             <div>
-              <p className="text-[10px] font-medium text-white/85">{s.name}</p>
-              <p className="text-[8px] text-white/40">{s.dur}</p>
+              <p className="text-[10px] font-medium" style={{ color: INK }}>{s.name}</p>
+              <p className="text-[8px]" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>{s.dur}</p>
             </div>
-            <p className="text-[10px] font-semibold" style={{ color: s.selected ? SAGE : 'rgba(255,255,255,0.6)' }}>
+            <p className="text-[10px] font-semibold" style={{ color: s.selected ? SAGE : `rgba(${INK_RGB}, 0.7)` }}>
               {s.price}
             </p>
           </div>
@@ -252,14 +293,15 @@ function BookingScreen({ active }: { active: boolean }) {
             key={d.num}
             className="rounded-md py-1 text-center transition-all duration-500"
             style={{
-              backgroundColor: d.selected ? SAGE : 'rgba(255,255,255,0.05)',
+              backgroundColor: d.selected ? SAGE : '#ffffff',
+              border: d.selected ? `1px solid ${SAGE}` : `1px solid rgba(${INK_RGB}, 0.08)`,
               transform: active ? 'translateY(0)' : 'translateY(8px)',
               opacity: active ? 1 : 0,
               transitionDelay: `${360 + i * 50}ms`,
             }}
           >
-            <p className="text-[7px]" style={{ color: d.selected ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)' }}>{d.day}</p>
-            <p className="text-[10px] font-semibold" style={{ color: d.selected ? '#fff' : 'rgba(255,255,255,0.85)' }}>{d.num}</p>
+            <p className="text-[7px]" style={{ color: d.selected ? 'rgba(255,255,255,0.75)' : `rgba(${INK_RGB}, 0.5)` }}>{d.day}</p>
+            <p className="text-[10px] font-semibold" style={{ color: d.selected ? '#fff' : INK }}>{d.num}</p>
           </div>
         ))}
       </div>
@@ -273,89 +315,23 @@ function BookingScreen({ active }: { active: boolean }) {
               backgroundColor: s.selected
                 ? SAGE
                 : s.taken
-                  ? 'rgba(255,255,255,0.02)'
-                  : 'rgba(255,255,255,0.06)',
-              color: s.selected ? '#fff' : s.taken ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)',
+                  ? `rgba(${INK_RGB}, 0.03)`
+                  : '#ffffff',
+              color: s.selected
+                ? '#fff'
+                : s.taken
+                  ? `rgba(${INK_RGB}, 0.3)`
+                  : `rgba(${INK_RGB}, 0.7)`,
               textDecoration: s.taken ? 'line-through' : undefined,
-              border: s.selected ? `1px solid ${SAGE}` : '1px solid rgba(255,255,255,0.05)',
+              border: s.selected
+                ? `1px solid ${SAGE}`
+                : `1px solid rgba(${INK_RGB}, 0.06)`,
               transform: active ? 'scale(1)' : 'scale(0.92)',
               opacity: active ? 1 : 0,
               transitionDelay: `${600 + i * 40}ms`,
             }}
           >
             {s.time}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WhatsAppScreen({ active }: { active: boolean }) {
-  const messages = [
-    { dir: 'out', text: 'Hi Sarah! Your Hydra Facial is confirmed for Tue 22 Apr at 2:00pm 💆', time: '10:32', tick: '✓✓' },
-    { dir: 'out', text: "Reminder: we'll see you tomorrow at 2:00pm. Reply 'C' to cancel.", time: '14:08', tick: '✓✓' },
-    { dir: 'in', text: "Looking forward to it 🌷 see you then!", time: '14:11' },
-    { dir: 'out', text: "Hope you loved your visit! Tap to rebook or leave a review ⭐", time: '17:45', tick: '✓' },
-  ];
-
-  return (
-    <div className={`transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}>
-      <div
-        className="rounded-t-lg px-3 py-2 flex items-center gap-2 transition-all duration-500"
-        style={{
-          backgroundColor: SAGE,
-          transform: active ? 'translateY(0)' : 'translateY(-8px)',
-          opacity: active ? 1 : 0,
-        }}
-      >
-        <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-bold text-white">SC</div>
-        <div className="flex-1">
-          <p className="text-[10px] font-semibold text-white">Sarah Chen</p>
-          <p className="text-[8px] text-white/70">via Glow Aesthetics</p>
-        </div>
-        <span className="material-symbols-outlined text-white/80 text-base">chat</span>
-      </div>
-
-      <div
-        className="rounded-b-lg p-2.5 space-y-1.5"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.03)',
-          backgroundImage:
-            'radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)',
-          backgroundSize: '14px 14px',
-          minHeight: 200,
-        }}
-      >
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`flex transition-all duration-500 ${m.dir === 'out' ? 'justify-end' : 'justify-start'}`}
-            style={{
-              transform: active ? 'translateY(0)' : 'translateY(10px)',
-              opacity: active ? 1 : 0,
-              transitionDelay: `${200 + i * 140}ms`,
-            }}
-          >
-            <div
-              className="rounded-lg px-2.5 py-1.5 max-w-[78%]"
-              style={{
-                backgroundColor:
-                  m.dir === 'out' ? `rgba(${SAGE_RGB}, 0.28)` : 'rgba(255,255,255,0.08)',
-                border:
-                  m.dir === 'out'
-                    ? `1px solid rgba(${SAGE_RGB}, 0.4)`
-                    : '1px solid rgba(255,255,255,0.06)',
-              }}
-            >
-              <p className="text-[9px] text-white/85 leading-snug">{m.text}</p>
-              <div className="flex items-center justify-end gap-1 mt-0.5">
-                <span className="text-[7px] text-white/35">{m.time}</span>
-                {m.tick && (
-                  <span className="text-[8px]" style={{ color: m.tick === '✓✓' ? SAGE : 'rgba(255,255,255,0.4)' }}>{m.tick}</span>
-                )}
-              </div>
-            </div>
           </div>
         ))}
       </div>
@@ -379,12 +355,12 @@ function StaffScreen({ active }: { active: boolean }) {
         style={{ transform: active ? 'translateY(0)' : 'translateY(-8px)', opacity: active ? 1 : 0 }}
       >
         <div>
-          <p className="text-[10px] font-semibold text-white/85">Today&rsquo;s Team</p>
-          <p className="text-[8px] text-white/40">Tue, 22 Apr · 4 on shift</p>
+          <p className="text-[10px] font-semibold" style={{ color: INK }}>Today&rsquo;s Team</p>
+          <p className="text-[8px]" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>Tue, 22 Apr · 4 on shift</p>
         </div>
         <span
           className="text-[8px] px-2 py-0.5 rounded-full"
-          style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.22)`, color: SAGE }}
+          style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.16)`, color: SAGE }}
         >
           + Add staff
         </span>
@@ -394,8 +370,10 @@ function StaffScreen({ active }: { active: boolean }) {
         {staff.map((s, i) => (
           <div
             key={s.name}
-            className="flex items-center gap-2 bg-white/5 rounded-lg px-2.5 py-1.5 transition-all duration-500"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all duration-500"
             style={{
+              backgroundColor: '#ffffff',
+              border: `1px solid rgba(${INK_RGB}, 0.05)`,
               transform: active ? 'translateX(0)' : 'translateX(-12px)',
               opacity: active ? 1 : 0,
               transitionDelay: `${120 + i * 80}ms`,
@@ -404,20 +382,20 @@ function StaffScreen({ active }: { active: boolean }) {
             <div
               className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold"
               style={{
-                backgroundColor: s.accent ? `rgba(${SAGE_RGB}, 0.3)` : 'rgba(255,255,255,0.08)',
-                color: s.accent ? SAGE : 'rgba(255,255,255,0.55)',
+                backgroundColor: s.accent ? `rgba(${SAGE_RGB}, 0.18)` : `rgba(${INK_RGB}, 0.08)`,
+                color: s.accent ? SAGE : `rgba(${INK_RGB}, 0.55)`,
               }}
             >
               {s.name.split(' ').map(p => p[0]).slice(0, 2).join('')}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-medium text-white/85 truncate">{s.name}</p>
-              <p className="text-[8px] text-white/40">{s.role}</p>
+              <p className="text-[10px] font-medium truncate" style={{ color: INK }}>{s.name}</p>
+              <p className="text-[8px]" style={{ color: `rgba(${INK_RGB}, 0.5)` }}>{s.role}</p>
             </div>
             {s.bookings !== null && (
               <div className="text-right">
-                <p className="text-[10px] font-semibold text-white/80">{s.bookings}</p>
-                <p className="text-[7px] text-white/35 leading-none">today</p>
+                <p className="text-[10px] font-semibold" style={{ color: `rgba(${INK_RGB}, 0.8)` }}>{s.bookings}</p>
+                <p className="text-[7px] leading-none" style={{ color: `rgba(${INK_RGB}, 0.4)` }}>today</p>
               </div>
             )}
             <span
@@ -425,16 +403,16 @@ function StaffScreen({ active }: { active: boolean }) {
               style={{
                 backgroundColor:
                   s.status === 'On shift'
-                    ? `rgba(${SAGE_RGB}, 0.22)`
+                    ? `rgba(${SAGE_RGB}, 0.16)`
                     : s.status === 'Lunch'
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(255,255,255,0.03)',
+                      ? `rgba(${INK_RGB}, 0.06)`
+                      : `rgba(${INK_RGB}, 0.04)`,
                 color:
                   s.status === 'On shift'
                     ? SAGE
                     : s.status === 'Lunch'
-                      ? 'rgba(255,255,255,0.6)'
-                      : 'rgba(255,255,255,0.35)',
+                      ? `rgba(${INK_RGB}, 0.65)`
+                      : `rgba(${INK_RGB}, 0.4)`,
               }}
             >
               {s.status}
@@ -448,8 +426,8 @@ function StaffScreen({ active }: { active: boolean }) {
 
 function SidebarIcon({ id, activeId }: { id: typeof SCREENS[number]['id']; activeId: string }) {
   const isActive = activeId === id;
-  const className = `w-3.5 h-3.5 ${isActive ? '' : 'text-white/30'}`;
-  const style = isActive ? { color: SAGE } : undefined;
+  const className = 'w-3.5 h-3.5';
+  const style = { color: isActive ? SAGE : `rgba(${INK_RGB}, 0.4)` };
   const common = { fill: 'none' as const, viewBox: '0 0 24 24', strokeWidth: 1.5, stroke: 'currentColor' as const };
 
   switch (id) {
@@ -475,12 +453,6 @@ function SidebarIcon({ id, activeId }: { id: typeof SCREENS[number]['id']; activ
       return (
         <svg className={className} style={style} {...common}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-        </svg>
-      );
-    case 'whatsapp':
-      return (
-        <svg className={className} style={style} {...common}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
         </svg>
       );
     case 'staff':
@@ -519,26 +491,43 @@ export default function ProductShowcase() {
   return (
     <div id="product-showcase" className="w-full max-w-[589px] mx-auto">
       <div
-        className={`bg-[#0a0a0a] rounded-2xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden transition-all duration-700 ${
+        className={`rounded-2xl overflow-hidden transition-all duration-700 ${
           isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
         }`}
+        style={{
+          backgroundColor: CREAM,
+          border: `1px solid rgba(${INK_RGB}, 0.12)`,
+          boxShadow: `0 30px 60px -20px rgba(${INK_RGB}, 0.18), 0 18px 36px -18px rgba(${INK_RGB}, 0.12)`,
+        }}
       >
-        <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/5">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
-          <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
+        <div
+          className="flex items-center gap-1.5 px-4 py-2.5"
+          style={{ borderBottom: `1px solid rgba(${INK_RGB}, 0.08)` }}
+        >
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `rgba(${INK_RGB}, 0.18)` }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `rgba(${INK_RGB}, 0.12)` }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: `rgba(${INK_RGB}, 0.08)` }} />
           <div className="flex-1 mx-8">
-            <div className="bg-white/5 rounded-md px-3 py-1 text-center">
-              <span className="text-[9px] text-white/30">glowos.app/dashboard</span>
+            <div
+              className="rounded-md px-3 py-1 text-center"
+              style={{ backgroundColor: '#ffffff', border: `1px solid rgba(${INK_RGB}, 0.05)` }}
+            >
+              <span className="text-[9px]" style={{ color: `rgba(${INK_RGB}, 0.45)` }}>glowos.app/dashboard</span>
             </div>
           </div>
         </div>
 
         <div className="flex" style={{ minHeight: 322 }}>
-          <div className="w-12 bg-white/[0.02] border-r border-white/5 py-3 flex flex-col items-center gap-2">
+          <div
+            className="w-12 py-3 flex flex-col items-center gap-2"
+            style={{
+              backgroundColor: `rgba(${INK_RGB}, 0.03)`,
+              borderRight: `1px solid rgba(${INK_RGB}, 0.06)`,
+            }}
+          >
             <div
               className="w-5 h-5 rounded flex items-center justify-center mb-2"
-              style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.22)` }}
+              style={{ backgroundColor: `rgba(${SAGE_RGB}, 0.18)` }}
             >
               <span className="text-[8px] font-bold" style={{ color: SAGE }}>G</span>
             </div>
@@ -546,9 +535,11 @@ export default function ProductShowcase() {
               <button
                 key={s.id}
                 onClick={() => setActiveIdx(i)}
-                className={`w-7 h-7 rounded-md flex items-center justify-center transition-all duration-300 ${
-                  activeIdx === i ? 'bg-white/10' : 'hover:bg-white/5'
-                }`}
+                className="w-7 h-7 rounded-md flex items-center justify-center transition-all duration-300"
+                style={{
+                  backgroundColor:
+                    activeIdx === i ? `rgba(${INK_RGB}, 0.08)` : 'transparent',
+                }}
               >
                 <SidebarIcon id={s.id} activeId={activeId} />
               </button>
@@ -557,7 +548,7 @@ export default function ProductShowcase() {
 
           <div className="flex-1 p-3 relative">
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-xs font-semibold text-white/80">{SCREENS[activeIdx].label}</p>
+              <p className="text-xs font-semibold" style={{ color: INK }}>{SCREENS[activeIdx].label}</p>
               <div className="flex-1" />
               <div className="flex gap-1">
                 {SCREENS.map((_, i) => (
@@ -567,7 +558,7 @@ export default function ProductShowcase() {
                     className="h-1.5 rounded-full transition-all duration-300"
                     style={{
                       width: activeIdx === i ? 16 : 6,
-                      backgroundColor: activeIdx === i ? SAGE : 'rgba(255,255,255,0.2)',
+                      backgroundColor: activeIdx === i ? SAGE : `rgba(${INK_RGB}, 0.18)`,
                     }}
                   />
                 ))}
@@ -579,8 +570,7 @@ export default function ProductShowcase() {
               <div className="absolute inset-0"><CalendarScreen active={activeIdx === 1} /></div>
               <div className="absolute inset-0"><CampaignsScreen active={activeIdx === 2} /></div>
               <div className="absolute inset-0"><BookingScreen active={activeIdx === 3} /></div>
-              <div className="absolute inset-0"><WhatsAppScreen active={activeIdx === 4} /></div>
-              <div className="absolute inset-0"><StaffScreen active={activeIdx === 5} /></div>
+              <div className="absolute inset-0"><StaffScreen active={activeIdx === 4} /></div>
             </div>
           </div>
         </div>
@@ -595,9 +585,9 @@ export default function ProductShowcase() {
               onClick={() => setActiveIdx(i)}
               className="text-[11px] px-3 py-1.5 rounded-full transition-all duration-300"
               style={{
-                backgroundColor: isActive ? `rgba(${SAGE_RGB}, 0.18)` : 'transparent',
-                color: isActive ? SAGE : 'rgb(156, 163, 175)',
-                border: isActive ? `1px solid rgba(${SAGE_RGB}, 0.45)` : '1px solid rgb(209, 213, 219)',
+                backgroundColor: isActive ? `rgba(${SAGE_RGB}, 0.14)` : 'transparent',
+                color: isActive ? SAGE : `rgba(${INK_RGB}, 0.55)`,
+                border: isActive ? `1px solid rgba(${SAGE_RGB}, 0.45)` : `1px solid rgba(${INK_RGB}, 0.18)`,
               }}
             >
               {s.label}
