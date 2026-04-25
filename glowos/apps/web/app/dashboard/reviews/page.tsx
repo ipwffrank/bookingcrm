@@ -109,7 +109,7 @@ export default function ReviewsPage() {
   }, [fetchData, router]);
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div>
       <h1 className="text-2xl font-bold text-tone-ink mb-6">Reviews</h1>
 
       {stats && (

@@ -256,7 +256,7 @@ export default function PackagesPage() {
   if (loading) return <Spinner />;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 font-manrope">
+    <div className="space-y-6 font-manrope">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
