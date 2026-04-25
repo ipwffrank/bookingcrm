@@ -692,12 +692,18 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
     }
   }
 
-  await addJob("notifications", "package_purchased", {
-    client_package_id: result.clientPkg.id,
-    merchant_id: merchant.id,
-  }).catch((err: unknown) => {
-    console.error("[packages] failed to enqueue package_purchased", err);
-  });
+  // Notification timing:
+  //   counter → fire now (package is "active, pay later")
+  //   online  → fire AFTER mark-paid succeeds (so the message can confirm
+  //             payment received instead of saying "pay later" wrongly)
+  if (paymentMethod === "counter") {
+    await addJob("notifications", "package_purchased", {
+      client_package_id: result.clientPkg.id,
+      payment_status: "reserved",
+    }).catch((err: unknown) => {
+      console.error("[packages] failed to enqueue package_purchased", err);
+    });
+  }
 
   return c.json(
     {
@@ -804,6 +810,16 @@ publicPackagesRouter.post("/:slug/packages/mark-paid", async (c) => {
         .set({ paymentStatus: "paid", updatedAt: new Date() })
         .where(eq(bookings.id, firstBookingId));
     }
+  });
+
+  // Now that money's confirmed, fire the WhatsApp + email confirmation. We
+  // intentionally enqueue here (not on the initial purchase) for online
+  // payments so the message can say "Payment received" honestly.
+  await addJob("notifications", "package_purchased", {
+    client_package_id: row.cp.id,
+    payment_status: "paid",
+  }).catch((err: unknown) => {
+    console.error("[packages] failed to enqueue package_purchased on mark-paid", err);
   });
 
   return c.json({ clientPackage: { id: row.cp.id, status: "paid" } });

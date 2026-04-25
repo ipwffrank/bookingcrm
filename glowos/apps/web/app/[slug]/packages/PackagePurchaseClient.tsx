@@ -152,7 +152,7 @@ function PackageStripeForm({
 
 // ─── Wizard (one instance per expanded package) ───────────────────────────────
 
-type WizardStep = 'contact' | 'session' | 'review' | 'paying' | 'done';
+type WizardStep = 'contact' | 'session' | 'review' | 'paying' | 'confirming' | 'done';
 
 function PurchaseWizard({
   pkg,
@@ -181,6 +181,37 @@ function PurchaseWizard({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+
+  // Returning-customer lookup — debounced, mirrors the booking widget so the
+  // package flow recognises existing clients and reassures them their profile
+  // will be reused (instead of creating a duplicate or overwriting their
+  // saved name/email at the merchant).
+  const [lookupResult, setLookupResult] = useState<{ matched: boolean; masked_name?: string } | null>(null);
+  useEffect(() => {
+    const p = phone.trim();
+    const e = email.trim();
+    const hasPhone = p.length >= 6;
+    const hasEmail = e.includes('@');
+    if (!hasPhone && !hasEmail) {
+      setLookupResult(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = (await apiFetch(`/booking/${slug}/lookup-client`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ...(hasPhone ? { phone: p } : {}),
+            ...(hasEmail ? { email: e } : {}),
+          }),
+        })) as { matched: boolean; masked_name?: string };
+        setLookupResult(res);
+      } catch {
+        setLookupResult(null);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [phone, email, slug]);
 
   // First-session selection
   const [serviceId, setServiceId] = useState<string>(onlyOneService ? distinctServices[0]! : '');
@@ -280,6 +311,11 @@ function PurchaseWizard({
 
   async function handlePaid(paymentIntentId: string) {
     if (!purchase) return;
+    // Flip out of the Stripe form immediately so the user sees a "payment
+    // received" state while we ping mark-paid in the background. Without this
+    // they stare at the Stripe button stuck on "Processing payment…" for the
+    // 1-3s the API call takes.
+    setStep('confirming');
     try {
       await apiFetch(`/booking/${slug}/packages/mark-paid`, {
         method: 'POST',
@@ -290,11 +326,28 @@ function PurchaseWizard({
       });
       setStep('done');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment confirmation failed.');
+      setError(err instanceof Error ? err.message : 'Payment confirmation failed — please contact the clinic.');
+      // Stay on 'confirming' to surface the error message; charge has already
+      // succeeded with Stripe, so we don't want to send them back to pay again.
     }
   }
 
   // ── Render per step ─────────────────────────────────────────────────────────
+
+  if (step === 'confirming') {
+    return (
+      <div className="text-center py-3">
+        <div className="w-10 h-10 mx-auto mb-2 border-3 border-tone-sage/30 border-t-tone-sage rounded-full animate-spin" />
+        <p className="text-sm font-semibold text-tone-ink">Payment received — confirming your booking…</p>
+        <p className="text-xs text-grey-60 mt-1">Don&apos;t close this window.</p>
+        {error && (
+          <div className="mt-3 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-3 py-2 text-xs text-semantic-danger text-left">
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (step === 'done' && purchase) {
     const startISO = purchase.firstBooking?.startTime;
@@ -397,6 +450,12 @@ function PurchaseWizard({
       {/* ── Step 1: contact ─── */}
       {step === 'contact' && (
         <>
+          {lookupResult?.matched && (
+            <div className="rounded-lg bg-tone-sage/10 border border-tone-sage/30 px-3 py-2 text-xs text-tone-sage">
+              <p className="font-semibold mb-0.5">Welcome back, {lookupResult.masked_name ?? 'there'}!</p>
+              We&apos;ll link this purchase to your existing profile.
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-grey-75 mb-1">Your name</label>
             <input

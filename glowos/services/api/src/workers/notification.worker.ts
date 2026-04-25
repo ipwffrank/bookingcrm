@@ -1282,6 +1282,150 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
   }
 }
 
+// ─── Package purchase notification ────────────────────────────────────────────
+
+interface PackagePurchasedData {
+  client_package_id: string;
+  // 'paid' = customer just completed Stripe payment online
+  // 'reserved' = customer chose pay-at-counter (no money received yet)
+  payment_status?: "paid" | "reserved";
+}
+
+async function handlePackagePurchased(data: PackagePurchasedData): Promise<void> {
+  const { clientPackages, servicePackages, packageSessions } = await import("@glowos/db");
+  const [row] = await db
+    .select({
+      cp: clientPackages,
+      pkg: servicePackages,
+      merchant: { id: merchants.id, name: merchants.name, slug: merchants.slug },
+      client: { id: clients.id, name: clients.name, phone: clients.phone, email: clients.email },
+    })
+    .from(clientPackages)
+    .innerJoin(servicePackages, eq(clientPackages.packageId, servicePackages.id))
+    .innerJoin(merchants, eq(clientPackages.merchantId, merchants.id))
+    .innerJoin(clients, eq(clientPackages.clientId, clients.id))
+    .where(eq(clientPackages.id, data.client_package_id))
+    .limit(1);
+
+  if (!row) {
+    console.warn("[NotificationWorker] package_purchased: not found", data);
+    return;
+  }
+
+  const { cp, pkg, merchant, client } = row;
+  const firstName = client.name ? client.name.split(" ")[0] : "there";
+  const price = parseFloat(String(pkg.priceSgd)).toFixed(2);
+  const expiresAt = format(cp.expiresAt, "d MMM yyyy");
+  const status = data.payment_status ?? "reserved";
+
+  // Look up the first booking (if any) so we can mention the appointment in
+  // the message. Package purchases via the wizard always book session 1.
+  const [firstSession] = await db
+    .select({ bookingId: packageSessions.bookingId })
+    .from(packageSessions)
+    .where(
+      and(
+        eq(packageSessions.clientPackageId, cp.id),
+        eq(packageSessions.sessionNumber, 1),
+      ),
+    )
+    .limit(1);
+
+  let firstBookingLine = "";
+  if (firstSession?.bookingId) {
+    const [b] = await db
+      .select({ booking: bookings, service: services, staffMember: staff })
+      .from(bookings)
+      .innerJoin(services, eq(bookings.serviceId, services.id))
+      .innerJoin(staff, eq(bookings.staffId, staff.id))
+      .where(eq(bookings.id, firstSession.bookingId))
+      .limit(1);
+    if (b) {
+      const when = format(b.booking.startTime, "EEE, d MMM 'at' h:mma");
+      firstBookingLine = `\n📅 First session: ${b.service.name} with ${b.staffMember.name} — ${when}`;
+    }
+  }
+
+  const paymentLine =
+    status === "paid"
+      ? `✅ Payment received: SGD ${price}`
+      : `💵 Pay SGD ${price} at the clinic on your first visit`;
+
+  // WhatsApp — freeform within the session window.
+  if (client.phone) {
+    const msg = [
+      `Hi ${firstName}, your ${pkg.name} is confirmed at ${merchant.name}.`,
+      ``,
+      `📦 ${cp.sessionsTotal} sessions · valid until ${expiresAt}`,
+      paymentLine + firstBookingLine,
+      ``,
+      `See you soon!`,
+    ].join("\n");
+    const sid = await sendWhatsApp(client.phone, msg);
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "package_purchased",
+      channel: "whatsapp",
+      recipient: client.phone,
+      messageBody: msg,
+      status: sid ? "sent" : "failed",
+      twilioSid: sid || undefined,
+    });
+  }
+
+  // Email — branded confirmation as a backup channel.
+  if (client.email) {
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fcfaef;margin:0;padding:32px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="background:#1a2313;color:#fff;padding:24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin:0 0 8px;">Package confirmed</p>
+          <h1 style="font-size:20px;margin:0;">${merchant.name}</h1>
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 8px;color:#333;">Hi ${firstName},</p>
+          <p style="margin:0 0 20px;color:#555;line-height:1.6;">
+            Thanks for purchasing the <strong>${pkg.name}</strong>. Here's your confirmation:
+          </p>
+          <div style="border-top:1px solid #e8e4de;border-bottom:1px solid #e8e4de;padding:16px 0;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+              <span style="color:#888;">Sessions</span>
+              <span style="color:#111;font-weight:600;">${cp.sessionsTotal}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+              <span style="color:#888;">${status === "paid" ? "Paid" : "Due at first visit"}</span>
+              <span style="color:#456466;font-weight:700;font-size:18px;">SGD ${price}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;">
+              <span style="color:#888;">Valid until</span>
+              <span style="color:#111;font-weight:500;">${expiresAt}</span>
+            </div>
+          </div>
+          ${firstBookingLine ? `<p style="margin:0 0 20px;color:#555;line-height:1.6;font-size:13px;">Your first session is booked.<br><strong style="color:#111;">${firstBookingLine.replace(/^\n📅 First session: /, "")}</strong></p>` : ""}
+        </div>
+      </div>
+    </body></html>`;
+    const ok = await sendEmail({
+      to: client.email,
+      subject: `${pkg.name} confirmed at ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: null,
+      type: "package_purchased",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Package confirmation for ${pkg.name}`,
+      status: ok ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] package_purchased handled", { id: cp.id, status });
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 export function createNotificationWorker(): Worker {
@@ -1362,6 +1506,10 @@ export function createNotificationWorker(): Worker {
         }
         case "treatment_quote_reminder_sweep": {
           await handleTreatmentQuoteReminderSweep();
+          break;
+        }
+        case "package_purchased": {
+          await handlePackagePurchased(job.data as PackagePurchasedData);
           break;
         }
         case "waitlist_match": {
