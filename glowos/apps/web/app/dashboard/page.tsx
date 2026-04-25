@@ -103,13 +103,13 @@ function BookingCard({
   onEdit,
 }: {
   row: BookingRow;
-  onAction: (bookingId: string, action: 'check-in' | 'complete' | 'no-show') => Promise<void>;
+  onAction: (bookingId: string, action: 'check-in' | 'complete' | 'no-show' | 'confirm') => Promise<void>;
   onEdit: (bookingId: string) => void;
 }) {
   const { booking, service, staffMember, client } = row;
   const [acting, setActing] = useState<string | null>(null);
 
-  async function handleAction(action: 'check-in' | 'complete' | 'no-show') {
+  async function handleAction(action: 'check-in' | 'complete' | 'no-show' | 'confirm') {
     setActing(action);
     try {
       await onAction(booking.id, action);
@@ -118,9 +118,12 @@ function BookingCard({
     }
   }
 
-  const canCheckIn = booking.status === 'confirmed';
+  const canConfirm = booking.status === 'pending';
+  // Check-in is allowed from both 'confirmed' and 'pending' — checking a
+  // pending client in implicitly confirms them at the counter.
+  const canCheckIn = booking.status === 'confirmed' || booking.status === 'pending';
   const canComplete = booking.status === 'in_progress';
-  const canNoShow = booking.status === 'confirmed' || booking.status === 'in_progress';
+  const canNoShow = booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'in_progress';
 
   return (
     <div className="bg-tone-surface rounded-xl border border-grey-15 p-4 shadow-sm hover:shadow-md transition-shadow">
@@ -161,10 +164,21 @@ function BookingCard({
             >
               Edit
             </button>
+            {canConfirm && (
+              <button
+                onClick={() => handleAction('confirm')}
+                disabled={acting !== null}
+                title="Confirm this booking on behalf of the customer (skips the WhatsApp confirm flow)"
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-surface bg-semantic-warn hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {acting === 'confirm' ? '...' : 'Confirm'}
+              </button>
+            )}
             {canCheckIn && (
               <button
                 onClick={() => handleAction('check-in')}
                 disabled={acting !== null}
+                title={booking.status === 'pending' ? 'Check the customer in. This implicitly confirms the booking.' : 'Check the customer in.'}
                 className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-surface bg-tone-sage hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {acting === 'check-in' ? '...' : 'Check In'}
@@ -388,7 +402,7 @@ function DashboardPageInner() {
     return () => clearInterval(interval);
   }, [fetchBookings]);
 
-  async function handleAction(bookingId: string, action: 'check-in' | 'complete' | 'no-show') {
+  async function handleAction(bookingId: string, action: 'check-in' | 'complete' | 'no-show' | 'confirm') {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
     try {

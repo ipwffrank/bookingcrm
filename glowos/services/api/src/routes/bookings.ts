@@ -855,9 +855,12 @@ merchantBookingsRouter.post(
   }
 );
 
-// ─── Protected: PUT /merchant/bookings/:id/check-in ───────────────────────────
+// ─── Protected: PUT /merchant/bookings/:id/confirm ────────────────────────────
+// Admin/staff confirms a pending booking on behalf of the client. Stamps
+// confirmedAt and skips the merchant-side WhatsApp/email alert (the merchant
+// is the one doing the confirming, no point notifying themselves).
 
-merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
+merchantBookingsRouter.put("/:id/confirm", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const bookingId = c.req.param("id")!;
 
@@ -870,17 +873,67 @@ merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
   if (!existing) {
     return c.json({ error: "Not Found", message: "Booking not found" }, 404);
   }
+  if (existing.status === "cancelled" || existing.status === "no_show") {
+    return c.json(
+      { error: "Conflict", message: `Cannot confirm a booking with status: ${existing.status}` },
+      409,
+    );
+  }
+  if (existing.status !== "pending") {
+    // Already confirmed or further along — idempotent success.
+    return c.json({ booking: { id: existing.id, status: existing.status } });
+  }
 
-  if (existing.status !== "confirmed") {
+  const now = new Date();
+  const [updated] = await db
+    .update(bookings)
+    .set({ status: "confirmed", confirmedAt: now, updatedAt: now })
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .returning();
+
+  return c.json({ booking: updated });
+});
+
+// ─── Protected: PUT /merchant/bookings/:id/check-in ───────────────────────────
+// Pending bookings are confirmed implicitly when staff check the customer in
+// (they're physically at the counter — that IS the confirmation).
+
+merchantBookingsRouter.put("/:id/check-in", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const bookingId = c.req.param("id")!;
+
+  const [existing] = await db
+    .select({ id: bookings.id, status: bookings.status, confirmedAt: bookings.confirmedAt })
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+    .limit(1);
+
+  if (!existing) {
+    return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+  }
+
+  if (existing.status !== "confirmed" && existing.status !== "pending") {
     return c.json(
       { error: "Conflict", message: `Cannot check in a booking with status: ${existing.status}` },
       409
     );
   }
 
+  const now = new Date();
+  // If still pending, stamp confirmedAt at check-in so the audit trail is
+  // honest about when the booking was implicitly confirmed.
+  const setData: { status: "in_progress"; checkedInAt: Date; updatedAt: Date; confirmedAt?: Date } = {
+    status: "in_progress",
+    checkedInAt: now,
+    updatedAt: now,
+  };
+  if (existing.status === "pending" && !existing.confirmedAt) {
+    setData.confirmedAt = now;
+  }
+
   const [updated] = await db
     .update(bookings)
-    .set({ status: "in_progress", checkedInAt: new Date(), updatedAt: new Date() })
+    .set(setData)
     .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
     .returning();
 
