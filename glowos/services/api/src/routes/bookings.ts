@@ -1238,13 +1238,35 @@ bookingsRouter.get("/:slug", async (c) => {
       ),
     );
 
+  // Pull the staff_services links so the widget can filter staff to those who
+  // actually perform the selected service. Avoids a separate roundtrip per
+  // service selection.
+  const staffIdSet = activeStaff.map((s) => s.id);
+  const links =
+    staffIdSet.length === 0
+      ? []
+      : await db
+          .select({ staffId: staffServices.staffId, serviceId: staffServices.serviceId })
+          .from(staffServices)
+          .where(inArray(staffServices.staffId, staffIdSet));
+  const serviceIdsByStaff = new Map<string, string[]>();
+  for (const link of links) {
+    const arr = serviceIdsByStaff.get(link.staffId) ?? [];
+    arr.push(link.serviceId);
+    serviceIdsByStaff.set(link.staffId, arr);
+  }
+  const staffWithServices = activeStaff.map((s) => ({
+    ...s,
+    serviceIds: serviceIdsByStaff.get(s.id) ?? [],
+  }));
+
   // Don't expose the actual stripe account ID to public, just whether payment is enabled
   const { stripeAccountId, ...merchantPublic } = merchant;
 
   return c.json({
     merchant: { ...merchantPublic, paymentEnabled: !!stripeAccountId },
     services: activeServices,
-    staff: activeStaff,
+    staff: staffWithServices,
   });
 });
 

@@ -44,6 +44,7 @@ interface SalonData {
     bio: string | null;
     specialtyTags: string[] | null;
     isAnyAvailable: boolean;
+    serviceIds?: string[];
   }>;
 }
 

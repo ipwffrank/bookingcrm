@@ -12,7 +12,9 @@ interface SalonData {
     description: string | null;
     logoUrl: string | null;
     country?: 'SG' | 'MY' | null;
+    paymentEnabled?: boolean;
   };
+  services: Array<{ id: string; name: string; slotType: 'standard' | 'consult' | 'treatment' }>;
 }
 
 interface PackageTemplate {
@@ -88,7 +90,13 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
             </Link>
           </div>
         ) : (
-          <PackagePurchaseClient slug={slug} packages={packages} defaultCountry={merchant.country ?? 'SG'} />
+          <PackagePurchaseClient
+            slug={slug}
+            packages={packages}
+            defaultCountry={merchant.country ?? 'SG'}
+            paymentEnabled={merchant.paymentEnabled ?? false}
+            consultServiceId={salonData.services.find((s) => s.slotType === 'consult')?.id ?? null}
+          />
         )}
       </div>
     </div>

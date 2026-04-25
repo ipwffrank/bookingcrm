@@ -64,6 +64,10 @@ interface StaffMember {
   bio: string | null;
   specialtyTags: string[] | null;
   isAnyAvailable: boolean;
+  // List of service IDs this staff member is configured to perform. Empty
+  // means uninitialised — treat as "performs none" so misconfigured staff
+  // never silently leak into the booking flow.
+  serviceIds?: string[];
 }
 
 interface Merchant {
@@ -345,6 +349,21 @@ export default function BookingWidget({
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   // Fetch closed dates on mount
+  // Honour ?service=<id> deep links (used by the package page's "Book
+  // consultation" CTA so the customer lands on the booking widget with the
+  // consult service already selected). Runs once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const preselectId = params.get('service');
+    if (!preselectId) return;
+    const target = services.find((s) => s.id === preselectId);
+    if (!target || target.requiresConsultFirst) return; // never auto-select a gated service
+    setSelectedService(target);
+    setStep(2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     apiFetch(`/booking/${slug}/closures`)
       .then((data) => {
@@ -547,9 +566,17 @@ export default function BookingWidget({
     sessionStorage.removeItem(`glowos_google_id_${slug}`);
   }
 
+  // Only show staff who are configured to perform the selected service. The
+  // merchant's "Staff Services" setting is the source of truth — if a staff
+  // member isn't linked to this service, they should never appear as a
+  // bookable option (otherwise customers can book staff for treatments
+  // they're not trained on, and the clinic finds out at appointment time).
+  const eligibleStaff = selectedService
+    ? staff.filter((s) => (s.serviceIds ?? []).includes(selectedService.id))
+    : staff;
   const staffWithAny: StaffMember[] = [
-    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member', bio: null, specialtyTags: null, isAnyAvailable: true },
-    ...staff,
+    { id: 'any', name: 'Any Available', photoUrl: null, title: 'We\'ll assign the best available team member', bio: null, specialtyTags: null, isAnyAvailable: true, serviceIds: [] },
+    ...eligibleStaff,
   ];
 
   // ── Fetch availability ───────────────────────────────────────────────────────

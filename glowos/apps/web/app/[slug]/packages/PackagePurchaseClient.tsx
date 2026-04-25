@@ -32,9 +32,16 @@ interface Props {
   slug: string;
   packages: PackageTemplate[];
   defaultCountry: 'SG' | 'MY';
+  paymentEnabled: boolean;
+  // ID of the merchant's consultation service (slot_type='consult'), used to
+  // build the "Book consultation" deep link for consult-required packages.
+  // Null if the merchant has no consultation service configured.
+  consultServiceId: string | null;
 }
 
-export default function PackagePurchaseClient({ slug, packages, defaultCountry }: Props) {
+export default function PackagePurchaseClient({ slug, packages, defaultCountry, paymentEnabled, consultServiceId }: Props) {
+  // paymentEnabled is wired through for the upcoming online-payment flow.
+  void paymentEnabled;
   const [openId, setOpenId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -130,11 +137,28 @@ export default function PackagePurchaseClient({ slug, packages, defaultCountry }
               )}
 
               {pkg.requiresConsultFirst ? (
-                <div className="mt-4 rounded-lg bg-semantic-warn/10 border border-semantic-warn/30 px-3 py-3 text-xs text-grey-75">
-                  <p className="font-semibold text-tone-ink mb-0.5">Consultation required</p>
-                  This package can only be purchased after an in-person consultation. Please book
-                  a consult with the clinic first — they&apos;ll send you a personalised quote with a
-                  secure payment link.
+                <div className="mt-4 space-y-2">
+                  <div className="rounded-lg bg-semantic-warn/10 border border-semantic-warn/30 px-3 py-3 text-xs text-grey-75">
+                    <p className="font-semibold text-tone-ink mb-0.5">Consultation required</p>
+                    This package can only be purchased after an in-person consultation. After
+                    your consult, the clinic will send a personalised quote with a secure
+                    payment link.
+                  </div>
+                  {consultServiceId ? (
+                    <a
+                      href={`/${slug}?service=${consultServiceId}`}
+                      className="block w-full text-center rounded-xl bg-tone-ink text-tone-surface py-3 text-sm font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      Book consultation
+                    </a>
+                  ) : (
+                    <a
+                      href={`/${slug}`}
+                      className="block w-full text-center rounded-xl border border-grey-15 bg-tone-surface py-3 text-sm font-semibold text-tone-ink hover:border-tone-sage/50 transition-colors"
+                    >
+                      Visit booking page
+                    </a>
+                  )}
                 </div>
               ) : !isOpen ? (
                 <button
