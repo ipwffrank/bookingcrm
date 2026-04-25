@@ -15,6 +15,7 @@ import {
 import { requireMerchant } from "../middleware/auth.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { addJob } from "../lib/queue.js";
+import { stripe } from "../lib/stripe.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const packagesRouter = new Hono<{ Variables: AppVariables }>();
@@ -390,7 +391,18 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
     client_name: string;
     client_phone: string;
     client_email?: string;
-    payment_method?: "cash" | "card";
+    // 'online' = pay now via Stripe (returns clientSecret to confirm).
+    // 'counter' = customer pays at first visit (cash / card / PayNow at clinic).
+    // Legacy 'cash'/'card' values are mapped to counter/online for backwards compat.
+    payment_method?: "online" | "counter" | "cash" | "card";
+    // Optional first session — when present we book the customer's first
+    // visit at the same time we create the package, and link package_session
+    // #1 to that booking.
+    first_session?: {
+      service_id: string;
+      staff_id: string; // pass an actual staff UUID; "any" not supported here yet
+      start_time: string; // ISO timestamp
+    };
   }>();
 
   if (!body.package_id || !body.client_name?.trim() || !body.client_phone?.trim()) {
@@ -474,55 +486,214 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
       .values({ clientId: clientRow.id, merchantId: merchant.id });
   }
 
-  // Create the client_packages row (active immediately under cash-reserve).
+  // Normalise payment_method — old clients sent 'cash'/'card', new clients
+  // send 'counter'/'online'.
+  const rawMethod = body.payment_method ?? "counter";
+  const paymentMethod: "online" | "counter" =
+    rawMethod === "online" || rawMethod === "card" ? "online" : "counter";
+
+  // Validate first_session if provided.
+  type FirstSessionInput = NonNullable<typeof body.first_session>;
+  let firstSession: FirstSessionInput | null = body.first_session ?? null;
+  let firstSessionService: typeof services.$inferSelect | null = null;
+  let firstSessionStaff: typeof staff.$inferSelect | null = null;
+  let firstSessionStart: Date | null = null;
+  let firstSessionEnd: Date | null = null;
+
+  if (firstSession) {
+    // Service must be one of the package's included services.
+    const includedServiceIds = new Set(pkg.includedServices.map((s) => s.serviceId));
+    if (!includedServiceIds.has(firstSession.service_id)) {
+      return c.json(
+        { error: "Bad Request", message: "first_session.service_id is not included in this package" },
+        400,
+      );
+    }
+    const [svc] = await db
+      .select()
+      .from(services)
+      .where(and(eq(services.id, firstSession.service_id), eq(services.merchantId, merchant.id)))
+      .limit(1);
+    if (!svc) {
+      return c.json({ error: "Bad Request", message: "Service no longer available" }, 400);
+    }
+    const [stf] = await db
+      .select()
+      .from(staff)
+      .where(
+        and(
+          eq(staff.id, firstSession.staff_id),
+          eq(staff.merchantId, merchant.id),
+          eq(staff.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!stf) {
+      return c.json({ error: "Bad Request", message: "Staff member not available" }, 400);
+    }
+    const start = new Date(firstSession.start_time);
+    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now() - 60_000) {
+      return c.json({ error: "Bad Request", message: "first_session.start_time must be a future ISO timestamp" }, 400);
+    }
+    firstSessionService = svc;
+    firstSessionStaff = stf;
+    firstSessionStart = start;
+    firstSessionEnd = new Date(start.getTime() + (svc.durationMinutes + svc.bufferMinutes) * 60_000);
+  }
+
+  // Online payment requires the merchant to have completed Stripe Connect.
+  if (paymentMethod === "online") {
+    const [m] = await db
+      .select({ stripeAccountId: merchants.stripeAccountId })
+      .from(merchants)
+      .where(eq(merchants.id, merchant.id))
+      .limit(1);
+    if (!m?.stripeAccountId) {
+      return c.json(
+        {
+          error: "Bad Request",
+          message: "This clinic has not completed online-payment setup. Please choose 'Pay at counter'.",
+        },
+        400,
+      );
+    }
+  }
+
+  // Create the client_packages row + sessions + (optional) first booking in
+  // a single transaction so partial state never leaks.
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + pkg.validityDays);
 
-  const paymentMethod = body.payment_method ?? "cash";
-  const pricePaidSgd = paymentMethod === "cash" ? "0" : String(pkg.priceSgd);
+  // For online payment we hold pricePaidSgd at 0 until Stripe confirms via
+  // mark-paid (idempotent flip). Counter payments leave it at 0 until
+  // collected at the clinic — same dashboard view either way.
+  const pricePaidSgd = "0";
 
-  const [clientPkg] = await db
-    .insert(clientPackages)
-    .values({
-      merchantId: merchant.id,
-      clientId: clientRow.id,
-      packageId: pkg.id,
-      packageName: pkg.name,
-      sessionsTotal: pkg.totalSessions,
-      pricePaidSgd,
-      expiresAt,
-      notes: paymentMethod === "cash" ? "Self-purchased via widget — pending payment at first visit" : "Self-purchased via widget — paid online",
-    })
-    .returning();
+  const result = await db.transaction(async (tx) => {
+    const [clientPkg] = await tx
+      .insert(clientPackages)
+      .values({
+        merchantId: merchant.id,
+        clientId: clientRow.id,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        sessionsTotal: pkg.totalSessions,
+        pricePaidSgd,
+        expiresAt,
+        notes:
+          paymentMethod === "online"
+            ? "Self-purchased via widget — payment pending Stripe confirmation"
+            : "Self-purchased via widget — pending payment at first visit",
+      })
+      .returning();
+    if (!clientPkg) throw new Error("Failed to create package");
 
-  if (!clientPkg) {
-    return c.json({ error: "Internal Server Error", message: "Failed to create package" }, 500);
-  }
+    // Pre-generate N pending sessions, one per included service × quantity.
+    // The first session gets bound to the booking below if first_session was
+    // provided.
+    const sessionValues: Array<{
+      clientPackageId: string;
+      sessionNumber: number;
+      serviceId: string;
+    }> = [];
+    for (const svc of pkg.includedServices) {
+      for (let i = 0; i < svc.quantity; i++) {
+        sessionValues.push({
+          clientPackageId: clientPkg.id,
+          sessionNumber: sessionValues.length + 1,
+          serviceId: svc.serviceId,
+        });
+      }
+    }
+    let createdSessions: Array<{ id: string; sessionNumber: number; serviceId: string }> = [];
+    if (sessionValues.length > 0) {
+      createdSessions = await tx
+        .insert(packageSessions)
+        .values(sessionValues)
+        .returning({ id: packageSessions.id, sessionNumber: packageSessions.sessionNumber, serviceId: packageSessions.serviceId });
+    }
 
-  // Pre-generate N pending sessions, one per included service × quantity.
-  const sessionValues: Array<{
-    clientPackageId: string;
-    sessionNumber: number;
-    serviceId: string;
-  }> = [];
-  for (const svc of pkg.includedServices) {
-    for (let i = 0; i < svc.quantity; i++) {
-      sessionValues.push({
-        clientPackageId: clientPkg.id,
-        sessionNumber: sessionValues.length + 1,
-        serviceId: svc.serviceId,
-      });
+    // If a first session was specified, create the booking and bind to the
+    // first matching package_session for that service.
+    let firstBooking: typeof bookings.$inferSelect | null = null;
+    if (firstSessionService && firstSessionStaff && firstSessionStart && firstSessionEnd) {
+      const [created] = await tx
+        .insert(bookings)
+        .values({
+          merchantId: merchant.id,
+          clientId: clientRow.id,
+          serviceId: firstSessionService.id,
+          staffId: firstSessionStaff.id,
+          startTime: firstSessionStart,
+          endTime: firstSessionEnd,
+          durationMinutes: firstSessionService.durationMinutes,
+          status: "confirmed",
+          priceSgd: "0", // package session — no separate booking price
+          paymentStatus: paymentMethod === "online" ? "pending" : "waived",
+          paymentMethod: "package",
+          bookingSource: "direct_widget",
+        } as never)
+        .returning();
+      firstBooking = created ?? null;
+
+      if (firstBooking) {
+        // Bind the lowest-numbered pending session that matches the service.
+        const targetSession = createdSessions.find(
+          (s) => s.serviceId === firstSessionService!.id,
+        );
+        if (targetSession) {
+          await tx
+            .update(packageSessions)
+            .set({
+              bookingId: firstBooking.id,
+              status: "booked",
+              staffId: firstSessionStaff.id,
+              staffName: firstSessionStaff.name,
+            })
+            .where(eq(packageSessions.id, targetSession.id));
+        }
+      }
+    }
+
+    return { clientPkg, firstBooking };
+  });
+
+  // Mint Stripe PaymentIntent if paying online. Failure here doesn't roll back
+  // the package — the customer can retry payment via mark-paid using a fresh
+  // intent, or fall back to paying at counter on first visit.
+  let payment: { clientSecret: string; stripeAccountId: string } | null = null;
+  if (paymentMethod === "online") {
+    const [m] = await db
+      .select({ stripeAccountId: merchants.stripeAccountId })
+      .from(merchants)
+      .where(eq(merchants.id, merchant.id))
+      .limit(1);
+    if (m?.stripeAccountId) {
+      try {
+        const intent = await stripe.paymentIntents.create(
+          {
+            amount: Math.round(parseFloat(String(pkg.priceSgd)) * 100),
+            currency: "sgd",
+            automatic_payment_methods: { enabled: true },
+            metadata: {
+              client_package_id: result.clientPkg.id,
+              merchant_id: merchant.id,
+              kind: "package_purchase",
+            },
+          },
+          { stripeAccount: m.stripeAccountId },
+        );
+        if (intent.client_secret) {
+          payment = { clientSecret: intent.client_secret, stripeAccountId: m.stripeAccountId };
+        }
+      } catch (err) {
+        console.error("[packages] PaymentIntent create failed", err);
+      }
     }
   }
-  if (sessionValues.length > 0) {
-    await db.insert(packageSessions).values(sessionValues);
-  }
 
-  // Fire a "package purchased" notification to both client + merchant. Worker
-  // handler is a no-op today unless the handler exists — enqueue is idempotent
-  // and will no-op rather than crash.
   await addJob("notifications", "package_purchased", {
-    client_package_id: clientPkg.id,
+    client_package_id: result.clientPkg.id,
     merchant_id: merchant.id,
   }).catch((err: unknown) => {
     console.error("[packages] failed to enqueue package_purchased", err);
@@ -531,17 +702,111 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
   return c.json(
     {
       clientPackage: {
-        id: clientPkg.id,
-        packageName: clientPkg.packageName,
-        sessionsTotal: clientPkg.sessionsTotal,
-        expiresAt: clientPkg.expiresAt,
+        id: result.clientPkg.id,
+        packageName: result.clientPkg.packageName,
+        sessionsTotal: result.clientPkg.sessionsTotal,
+        expiresAt: result.clientPkg.expiresAt,
         paymentMethod,
         pricePaidSgd,
-        priceDueSgd: paymentMethod === "cash" ? String(pkg.priceSgd) : "0",
+        priceDueSgd: paymentMethod === "online" ? "0" : String(pkg.priceSgd),
       },
+      firstBooking: result.firstBooking
+        ? {
+            id: result.firstBooking.id,
+            startTime: result.firstBooking.startTime,
+            serviceId: result.firstBooking.serviceId,
+            staffId: result.firstBooking.staffId,
+          }
+        : null,
+      payment,
     },
     201,
   );
+});
+
+// POST /booking/:slug/packages/mark-paid — confirm Stripe payment for a
+// self-purchased package. Frontend calls this after stripe.confirmPayment
+// succeeds. Verifies the PaymentIntent against Stripe (so we can't be
+// spoofed by a forged client call), then flips pricePaidSgd → full price
+// and the first booking's payment_status → paid. Idempotent.
+publicPackagesRouter.post("/:slug/packages/mark-paid", async (c) => {
+  const body = await c.req.json<{
+    client_package_id: string;
+    payment_intent_id: string;
+  }>();
+  if (!body.client_package_id || !body.payment_intent_id) {
+    return c.json(
+      { error: "Bad Request", message: "client_package_id and payment_intent_id are required" },
+      400,
+    );
+  }
+
+  const [row] = await db
+    .select({
+      cp: clientPackages,
+      pkg: servicePackages,
+      stripeAccountId: merchants.stripeAccountId,
+    })
+    .from(clientPackages)
+    .innerJoin(servicePackages, eq(clientPackages.packageId, servicePackages.id))
+    .innerJoin(merchants, eq(clientPackages.merchantId, merchants.id))
+    .where(eq(clientPackages.id, body.client_package_id))
+    .limit(1);
+
+  if (!row) return c.json({ error: "Not Found" }, 404);
+  if (parseFloat(String(row.cp.pricePaidSgd)) >= parseFloat(String(row.pkg.priceSgd))) {
+    return c.json({ clientPackage: { id: row.cp.id, status: "paid" } });
+  }
+  if (!row.stripeAccountId) {
+    return c.json({ error: "Bad Request", message: "Stripe not configured" }, 400);
+  }
+
+  try {
+    const intent = await stripe.paymentIntents.retrieve(body.payment_intent_id, {
+      stripeAccount: row.stripeAccountId,
+    });
+    if (intent.status !== "succeeded") {
+      return c.json(
+        { error: "Payment Required", message: `PaymentIntent status: ${intent.status}` },
+        402,
+      );
+    }
+    if (intent.metadata?.client_package_id !== row.cp.id) {
+      return c.json({ error: "Forbidden", message: "PaymentIntent mismatch" }, 403);
+    }
+  } catch (err) {
+    console.error("[packages] mark-paid: Stripe retrieve failed", err);
+    return c.json({ error: "Internal Server Error" }, 500);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(clientPackages)
+      .set({ pricePaidSgd: row.pkg.priceSgd })
+      .where(eq(clientPackages.id, row.cp.id));
+
+    // If the customer also booked their first session at purchase time, flip
+    // that booking's payment status too so the dashboard reflects "paid".
+    const sessions = await tx
+      .select({ bookingId: packageSessions.bookingId })
+      .from(packageSessions)
+      .where(
+        and(
+          eq(packageSessions.clientPackageId, row.cp.id),
+          eq(packageSessions.sessionNumber, 1),
+        ),
+      )
+      .limit(1);
+    const firstBookingId = sessions[0]?.bookingId;
+    if (firstBookingId) {
+      await tx
+        .update(bookings)
+        .set({ paymentStatus: "paid", updatedAt: new Date() })
+        .where(eq(bookings.id, firstBookingId));
+    }
+  });
+
+  return c.json({ clientPackage: { id: row.cp.id, status: "paid" } });
 });
 
 // POST /booking/:slug/use-package-session — book using a package session (no payment)
