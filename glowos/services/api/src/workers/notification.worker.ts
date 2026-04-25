@@ -417,6 +417,100 @@ async function handleAppointmentReminderFollowup(
   console.log(`[NotificationWorker] appointment_reminder_${windowLabel} handled`, { bookingId });
 }
 
+// ─── 30-day rebook check-in ────────────────────────────────────────────────────
+// Sent ~30 days after a completed treatment as a soft "haven't seen you in a
+// while, time for your next visit?" nudge. Skipped if the client has already
+// booked again at this merchant since the original visit — the CRM sequence
+// shouldn't pester active customers.
+
+async function handleRebookCheckin(bookingId: string): Promise<void> {
+  const row = await loadBookingWithDetails(bookingId);
+  if (!row) return;
+  const { booking, merchant, service, client } = row;
+
+  // Skip if the client already has a future or recent booking at this merchant
+  // — they don't need a "come back" nudge if they're already coming back.
+  const { gt } = await import("drizzle-orm");
+  const sinceCompletion = booking.completedAt ?? booking.startTime;
+  const [recent] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, merchant.id),
+        eq(bookings.clientId, client.id),
+        gt(bookings.startTime, sinceCompletion),
+      ),
+    )
+    .limit(1);
+  if (recent) {
+    console.log("[NotificationWorker] rebook_checkin_30d skipped — client already rebooked", {
+      bookingId,
+      laterBookingId: recent.id,
+    });
+    return;
+  }
+
+  const firstName = client.name ? client.name.split(" ")[0] : "there";
+  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+
+  if (client.phone) {
+    const msg = [
+      `Hi ${firstName}! It's been a month since your ${service.name} at ${merchant.name}.`,
+      ``,
+      `Time for your next visit? Book here → ${bookingUrl}`,
+    ].join("\n");
+    const sid = await sendWhatsApp(client.phone, msg);
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "rebook_checkin_30d",
+      channel: "whatsapp",
+      recipient: client.phone,
+      messageBody: msg,
+      status: sid ? "sent" : "failed",
+      twilioSid: sid || undefined,
+    });
+  }
+
+  if (client.email) {
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#fcfaef;margin:0;padding:32px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="background:#1a2313;color:#fff;padding:24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;opacity:0.7;text-transform:uppercase;margin:0 0 8px;">It's been a month</p>
+          <h1 style="font-size:20px;margin:0;">${merchant.name}</h1>
+        </div>
+        <div style="padding:24px;text-align:center;">
+          <p style="margin:0 0 16px;color:#333;">Hi ${firstName},</p>
+          <p style="margin:0 0 24px;color:#555;line-height:1.6;">
+            It's been about a month since your <strong>${service.name}</strong>. Many of our clients
+            book their next session around now — would you like to book a follow-up?
+          </p>
+          <a href="${bookingUrl}" style="display:inline-block;background:#1a2313;color:#fff !important;padding:14px 32px;border-radius:12px;font-weight:600;text-decoration:none;font-size:14px;">Book my next visit →</a>
+        </div>
+      </div>
+    </body></html>`;
+    const ok = await sendEmail({
+      to: client.email,
+      subject: `Time for your next visit at ${merchant.name}?`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "rebook_checkin_30d",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `30-day rebook check-in for ${service.name}`,
+      status: ok ? "sent" : "failed",
+    });
+  }
+
+  console.log("[NotificationWorker] rebook_checkin_30d handled", { bookingId });
+}
+
 // ─── Merchant alert when client confirms ───────────────────────────────────────
 
 async function handleBookingConfirmedByClient(bookingId: string): Promise<void> {
@@ -1693,6 +1787,12 @@ export function createNotificationWorker(): Worker {
         }
         case "booking_confirmed_by_client": {
           await handleBookingConfirmedByClient(
+            (job.data as { booking_id: string }).booking_id,
+          );
+          break;
+        }
+        case "rebook_checkin_30d": {
+          await handleRebookCheckin(
             (job.data as { booking_id: string }).booking_id,
           );
           break;

@@ -33,6 +33,7 @@ import { addJob } from "../lib/queue.js";
 import {
   scheduleReminder,
   scheduleReviewRequest,
+  scheduleRebookCheckin,
   scheduleNoShowReengagement,
   scheduleRebookingPrompt,
   schedulePostServiceSequence,
@@ -918,6 +919,7 @@ merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
   // Queue post-completion jobs
   await scheduleReviewRequest(bookingId);
   await schedulePostServiceSequence(bookingId);
+  await scheduleRebookCheckin(bookingId);
   await addJob("crm", "update_client_profile", { booking_id: bookingId });
   if (updated) {
     await addJob("vip", "rescore_client", {

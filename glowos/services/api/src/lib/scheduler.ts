@@ -93,6 +93,29 @@ export async function scheduleRebookingPrompt(bookingId: string): Promise<void> 
   console.log("[Scheduler] Rebooking prompt scheduled", { bookingId, delayMs: delay });
 }
 
+// ─── scheduleRebookCheckin ─────────────────────────────────────────────────────
+
+/**
+ * Queue a 30-day rebook check-in. Sent ~30 days after a completed treatment
+ * to nudge the client back for their next visit. Independent of the existing
+ * 48h post_service_rebook nudge — that's the immediate "book your next one
+ * while it's fresh" reminder; this is the longer "haven't seen you in a
+ * month, want to come back?" check-in.
+ */
+export async function scheduleRebookCheckin(bookingId: string): Promise<void> {
+  const delay = 30 * 24 * 60 * 60 * 1000; // 30 days
+  await addJob(
+    "notifications",
+    "rebook_checkin_30d",
+    { booking_id: bookingId },
+    { delay },
+  );
+  console.log("[Scheduler] 30-day rebook check-in scheduled", {
+    bookingId,
+    sendAt: new Date(Date.now() + delay).toISOString(),
+  });
+}
+
 // ─── schedulePostServiceSequence ───────────────────────────────────────────────
 
 /**
