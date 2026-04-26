@@ -234,6 +234,9 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   const [consentSignatureDataUrl, setConsentSignatureDataUrl] = useState<string | null>(null);
   const [submittingConsent, setSubmittingConsent] = useState(false);
 
+  // PDPA data export state
+  const [exporting, setExporting] = useState(false);
+
   type ActivityEvent =
     | { type: 'purchase'; when: string; packageName: string; pricePaid: string }
     | {
@@ -508,6 +511,33 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
       setAuditEntries([]);
     } finally {
       setAuditLoading(false);
+    }
+  }
+
+  // ── PDPA data export handler ───────────────────────────────────────────────
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const res = await fetch(`${apiBase}/merchant/clients/${profileId}/data-export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `client-data-export-${profileId}-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Export failed');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -825,12 +855,25 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-tone-ink">Clinical Records</h2>
           {!clinicalRecordsForbidden && (
-            <button
-              onClick={() => setShowNewRecordForm(v => !v)}
-              className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors print:hidden"
-            >
-              {showNewRecordForm ? 'Cancel' : '+ New Clinical Record'}
-            </button>
+            <div className="flex items-center gap-3 print:hidden">
+              <div className="text-right">
+                <button
+                  onClick={() => { void handleExport(); }}
+                  disabled={exporting}
+                  className="text-xs font-medium text-grey-60 hover:text-tone-ink transition-colors disabled:opacity-50"
+                  title="Download this client's full record as JSON. Provide on request per PDPA right of access."
+                >
+                  {exporting ? 'Exporting...' : 'Export client data (PDPA)'}
+                </button>
+                <p className="text-[10px] text-grey-45 mt-0.5">Download full record as JSON on PDPA right-of-access request</p>
+              </div>
+              <button
+                onClick={() => setShowNewRecordForm(v => !v)}
+                className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors"
+              >
+                {showNewRecordForm ? 'Cancel' : '+ New Clinical Record'}
+              </button>
+            </div>
           )}
         </div>
 

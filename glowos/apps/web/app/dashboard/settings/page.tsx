@@ -65,7 +65,7 @@ interface CancellationForm {
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type TabId = 'profile' | 'hours' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account';
+type TabId = 'profile' | 'hours' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account' | 'compliance';
 
 interface Tab {
   id: TabId;
@@ -80,6 +80,7 @@ const TABS: Tab[] = [
   { id: 'payments', label: 'Payments' },
   { id: 'booking-page', label: 'Booking Page' },
   { id: 'account', label: 'Account' },
+  { id: 'compliance', label: 'PDPA Compliance' },
 ];
 
 const CATEGORY_OPTIONS: { value: MerchantCategory; label: string }[] = [
@@ -1428,6 +1429,120 @@ function AccountTab({ onSaved, onError }: { onSaved: (msg: string) => void; onEr
   );
 }
 
+// ─── PDPA Compliance Tab ──────────────────────────────────────────────────────
+
+function ComplianceTab() {
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Derive default date range: from = 30 days ago, to = today.
+  function todayStr() {
+    return new Date().toISOString().slice(0, 10);
+  }
+  function thirtyDaysAgoStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const [fromDate, setFromDate] = useState(thirtyDaysAgoStr);
+  const [toDate, setToDate] = useState(todayStr);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    // Read role from the JWT payload in localStorage.
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      const payload = JSON.parse(atob(token.split('.')[1] ?? ''));
+      setUserRole((payload as { role?: string }).role ?? null);
+    } catch {
+      setUserRole(null);
+    }
+  }, []);
+
+  async function handleDownloadAuditLog() {
+    setDownloading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const params = new URLSearchParams({ format: 'csv' });
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      const res = await fetch(`${apiBase}/merchant/audit-log/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-log-${fromDate ?? 'all'}-to-${toDate ?? 'now'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Download failed');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  if (userRole !== 'owner' && userRole !== 'manager') {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">PDPA Compliance</h3>
+        <p className="text-sm text-gray-500">This section is only available to owners and managers.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">Clinical record access audit log</h3>
+        <p className="text-sm text-gray-500">
+          Download a CSV log of every clinical-record read/write/amend action performed at this merchant.
+          Use this for PDPA inspection requests.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">From</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <button
+          onClick={() => { void handleDownloadAuditLog(); }}
+          disabled={downloading}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+        >
+          {downloading ? 'Downloading...' : 'Download CSV'}
+        </button>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        The CSV includes: timestamp, user email, action type, record ID, client ID, client name, and IP address.
+        Exports are not themselves logged to the audit trail.
+      </p>
+    </div>
+  );
+}
+
 // ─── Operating Hours Tab ──────────────────────────────────────────────────────
 
 const DEFAULT_HOURS: Record<string, { open: string; close: string; closed: boolean }> = {
@@ -2036,6 +2151,9 @@ function SettingsContent() {
             onSaved={(msg) => showToast(msg)}
             onError={(msg) => showToast(msg, 'error')}
           />
+        )}
+        {activeTab === 'compliance' && (
+          <ComplianceTab />
         )}
       </div>
 

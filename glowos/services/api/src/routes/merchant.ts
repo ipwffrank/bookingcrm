@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, lte } from "drizzle-orm";
 import { z } from "zod";
-import { db, merchants, merchantUsers, groups } from "@glowos/db";
+import { db, merchants, merchantUsers, groups, clinicalRecordAccessLog, clients } from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { zValidator } from "../middleware/validate.js";
@@ -315,5 +315,89 @@ merchantRouter.post(
     });
   },
 );
+
+// ─── GET /merchant/audit-log/export ───────────────────────────────────────────
+// PDPA inspection-ready CSV export of clinical_record_access_log events.
+// Owner/manager only. Date range defaults to the last 30 days if not supplied.
+// Does NOT log to the access log itself (would be circular noise).
+
+function csvEscape(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+merchantRouter.get("/audit-log/export", requireMerchant, async (c) => {
+  const role = c.get("userRole");
+  if (role !== "owner" && role !== "manager") {
+    return c.json({ error: "Forbidden", message: "Owner or manager only" }, 403);
+  }
+
+  const merchantId = c.get("merchantId")!;
+  const fromStr = c.req.query("from");
+  const toStr = c.req.query("to");
+  const format = c.req.query("format") ?? "csv";
+
+  if (format !== "csv") {
+    return c.json({ error: "Bad Request", message: "Only csv supported" }, 400);
+  }
+
+  // Default: last 30 days.
+  const toDate = toStr ? new Date(`${toStr}T23:59:59Z`) : new Date();
+  const fromDate = fromStr
+    ? new Date(`${fromStr}T00:00:00Z`)
+    : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    return c.json({ error: "Bad Request", message: "Invalid date format; use YYYY-MM-DD" }, 400);
+  }
+
+  // Build filter conditions.
+  const conditions = [
+    eq(clinicalRecordAccessLog.merchantId, merchantId),
+    gte(clinicalRecordAccessLog.createdAt, fromDate),
+    lte(clinicalRecordAccessLog.createdAt, toDate),
+  ];
+
+  // Join with clients to get client name.
+  const entries = await db
+    .select({
+      createdAt: clinicalRecordAccessLog.createdAt,
+      userEmail: clinicalRecordAccessLog.userEmail,
+      action: clinicalRecordAccessLog.action,
+      recordId: clinicalRecordAccessLog.recordId,
+      clientId: clinicalRecordAccessLog.clientId,
+      ipAddress: clinicalRecordAccessLog.ipAddress,
+      clientName: clients.name,
+    })
+    .from(clinicalRecordAccessLog)
+    .leftJoin(clients, eq(clinicalRecordAccessLog.clientId, clients.id))
+    .where(and(...conditions))
+    .orderBy(clinicalRecordAccessLog.createdAt);
+
+  const header = ["timestamp", "user_email", "action", "record_id", "client_id", "client_name", "ip_address"];
+  const rows = entries.map((e) =>
+    [
+      e.createdAt.toISOString(),
+      e.userEmail,
+      e.action,
+      e.recordId,
+      e.clientId,
+      e.clientName ?? "",
+      e.ipAddress ?? "",
+    ]
+      .map(csvEscape)
+      .join(","),
+  );
+  const csv = [header.join(","), ...rows].join("\n");
+
+  c.header("Content-Type", "text/csv; charset=utf-8");
+  c.header(
+    "Content-Disposition",
+    `attachment; filename="audit-log-${merchantId}-${fromStr ?? "all"}-to-${toStr ?? "now"}.csv"`,
+  );
+  return c.body(csv);
+});
 
 export { merchantRouter };
