@@ -1,0 +1,1 @@
+ALTER TABLE "clinical_records" ADD COLUMN "locked_at" timestamp with time zone;

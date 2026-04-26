@@ -22,3 +22,4 @@ export * from "./super-admin.js";
 export * from "./ipay88.js";
 export * from "./treatment-quotes.js";
 export * from "./brand-invites.js";
+export * from "./clinical-records.js";

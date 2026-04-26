@@ -71,6 +71,20 @@
       "when": 1777202926906,
       "tag": "0009_groovy_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1777226120170,
+      "tag": "0010_orange_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1777227899780,
+      "tag": "0011_misty_union_jack",
+      "breakpoints": true
     }
   ]
 }
