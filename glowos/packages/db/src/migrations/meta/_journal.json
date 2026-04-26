@@ -71,6 +71,13 @@
       "when": 1777202926906,
       "tag": "0009_groovy_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1777226120170,
+      "tag": "0010_orange_terrax",
+      "breakpoints": true
     }
   ]
 }

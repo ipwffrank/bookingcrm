@@ -160,6 +160,43 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   const [newNoteContent, setNewNoteContent] = useState('');
   const [addingNote, setAddingNote] = useState(false);
 
+  // ── Clinical Records state ──────────────────────────────────────────────────
+  type ClinicalRecordType = 'consultation_note' | 'treatment_log' | 'prescription';
+  interface ClinicalRecord {
+    id: string;
+    type: ClinicalRecordType | 'amendment';
+    title: string | null;
+    body: string;
+    recordedByName: string;
+    recordedByEmail: string;
+    amendsId: string | null;
+    amendmentReason: string | null;
+    createdAt: string;
+  }
+  interface AuditEntry {
+    id: string;
+    recordId: string;
+    userEmail: string;
+    action: 'read' | 'write' | 'amend';
+    ipAddress: string | null;
+    createdAt: string;
+  }
+  const [clinicalRecords, setClinicalRecords] = useState<ClinicalRecord[]>([]);
+  const [clinicalRecordsForbidden, setClinicalRecordsForbidden] = useState(false);
+  const [showNewRecordForm, setShowNewRecordForm] = useState(false);
+  const [newRecordType, setNewRecordType] = useState<ClinicalRecordType>('consultation_note');
+  const [newRecordTitle, setNewRecordTitle] = useState('');
+  const [newRecordBody, setNewRecordBody] = useState('');
+  const [savingRecord, setSavingRecord] = useState(false);
+  const [amendingRecordId, setAmendingRecordId] = useState<string | null>(null);
+  const [amendBody, setAmendBody] = useState('');
+  const [amendTitle, setAmendTitle] = useState('');
+  const [amendReason, setAmendReason] = useState('');
+  const [savingAmend, setSavingAmend] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+
   type ActivityEvent =
     | { type: 'purchase'; when: string; packageName: string; pricePaid: string }
     | {
@@ -224,6 +261,18 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
         setClientReviews(result.reviews);
       })
       .catch(() => {});
+
+    // Fetch clinical records
+    apiFetch(`/merchant/clients/${profileId}/clinical-records`)
+      .then((d: unknown) => {
+        const result = d as { records: ClinicalRecord[] };
+        setClinicalRecords(result.records ?? []);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 403) {
+          setClinicalRecordsForbidden(true);
+        }
+      });
   }, [profileId, router]);
 
   // Fetch client packages once client data is available
@@ -336,6 +385,92 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
       alert('Failed to save note');
     } finally {
       setAddingNote(false);
+    }
+  }
+
+  // ── Clinical record handlers ────────────────────────────────────────────────
+
+  async function handleCreateClinicalRecord() {
+    if (!newRecordBody.trim()) return;
+    setSavingRecord(true);
+    try {
+      const result = await apiFetch(`/merchant/clients/${profileId}/clinical-records`, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: newRecordType,
+          title: newRecordTitle.trim() || undefined,
+          body: newRecordBody.trim(),
+        }),
+      }) as { record: ClinicalRecord };
+      setClinicalRecords(prev => [result.record, ...prev]);
+      setNewRecordBody('');
+      setNewRecordTitle('');
+      setNewRecordType('consultation_note');
+      setShowNewRecordForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save clinical record');
+    } finally {
+      setSavingRecord(false);
+    }
+  }
+
+  function startAmend(record: ClinicalRecord) {
+    setAmendingRecordId(record.id);
+    setAmendBody(record.body);
+    setAmendTitle(record.title ?? '');
+    setAmendReason('');
+  }
+
+  function cancelAmend() {
+    setAmendingRecordId(null);
+    setAmendBody('');
+    setAmendTitle('');
+    setAmendReason('');
+  }
+
+  async function handleAmendRecord() {
+    if (!amendingRecordId || !amendBody.trim() || !amendReason.trim()) return;
+    setSavingAmend(true);
+    try {
+      const result = await apiFetch(
+        `/merchant/clients/${profileId}/clinical-records/${amendingRecordId}/amend`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: amendBody.trim(),
+            title: amendTitle.trim() || undefined,
+            amendmentReason: amendReason.trim(),
+          }),
+        },
+      ) as { record: ClinicalRecord };
+      // Replace the amended record with the new amendment in the list
+      setClinicalRecords(prev =>
+        prev
+          .filter(r => r.id !== amendingRecordId)
+          .concat(result.record)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      );
+      cancelAmend();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to amend record');
+    } finally {
+      setSavingAmend(false);
+    }
+  }
+
+  async function loadAuditLog() {
+    if (auditEntries.length > 0) { setShowAuditLog(v => !v); return; }
+    setAuditLoading(true);
+    setShowAuditLog(true);
+    try {
+      const result = await apiFetch(
+        `/merchant/clients/${profileId}/clinical-records/audit-log`,
+      ) as { entries: AuditEntry[] };
+      setAuditEntries(result.entries ?? []);
+    } catch {
+      setAuditEntries([]);
+    } finally {
+      setAuditLoading(false);
     }
   }
 
@@ -556,6 +691,211 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* ── Clinical Records ── */}
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-tone-ink">Clinical Records</h2>
+          {!clinicalRecordsForbidden && (
+            <button
+              onClick={() => setShowNewRecordForm(v => !v)}
+              className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors print:hidden"
+            >
+              {showNewRecordForm ? 'Cancel' : '+ New Clinical Record'}
+            </button>
+          )}
+        </div>
+
+        {clinicalRecordsForbidden ? (
+          <p className="text-xs text-grey-45 italic">Clinical records are gated to owner / manager.</p>
+        ) : (
+          <>
+            {/* New record form */}
+            {showNewRecordForm && (
+              <div className="mb-4 space-y-2 rounded-lg bg-grey-5 border border-grey-15 p-3">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-grey-75 mb-1">Type</label>
+                    <select
+                      value={newRecordType}
+                      onChange={e => setNewRecordType(e.target.value as ClinicalRecordType)}
+                      className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 bg-tone-surface focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
+                    >
+                      <option value="consultation_note">Consultation Note</option>
+                      <option value="treatment_log">Treatment Log</option>
+                      <option value="prescription">Prescription</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-grey-75 mb-1">Title (optional)</label>
+                    <input
+                      type="text"
+                      value={newRecordTitle}
+                      onChange={e => setNewRecordTitle(e.target.value)}
+                      placeholder="e.g. Botox 30u forehead"
+                      className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 bg-tone-surface focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-grey-75 mb-1">Record body</label>
+                  <textarea
+                    value={newRecordBody}
+                    onChange={e => setNewRecordBody(e.target.value)}
+                    rows={4}
+                    placeholder="Clinical observations, treatment details, dosage, areas treated..."
+                    className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCreateClinicalRecord}
+                    disabled={!newRecordBody.trim() || savingRecord}
+                    className="px-4 py-1.5 bg-tone-ink text-white text-xs font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
+                  >
+                    {savingRecord ? 'Saving...' : 'Save Record'}
+                  </button>
+                  <button
+                    onClick={() => { setShowNewRecordForm(false); setNewRecordBody(''); setNewRecordTitle(''); }}
+                    className="px-4 py-1.5 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-15 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Record feed */}
+            {clinicalRecords.length === 0 && !showNewRecordForm ? (
+              <p className="text-xs text-grey-45 italic">No clinical records yet. Create the first one above.</p>
+            ) : (
+              <div className="space-y-3 max-h-[480px] overflow-y-auto">
+                {clinicalRecords.map(record => {
+                  const typeLabel: Record<string, string> = {
+                    consultation_note: 'Consultation',
+                    treatment_log: 'Treatment',
+                    prescription: 'Prescription',
+                    amendment: 'Amendment',
+                  };
+                  const isAmending = amendingRecordId === record.id;
+                  return (
+                    <div key={record.id} className="border-l-2 border-tone-sage/30 pl-3 py-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-tone-sage">
+                            {typeLabel[record.type] ?? record.type}
+                          </span>
+                          {record.title && (
+                            <span className="text-xs font-semibold text-grey-75">{record.title}</span>
+                          )}
+                          {record.amendsId && (
+                            <span className="text-[10px] text-grey-45 italic">amended</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-grey-45">
+                            {new Date(record.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {' '}
+                            {new Date(record.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {!isAmending && (
+                            <button
+                              onClick={() => startAmend(record)}
+                              className="text-[10px] text-tone-sage hover:underline print:hidden"
+                            >
+                              Amend
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-grey-45 mt-0.5">{record.recordedByName}</p>
+                      <p className="text-xs text-grey-75 mt-1 leading-relaxed whitespace-pre-wrap">{record.body}</p>
+                      {record.amendmentReason && (
+                        <p className="text-[10px] text-grey-45 italic mt-1">Reason: {record.amendmentReason}</p>
+                      )}
+
+                      {/* Inline amend form */}
+                      {isAmending && (
+                        <div className="mt-2 space-y-2 rounded-lg bg-grey-5 border border-grey-15 p-3">
+                          <p className="text-[11px] font-medium text-grey-75">Amend this record</p>
+                          <input
+                            type="text"
+                            value={amendTitle}
+                            onChange={e => setAmendTitle(e.target.value)}
+                            placeholder="Title (optional)"
+                            className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 bg-tone-surface focus:outline-none focus:ring-1 focus:ring-tone-sage/30"
+                          />
+                          <textarea
+                            value={amendBody}
+                            onChange={e => setAmendBody(e.target.value)}
+                            rows={4}
+                            className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
+                          />
+                          <textarea
+                            value={amendReason}
+                            onChange={e => setAmendReason(e.target.value)}
+                            rows={2}
+                            placeholder="Reason for amendment (required)"
+                            className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleAmendRecord}
+                              disabled={!amendBody.trim() || !amendReason.trim() || savingAmend}
+                              className="px-4 py-1.5 bg-tone-ink text-white text-xs font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
+                            >
+                              {savingAmend ? 'Saving...' : 'Save Amendment'}
+                            </button>
+                            <button
+                              onClick={cancelAmend}
+                              className="px-4 py-1.5 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-15 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Audit log disclosure */}
+            <div className="mt-4 pt-3 border-t border-grey-5">
+              <button
+                onClick={loadAuditLog}
+                className="text-[11px] text-grey-45 hover:text-grey-75 transition-colors"
+              >
+                {showAuditLog ? 'Hide audit log' : 'Show audit log'}
+              </button>
+              {showAuditLog && (
+                <div className="mt-2">
+                  {auditLoading ? (
+                    <p className="text-[11px] text-grey-45">Loading...</p>
+                  ) : auditEntries.length === 0 ? (
+                    <p className="text-[11px] text-grey-45 italic">No audit entries yet.</p>
+                  ) : (
+                    <ul className="space-y-1 max-h-48 overflow-y-auto">
+                      {auditEntries.slice(0, 50).map(entry => (
+                        <li key={entry.id} className="text-[11px] text-grey-60 flex items-center gap-2">
+                          <span className={`font-medium ${entry.action === 'amend' ? 'text-semantic-warn' : 'text-grey-75'}`}>{entry.action}</span>
+                          <span>·</span>
+                          <span>{entry.userEmail}</span>
+                          <span>·</span>
+                          <span>{new Date(entry.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date(entry.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}</span>
+                          {entry.ipAddress && <span className="text-grey-30">· {entry.ipAddress}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
