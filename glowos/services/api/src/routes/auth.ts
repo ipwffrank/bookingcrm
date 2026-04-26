@@ -284,6 +284,13 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
   // payload value would let stale grants linger up to 30 days.
   const brandAdminGroupId = user.brandAdminGroupId ?? undefined;
 
+  // View-as-branch claims are forwarded from the existing refresh token so
+  // that a brand admin in view-as-branch mode does not silently fall back to
+  // home-branch context every 15 minutes when the access token is refreshed.
+  const viewingMerchantId = payload.viewingMerchantId;
+  const brandViewing = payload.brandViewing;
+  const homeMerchantId = payload.homeMerchantId;
+
   const accessToken = generateAccessToken({
     userId: user.id,
     merchantId: merchant.id,
@@ -298,6 +305,9 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
         }
       : {}),
     ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    ...(viewingMerchantId ? { viewingMerchantId } : {}),
+    ...(brandViewing ? { brandViewing: true as const } : {}),
+    ...(homeMerchantId ? { homeMerchantId } : {}),
   });
   const refreshToken = generateRefreshToken({
     userId: user.id,
@@ -309,6 +319,9 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
         }
       : {}),
     ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    ...(viewingMerchantId ? { viewingMerchantId } : {}),
+    ...(brandViewing ? { brandViewing: true as const } : {}),
+    ...(homeMerchantId ? { homeMerchantId } : {}),
   });
 
   return c.json({
