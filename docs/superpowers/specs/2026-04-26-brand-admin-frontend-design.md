@@ -10,6 +10,7 @@
 
 Let a merchant_user with `brand_admin_group_id` set reach the existing `/dashboard/group/*` views from their normal merchant login — no separate group_users account, no second password, no second portal — AND give them the ability to:
 
+- **Become a brand admin in the first place** by self-upgrading from `/dashboard/settings`. Bootstrap is owned by the merchant owner, not the platform host. Super admin stays out of the day-to-day brand-admin lifecycle.
 - Spin up new branches in their group and edit existing branch profiles (group composition is self-serve).
 - Operate inside any branch in their group as if they were that branch's owner, by switching branch context from the group sidebar (so a brand admin doesn't need a separate login per branch to manage day-to-day).
 
@@ -21,6 +22,7 @@ In:
 - A "← Back to [Branch Name]" item at the top of the group sidebar.
 - The group layout sources its group name from `localStorage` (set at login), not from the legacy group_users-only login flow.
 - Palette migration of `app/dashboard/group/{layout,overview,branches,clients}.tsx` from indigo → the 3-tone palette mandated by `app/dashboard/CLAUDE.md`.
+- **Bootstrap (self-upgrade):** an existing merchant `owner` (not manager, not staff) can convert their account to a brand admin from `/dashboard/settings`. The action creates a new `groups` row, sets their merchant's `groupId`, sets their own `brand_admin_group_id`, and re-issues their tokens with the new claim — no logout/login required.
 - **Branch CRUD by brand admin:** create a new branch (inserts `merchants` row pre-tied to the brand admin's `groupId`); edit branch profile fields on existing branches.
 - **Branch switching by brand admin:** a `[Branch ▾]` picker in the group sidebar (replacing the fixed "Back to [Branch]" item) lists every branch in the group; selecting one re-issues the JWT scoped to that branch, with a `brandViewing: true` claim. A persistent banner inside `/dashboard/*` shows the active branch and a one-click "End view" that returns to the home branch.
 
@@ -56,6 +58,44 @@ Implementation:
 
 Failure modes:
 - `brand_admin_group_id` points to a missing/deleted group row → omit `group` from the response and log a warning. The login still succeeds; the frontend will not render the Group sidebar item. (Defense-in-depth: the API path also checks DB on every request.)
+
+## API addition — self-upgrade to brand admin (bootstrap)
+
+**`POST /merchant/upgrade-to-brand`** — creates a group, ties the caller's existing merchant to it, and grants the caller `brand_admin_group_id`. This is the one and only entry point for becoming a brand admin in the absence of super-admin intervention.
+
+```jsonc
+// Request
+{ "groupName": "Aura Wellness Group" }       // 1..255, trimmed
+// Response 200
+{
+  "access_token": "...",                      // re-issued, now carries brandAdminGroupId
+  "refresh_token": "...",
+  "user": { /* their merchant_users row, brandAdminGroupId now set */ },
+  "merchant": { /* their merchant row, groupId now set */ },
+  "group": { "id": "...", "name": "Aura Wellness Group" }
+}
+// Errors
+// 403 caller is not role="owner"
+// 409 caller already has brand_admin_group_id (already a brand admin — no double-upgrade)
+// 409 caller's merchant already has groupId set (merchant is in another group;
+//     resolution requires platform-level intervention via super admin, not this endpoint)
+```
+
+Server behavior, all inside one DB transaction:
+
+1. Auth: `requireMerchant` → assert `c.userRole === "owner"`. Reject `staff`/`manager` with 403. Reject impersonating sessions with 403 (a super admin acting as someone shouldn't promote that someone to brand admin in the same hop).
+2. Re-read the user's `merchant_users` row and their `merchants` row. 409 if either `user.brandAdminGroupId` or `merchant.groupId` is already set.
+3. INSERT into `groups` with the trimmed name.
+4. UPDATE `merchants` SET `groupId = <newGroupId>` WHERE `id = user.merchantId`.
+5. UPDATE `merchant_users` SET `brandAdminGroupId = <newGroupId>` WHERE `id = user.id`.
+6. Re-issue access + refresh tokens with the new `brandAdminGroupId` claim (parallel to the existing `/auth/refresh-token` and `/auth/end-impersonation` flows).
+7. Return the response shape above.
+
+If any step fails the entire transaction rolls back; partial promotion (group exists but user has no claim, etc.) is not possible.
+
+Defense-in-depth: even though the frontend gates the settings card on `role === "owner"`, the API check is authoritative. A manager calling the endpoint directly with a forged frontend gets 403.
+
+---
 
 ## API additions — branch CRUD
 
@@ -260,7 +300,32 @@ A new component, mounted next to `<ImpersonationBanner>` at the top of `/dashboa
 
 Distinct from `<ImpersonationBanner>`: different copy, different color (sage background — informational, not warn — since brand-viewing is normal-day-of-work for a brand admin, not a privileged super-admin action). The two banners can never render simultaneously: `POST /group/view-as-branch` rejects impersonating sessions, and `POST /super/impersonate` is updated in this change to also reject brand-viewing sessions, so only one mode is ever active.
 
-### 6. Branches page (`app/dashboard/group/branches/page.tsx`)
+### 6. Settings page card — "Convert to brand admin" (`app/dashboard/settings/page.tsx`)
+
+A new card on `/dashboard/settings`, visible only when **all** of:
+
+- `JSON.parse(localStorage.user).role === "owner"`
+- `JSON.parse(localStorage.user).brandAdminGroupId` is falsy
+- `JSON.parse(localStorage.merchant).groupId` is falsy
+- `localStorage.brandViewing !== "true"` (don't offer upgrade in a view-as-branch session — the actor's claims are scrambled)
+
+Card copy (rough — not final):
+
+> **Manage multiple branches as one brand**
+> If you operate more than one location under a single brand, upgrade your account to brand admin. You'll be able to add new branches, edit profiles across the brand, and switch between branches without separate logins. Your current branch becomes the first in your new brand.
+>
+> **Brand name:** [text input]    [ Convert to brand admin ]
+
+Behavior on submit: `POST /merchant/upgrade-to-brand { groupName }`. On 200:
+
+1. Replace `localStorage.access_token`, `localStorage.refresh_token`, `localStorage.user`, `localStorage.merchant` with the response payload.
+2. Write `localStorage.group = JSON.stringify(data.group)`.
+3. Toast "Brand created — welcome to /group".
+4. `router.push('/dashboard/group/overview')`.
+
+Error handling: 409 (already a brand admin / merchant already in a group) renders an inline message pointing to support. 403 (not an owner) shouldn't reach this card because of the gate, but if it does, the card hides itself.
+
+### 7. Branches page (`app/dashboard/group/branches/page.tsx`)
 
 Same palette migration as overview/clients, plus two new affordances:
 
@@ -277,22 +342,34 @@ A real `/dashboard/group/branches/[merchantId]` deep-detail page is still out of
 ## Data flow
 
 ```
-Login form
-  └─> POST /auth/login
-       └─> response { user.brandAdminGroupId?, group? }
-            └─> localStorage: access_token, user, merchant, group?
+SIGNUP / EXISTING ACCOUNT
+   |
+   v
+Merchant owner with no group
+   |
+   |  /dashboard/settings → "Convert to brand admin"
+   v
+POST /merchant/upgrade-to-brand
+   |  (transaction: insert groups, set merchant.groupId, set user.brand_admin_group_id)
+   v
+Tokens swapped, "Group" sidebar item appears
+   |
+   +─→ /dashboard/group/* (group view)
+   |
+   +─→ Branch picker → POST /group/view-as-branch → /dashboard/* of selected branch
+   |
+   +─→ /group/branches → POST /group/branches (new) / PATCH /group/branches/:id (edit)
 
-Dashboard layout (merchant)
-  └─> reads user.brandAdminGroupId from localStorage
-       └─> conditionally renders "Group" sidebar item
-
-Click "Group"
-  └─> /dashboard/group/overview
-       └─> Group layout
-            ├─> reads localStorage.group → renders group.name in sidebar header
-            ├─> reads localStorage.merchant → renders "Back to {name}" link
-            └─> Pages call GET /group/* with Bearer access_token
-                 └─> requireGroupAccess: validates brand-admin claim, sets c.groupId
+LOGIN (returning brand admin)
+   |
+   v
+POST /auth/login
+   |  (response includes group: {id,name} when brandAdminGroupId is set)
+   v
+localStorage: access_token, refresh_token, user, merchant, group
+   |
+   v
+Dashboard layout reads user.brandAdminGroupId → renders "Group" sidebar item
 ```
 
 ---
@@ -306,6 +383,13 @@ Click "Group"
 ---
 
 ## Testing
+
+Bootstrap (self-upgrade):
+- Manual: as an `owner`-role merchant_user with no group, `/dashboard/settings` shows the "Convert to brand admin" card. Submit a name → tokens swap, the "Group" sidebar item appears immediately, landing in `/dashboard/group/overview` with the new group selected.
+- Manual: as a `manager` or `staff` user, the card does not render. Direct `POST /merchant/upgrade-to-brand` returns 403.
+- Manual: as a brand admin, `/dashboard/settings` does not render the card. Direct `POST /merchant/upgrade-to-brand` returns 409.
+- Manual: while brand-viewing or while super-admin-impersonating, the card does not render. Direct API call returns 403.
+- Manual: a transaction failure mid-upgrade (force a duplicate-key by racing two requests) → both either succeed or 409, never partial state where a group exists with no brand admin attached.
 
 Auth + entry:
 - Manual: log in as a merchant_user with `brand_admin_group_id` set → confirm the "Group" sidebar item appears, clicks through to `/dashboard/group/overview`, the group name renders, the picker shows their home branch.
@@ -337,6 +421,9 @@ Visual + typecheck:
 - Multi-group brand admins (current schema and JWT model supports a single `brand_admin_group_id` per user).
 - Brand-admin RBAC inside `/group/*` (currently any matching merchant_user is full-power within their group; sub-roles can land later if needed).
 - Replacing the legacy group_users login path entirely — kept for back-compat.
-- Inviting / provisioning a branch owner email at create-time — handled by super-admin or future invite flow.
+- Inviting / provisioning a branch owner email at create-time — handled by a future invite flow. (The brand admin operates the branch via view-as-branch in the meantime.)
 - Branch-internal scaffolding (operating hours, services, staff, payment config) — stays in the branch owner's `/dashboard/*` flows.
 - Slug rename and country/timezone migration after create — super-admin only.
+- Adding a multi-branch path to `/signup`. New brand admins start single-branch and upgrade via settings.
+- Co-brand-admin invites — promoting a *second* `merchant_user` inside an existing group to also be a brand admin. Today every group has exactly one brand admin (the upgrader). Adding additional brand admins is a future feature.
+- Super-admin tooling for groups (transferring a brand to a different user, splitting/merging groups, force-resetting a brand admin). Deferred — super admin can still perform these as raw DB operations if needed before tooling lands.
