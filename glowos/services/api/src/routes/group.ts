@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { eq, inArray, and, gte, lt, sum, count, countDistinct, desc, or, ilike, sql } from "drizzle-orm";
-import { db, merchants, bookings, clients } from "@glowos/db";
+import { db, merchants, merchantUsers, bookings, clients } from "@glowos/db";
+import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
 import { z } from "zod";
@@ -28,6 +29,10 @@ const createBranchSchema = z.object({
   phone: z.string().max(20).optional(),
   email: z.string().email().max(255).optional(),
   description: z.string().optional(),
+}).strict();
+
+const viewAsBranchSchema = z.object({
+  merchantId: z.string().uuid(),
 }).strict();
 
 const updateBranchSchema = z
@@ -424,5 +429,89 @@ groupRouter.patch(
     return c.json({ merchant: updated });
   },
 );
+
+// ─── POST /group/view-as-branch ────────────────────────────────────────────────
+// Brand-admin counterpart of /super/impersonate, scoped to "any branch in my
+// group" instead of "any merchant on the platform". Re-issues tokens carrying
+// the new viewing claims.
+groupRouter.post("/view-as-branch", zValidator(viewAsBranchSchema), async (c) => {
+  const userId = c.get("userId")!;
+  const groupId = c.get("groupId")!;
+  const body = c.get("body") as z.infer<typeof viewAsBranchSchema>;
+
+  // Brand-viewing requires a merchant_users JWT path (the legacy group_users
+  // path doesn't have brand-admin context to switch INTO a branch). Reject if
+  // requireGroupAccess took the legacy route.
+  if (!c.get("brandAdminGroupId")) {
+    return c.json(
+      { error: "Forbidden", message: "Only brand admins on a merchant_users login can view-as-branch" },
+      403,
+    );
+  }
+  if (c.get("impersonating")) {
+    return c.json(
+      { error: "Forbidden", message: "End impersonation before viewing a branch" },
+      403,
+    );
+  }
+
+  const [target] = await db
+    .select({ id: merchants.id, name: merchants.name, slug: merchants.slug })
+    .from(merchants)
+    .where(and(eq(merchants.id, body.merchantId), eq(merchants.groupId, groupId)))
+    .limit(1);
+  if (!target) {
+    return c.json({ error: "Not Found", message: "Branch not in your group" }, 404);
+  }
+
+  const [user] = await db
+    .select({
+      id: merchantUsers.id,
+      role: merchantUsers.role,
+      staffId: merchantUsers.staffId,
+      merchantId: merchantUsers.merchantId,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+    })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, userId))
+    .limit(1);
+  if (!user || !user.brandAdminGroupId || user.brandAdminGroupId !== groupId) {
+    return c.json({ error: "Forbidden", message: "Brand authority revoked" }, 403);
+  }
+
+  const accessToken = generateAccessToken({
+    userId: user.id,
+    merchantId: user.merchantId, // home (informational; viewingMerchantId overrides downstream)
+    role: user.role,
+    ...(user.staffId ? { staffId: user.staffId } : {}),
+    brandAdminGroupId: user.brandAdminGroupId,
+    viewingMerchantId: target.id,
+    brandViewing: true,
+    homeMerchantId: user.merchantId,
+  });
+  const refreshToken = generateRefreshToken({
+    userId: user.id,
+    brandAdminGroupId: user.brandAdminGroupId,
+    viewingMerchantId: target.id,
+    brandViewing: true,
+    homeMerchantId: user.merchantId,
+  });
+
+  // Return the target merchant (full row) for the frontend to write into
+  // localStorage.merchant.
+  const [targetFull] = await db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, target.id))
+    .limit(1);
+
+  return c.json({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    merchant: targetFull,
+    brandViewing: true,
+    homeMerchantId: user.merchantId,
+  });
+});
 
 export { groupRouter };
