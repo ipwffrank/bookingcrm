@@ -14,6 +14,7 @@ interface User {
 const NAV: Array<{ href: string; label: string }> = [
   { href: '/super', label: 'Overview' },
   { href: '/super/merchants', label: 'Merchants' },
+  { href: '/super/users', label: 'Users' },
   { href: '/super/whatsapp-funnel', label: 'WhatsApp Funnel' },
   { href: '/super/audit-log', label: 'Audit Log' },
 ];
