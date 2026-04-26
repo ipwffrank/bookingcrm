@@ -9,6 +9,13 @@ import {
   clinicalRecordAccessLog,
   clientProfiles,
   merchantUsers,
+  clients,
+  merchants,
+  bookings,
+  clientNotes,
+  clientPackages,
+  packageSessions,
+  reviews,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -554,5 +561,196 @@ clinicalRecordsRouter.get(
     return c.json({ entries });
   },
 );
+
+// GET /merchant/clients/:profileId/data-export
+// PDPA right of access (SG Act 2012 §21, MY Act 2010 §30).
+// Returns a JSON dump of the client's full dataset. Owner/manager only.
+// Logs each returned clinical record to the access log as a "read" event.
+clinicalRecordsRouter.get("/:profileId/data-export", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const profileId = c.req.param("profileId")!;
+  const userId = c.get("userId")!;
+  const userEmail = c.get("actorEmail") ?? "";
+
+  const clientId = await resolveClientId(profileId, merchantId);
+  if (!clientId)
+    return c.json({ error: "Not Found", message: "Client not found" }, 404);
+
+  // Resolve the actor's role for the export envelope.
+  const [actorUser] = await db
+    .select({ name: merchantUsers.name, email: merchantUsers.email, role: merchantUsers.role })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, userId))
+    .limit(1);
+
+  // Fetch the merchant name for the data_controller field.
+  const [merchant] = await db
+    .select({ name: merchants.name })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  // Fetch the client + their merchant-scoped profile.
+  const [clientRow] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+
+  const [profileRow] = await db
+    .select()
+    .from(clientProfiles)
+    .where(
+      and(
+        eq(clientProfiles.clientId, clientId),
+        eq(clientProfiles.merchantId, merchantId),
+      ),
+    )
+    .limit(1);
+
+  // Fetch all bookings for this client at this merchant.
+  const bookingRows = await db
+    .select()
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, clientId),
+        eq(bookings.merchantId, merchantId),
+      ),
+    )
+    .orderBy(desc(bookings.startTime));
+
+  // Fetch all client notes.
+  const noteRows = await db
+    .select()
+    .from(clientNotes)
+    .where(
+      and(
+        eq(clientNotes.clientId, clientId),
+        eq(clientNotes.merchantId, merchantId),
+      ),
+    )
+    .orderBy(desc(clientNotes.createdAt));
+
+  // Fetch ALL clinical record revisions (not just latest) for completeness.
+  const recordRows = await db
+    .select()
+    .from(clinicalRecords)
+    .where(
+      and(
+        eq(clinicalRecords.clientId, clientId),
+        eq(clinicalRecords.merchantId, merchantId),
+      ),
+    )
+    .orderBy(clinicalRecords.createdAt);
+
+  // Fetch the clinical record access log for this client.
+  const accessLogRows = await db
+    .select()
+    .from(clinicalRecordAccessLog)
+    .where(
+      and(
+        eq(clinicalRecordAccessLog.clientId, clientId),
+        eq(clinicalRecordAccessLog.merchantId, merchantId),
+      ),
+    )
+    .orderBy(clinicalRecordAccessLog.createdAt);
+
+  // Fetch client packages + their sessions.
+  const pkgRows = await db
+    .select()
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.clientId, clientId),
+        eq(clientPackages.merchantId, merchantId),
+      ),
+    )
+    .orderBy(clientPackages.purchasedAt);
+
+  const pkgIds = pkgRows.map((p) => p.id);
+  let sessionRows: (typeof packageSessions.$inferSelect)[] = [];
+  if (pkgIds.length > 0) {
+    // Drizzle's `inArray` would require an import; use a simple forEach approach
+    // to avoid adding a new operator import. Typically packages are few per client.
+    const sessionPromises = pkgIds.map((pkgId) =>
+      db
+        .select()
+        .from(packageSessions)
+        .where(eq(packageSessions.clientPackageId, pkgId))
+        .orderBy(packageSessions.sessionNumber),
+    );
+    const sessionArrays = await Promise.all(sessionPromises);
+    sessionRows = sessionArrays.flat();
+  }
+
+  // Fetch reviews by this client at this merchant.
+  const reviewRows = await db
+    .select()
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.clientId, clientId),
+        eq(reviews.merchantId, merchantId),
+      ),
+    )
+    .orderBy(reviews.createdAt);
+
+  // Audit log: log a "read" entry for each clinical record being exported.
+  // We mark the ipAddress field with a "pdpa-export:" prefix so auditors can
+  // distinguish data-export events from ordinary reads. varchar(64) is large
+  // enough for "pdpa-export:" + an IPv6 address.
+  const ip = clientIp(c);
+  const exportIpMarker = `pdpa-export${ip ? `:${ip}` : ""}`.slice(0, 64);
+  if (recordRows.length > 0) {
+    await db.insert(clinicalRecordAccessLog).values(
+      recordRows.map((r) => ({
+        merchantId,
+        recordId: r.id,
+        clientId,
+        userId,
+        userEmail: actorUser?.email ?? userEmail,
+        action: "read" as const,
+        ipAddress: exportIpMarker,
+      })),
+    );
+  }
+
+  const payload = {
+    schema_version: "1.0",
+    generated_at: new Date().toISOString(),
+    generated_by: {
+      user_id: userId,
+      email: actorUser?.email ?? userEmail,
+      role: actorUser?.role ?? "unknown",
+    },
+    data_controller: {
+      merchant_id: merchantId,
+      merchant_name: merchant?.name ?? null,
+    },
+    subject: {
+      client_id: clientId,
+      name: clientRow?.name ?? null,
+      phone: clientRow?.phone ?? null,
+      email: clientRow?.email ?? null,
+    },
+    client_profile: profileRow ?? null,
+    bookings: bookingRows,
+    client_notes: noteRows,
+    clinical_records: recordRows,
+    clinical_record_access_log: accessLogRows,
+    client_packages: pkgRows.map((pkg) => ({
+      ...pkg,
+      sessions: sessionRows.filter((s) => s.clientPackageId === pkg.id),
+    })),
+    reviews: reviewRows,
+  };
+
+  c.header(
+    "Content-Disposition",
+    `attachment; filename="client-data-export-${clientId}-${Date.now()}.json"`,
+  );
+  return c.json(payload);
+});
 
 export { clinicalRecordsRouter };
