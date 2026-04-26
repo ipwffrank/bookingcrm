@@ -692,12 +692,7 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                   {client.email}
                 </div>
               )}
-              {profile.birthday && (
-                <div className="flex items-center gap-1.5 text-sm text-grey-75">
-                  <svg className="w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.871c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513M15 21H3v-1a6 6 0 0 1 12 0v1Zm0 0h6v-1a6 6 0 0 0-9-5.197M13.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
-                  {fmt(profile.birthday)}
-                </div>
-              )}
+              <BirthdayField profileId={profile.id} initialValue={profile.birthday} />
             </div>
           </div>
           {/* Action buttons — hidden when printing so the exported PDF is clean */}
@@ -1601,5 +1596,116 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
         </button>
       </div>
     </div>
+  );
+}
+
+// ─── BirthdayField — inline edit for a client's birthday ────────────────────
+// Captures Month + Day only (year is irrelevant for birthday automation and
+// is more privacy-friendly to omit). The existing date column is reused: we
+// store the value as `2000-MM-DD`, a sentinel year that the automation worker
+// strips when matching today's MM-DD.
+const MONTHS = [
+  { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' }, { value: '03', label: 'Mar' },
+  { value: '04', label: 'Apr' }, { value: '05', label: 'May' }, { value: '06', label: 'Jun' },
+  { value: '07', label: 'Jul' }, { value: '08', label: 'Aug' }, { value: '09', label: 'Sep' },
+  { value: '10', label: 'Oct' }, { value: '11', label: 'Nov' }, { value: '12', label: 'Dec' },
+];
+
+function daysInMonth(monthMM: string): number {
+  const m = Number(monthMM);
+  if (m === 2) return 29; // allow Feb 29 — leap-year birthdays valid every 4 years
+  return [4, 6, 9, 11].includes(m) ? 30 : 31;
+}
+
+function monthDayLabel(iso: string): string {
+  // iso is YYYY-MM-DD; we only render Month + Day.
+  const [, mm, dd] = iso.split('-');
+  const month = MONTHS.find((x) => x.value === mm)?.label ?? mm;
+  return `${month} ${Number(dd)}`;
+}
+
+function BirthdayField({ profileId, initialValue }: { profileId: string; initialValue: string | null }) {
+  const [value, setValue] = useState<string | null>(initialValue);
+  const [editing, setEditing] = useState(false);
+  const initialMM = initialValue ? initialValue.slice(5, 7) : '';
+  const initialDD = initialValue ? initialValue.slice(8, 10) : '';
+  const [month, setMonth] = useState<string>(initialMM);
+  const [day, setDay] = useState<string>(initialDD);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!month || !day) return;
+    const isoSentinel = `2000-${month}-${day.padStart(2, '0')}`;
+    setSaving(true);
+    try {
+      await apiFetch(`/merchant/clients/${profileId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ birthday: isoSentinel }),
+      });
+      setValue(isoSentinel);
+      setEditing(false);
+    } catch {
+      alert('Failed to save birthday');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cakeIcon = (
+    <svg className="w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.871c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513M15 21H3v-1a6 6 0 0 1 12 0v1Zm0 0h6v-1a6 6 0 0 0-9-5.197M13.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
+  );
+
+  if (editing) {
+    const maxDay = month ? daysInMonth(month) : 31;
+    const validDay = day && Number(day) <= maxDay ? day : '';
+    return (
+      <div className="flex items-center gap-1.5 text-sm text-grey-75 print:hidden flex-wrap">
+        {cakeIcon}
+        <select
+          value={month}
+          onChange={(e) => { setMonth(e.target.value); if (Number(day) > daysInMonth(e.target.value)) setDay(''); }}
+          className="border border-grey-15 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-tone-sage/50"
+        >
+          <option value="">Month</option>
+          {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+        <select
+          value={validDay}
+          onChange={(e) => setDay(e.target.value)}
+          disabled={!month}
+          className="border border-grey-15 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-tone-sage/50 disabled:opacity-50"
+        >
+          <option value="">Day</option>
+          {Array.from({ length: maxDay }, (_, i) => String(i + 1).padStart(2, '0')).map((d) => (
+            <option key={d} value={d}>{Number(d)}</option>
+          ))}
+        </select>
+        <button onClick={save} disabled={!month || !validDay || saving} className="text-xs text-tone-sage hover:text-tone-ink font-medium disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button onClick={() => { setEditing(false); setMonth(initialMM); setDay(initialDD); }} className="text-xs text-grey-60 hover:text-tone-ink">Cancel</button>
+      </div>
+    );
+  }
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-1.5 text-sm text-grey-75">
+        {cakeIcon}
+        <span>{monthDayLabel(value)}</span>
+        <button onClick={() => setEditing(true)} className="text-xs text-grey-60 hover:text-tone-ink underline print:hidden">Edit</button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="flex items-center gap-1.5 text-sm text-tone-sage hover:text-tone-ink print:hidden"
+    >
+      {cakeIcon}
+      + Add birthday
+    </button>
   );
 }
