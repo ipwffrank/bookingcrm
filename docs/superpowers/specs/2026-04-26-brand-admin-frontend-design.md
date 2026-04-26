@@ -8,7 +8,10 @@
 
 ## Goal
 
-Let a merchant_user with `brand_admin_group_id` set reach the existing `/dashboard/group/*` views from their normal merchant login — no separate group_users account, no second password, no second portal — AND give them the ability to spin up new branches in their group and edit existing branch profiles, so the group composition is self-serve.
+Let a merchant_user with `brand_admin_group_id` set reach the existing `/dashboard/group/*` views from their normal merchant login — no separate group_users account, no second password, no second portal — AND give them the ability to:
+
+- Spin up new branches in their group and edit existing branch profiles (group composition is self-serve).
+- Operate inside any branch in their group as if they were that branch's owner, by switching branch context from the group sidebar (so a brand admin doesn't need a separate login per branch to manage day-to-day).
 
 ## Scope
 
@@ -19,13 +22,14 @@ In:
 - The group layout sources its group name from `localStorage` (set at login), not from the legacy group_users-only login flow.
 - Palette migration of `app/dashboard/group/{layout,overview,branches,clients}.tsx` from indigo → the 3-tone palette mandated by `app/dashboard/CLAUDE.md`.
 - **Branch CRUD by brand admin:** create a new branch (inserts `merchants` row pre-tied to the brand admin's `groupId`); edit branch profile fields on existing branches.
+- **Branch switching by brand admin:** a `[Branch ▾]` picker in the group sidebar (replacing the fixed "Back to [Branch]" item) lists every branch in the group; selecting one re-issues the JWT scoped to that branch, with a `brandViewing: true` claim. A persistent banner inside `/dashboard/*` shows the active branch and a one-click "End view" that returns to the home branch.
 
 Out:
 - Logout button behavior. The existing handler clears localStorage + redirects to `/login`. That's the same shape as `/dashboard` logout — leave it.
 - Group-users login path (the legacy fallback in `requireGroupAccess`). Untouched. Still works for HQ-only accounts.
 - New `/group/*` analytics features. Pure access + visual parity for the analytics views; the new write surface is branch CRUD only.
-- Inviting a branch owner email at create-time. The new branch has no merchant_users row — only platform-level tooling (super-admin) provisions owners. Brand admin requests an owner-invite via the existing channels.
-- Scaffolding inside a new branch (operating hours, services, staff, payment gateway). Empty branch shell only; the branch's own merchant_users owner sets these up via their normal `/dashboard/*` once invited.
+- Inviting a branch owner email at create-time. The new branch has no `merchant_users` row of its own — that's fine because the brand admin can operate the branch via view-as-branch. A future change can add an "invite human operator" flow when brand admins want to delegate.
+- Scaffolding inside a new branch (operating hours, services, staff, payment gateway). Empty branch shell only; the brand admin (or the eventual branch owner) sets these up by switching into the branch via the picker and using the normal `/dashboard/*` flows.
 - Slug edits after creation. Changing a slug invalidates outbound booking links and is reserved for super-admin.
 
 ---
@@ -127,6 +131,70 @@ The aggregate fields and `recentBookings` are unchanged. The change is additive 
 
 Both `POST` and `PATCH` schemas use `.strict()` so unknown keys are rejected at the boundary, not silently dropped. The PATCH schema is `.partial()` over the editable allow-list. Anything outside the allow-list is a 400 — including off-limits fields like `slug`, `subscriptionTier`, etc. — to give an explicit failure rather than a silent no-op.
 
+## API additions — branch switching (view-as-branch)
+
+Mirror of the super-admin impersonation pattern, scoped to "any branch within my group" instead of "any merchant in the platform".
+
+**`POST /group/view-as-branch`** — re-issue the caller's tokens scoped to a target branch in their group.
+
+```jsonc
+// Request
+{ "merchantId": "uuid-..." }
+// Response 200 — same shape as /auth/login's merchant branch
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "user": { /* unchanged: their merchant_users row */ },
+  "merchant": { /* the target branch row */ },
+  "group": { /* unchanged */ },
+  "brandViewing": true,
+  "homeMerchantId": "uuid-..."  // their original branch, for the banner
+}
+// Errors
+// 403 not a brand admin / impersonating session
+// 404 target merchantId not in caller's group
+```
+
+Server behavior:
+- Caller must have `brandAdminGroupId` on the inbound JWT and not be impersonating.
+- Validate the target `merchantId` exists and `merchants.groupId === payload.brandAdminGroupId`.
+- New token claims (additive to existing payload):
+  - `viewingMerchantId: <target>` — the branch the JWT is scoped to.
+  - `brandViewing: true`
+  - `homeMerchantId: <caller's merchant_users.merchant_id>` — for "End view" and audit.
+  - Existing `brandAdminGroupId` is preserved.
+- Refresh token gets the same view claims so the session survives token refresh. The `/auth/refresh-token` handler is updated to forward these claims through (parallel to how it forwards `brandAdminGroupId` today).
+
+**`POST /auth/end-brand-view`** — revert to the home-branch JWT.
+
+```jsonc
+// Request: empty body
+// Response 200 — fresh tokens scoped to the brand admin's home branch
+{ "access_token": "...", "refresh_token": "...", "user", "merchant", "group" }
+// Errors: 409 not currently brand-viewing
+```
+
+Behavior: drops `viewingMerchantId`, `brandViewing`, `homeMerchantId` from the new token pair. Re-reads `merchant_users.merchant_id` from DB to find the home branch.
+
+### `requireMerchant` change
+
+The existing middleware reads `merchant_users` by `payload.userId` and sets `c.merchantId = user.merchantId`. Extend it: when `payload.viewingMerchantId` is present:
+
+1. Verify `payload.brandAdminGroupId` is still set on the user's row (DB re-read — rejecting brand-viewing immediately if brand authority was revoked).
+2. Verify the target `merchants.groupId === user.brandAdminGroupId`. 404 if missing or mismatched.
+3. Set `c.merchantId = payload.viewingMerchantId`, `c.userRole = "owner"` (synthetic — the brand admin doesn't have a `merchant_users` row at the target branch, but inside their group they have owner-equivalent power).
+4. Set `c.brandViewing = true` and `c.homeMerchantId = user.merchantId` for audit visibility downstream.
+
+`c.userId` stays the brand admin's own user id, so any code that writes `created_by_user_id` or audit rows logs the real actor.
+
+### Audit logging
+
+Out of scope for this spec (lighter than super-admin: brand admins are trusted within their group, not cross-tenant). The brand admin's own `userId` is already on every write, so per-branch audit logs already attribute the action correctly. A dedicated `brand_admin_view_log` parallel to `super_admin_audit_log` can land in a follow-on if visibility into "what did the brand admin do where" is needed centrally.
+
+### `/group/*` access during brand-viewing
+
+`requireGroupAccess` already rejects impersonating sessions (the super-admin pattern). For brand-viewing the rule is **opposite**: `/group/*` must remain accessible during brand-viewing so the picker keeps working ("I'm in Branch A, want to switch to Branch B"). No change to `requireGroupAccess`. The middleware should also not treat `viewingMerchantId` as if it were impersonation — it's a separate concept.
+
 ---
 
 ## Frontend changes
@@ -153,19 +221,14 @@ The check happens once on mount, alongside the existing `setMerchant` block. No 
 
 Three changes, all small:
 
-a) **Back-to-branch item.** Above the existing 3-item nav, render:
+a) **Branch picker.** Above the existing 3-item nav, render a `<BranchPicker>` button that:
 
-```tsx
-<Link
-  href="/dashboard"
-  className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-grey-60 hover:text-tone-ink"
->
-  <ArrowLeftIcon className="w-4 h-4" />
-  Back to {merchantName}
-</Link>
-```
+- Reads the list of branches in the group from a small new endpoint (or reuses `GET /group/branches`'s existing list — it already returns `merchantId` + `name`).
+- Renders as `← [Home Branch ▾]` by default. The home branch is read from `localStorage.merchant`. Clicking expands a small popover listing every branch in the group plus a `Stay in Group view` no-op item at the top for symmetry.
+- Selecting a branch other than the current home → `POST /group/view-as-branch { merchantId }` → on 200, replace `access_token`/`refresh_token` and `merchant` in localStorage, set a sticky `localStorage.brandViewing = "true"` and `localStorage.homeMerchantId`, then `router.push('/dashboard')`.
+- Selecting the home branch (when not currently brand-viewing) → just `router.push('/dashboard')` — no token swap.
 
-The merchant name is read from `localStorage.merchant` on mount. If localStorage has no merchant (legacy group_users session), fall back to the literal "Back to dashboard". Render the back link regardless of which session type is active — both can use it.
+Legacy group_users sessions don't have `localStorage.merchant`. Render the link as `← Back to dashboard` (no picker) for them — the legacy session has no branch context and no view-as capability.
 
 b) **Group name fallback chain.** The existing `localStorage.getItem('group')` read keeps working — the new login path now writes the same key for brand admins. No code change here, but the comment/wording in the file should stop implying group_users is the only source.
 
@@ -187,7 +250,17 @@ The non-indigo neutrals (`gray-50`, `gray-200`, etc.) get migrated to the projec
 
 The "Hero metric" pattern from the analytics page (ink-filled card for the headline number, sage tint for the secondary, neutrals for the rest) is the right reference if a card hierarchy choice comes up. Default: revenue card = ink-filled, branch count = sage tint, the rest = `tone-surface` over warm canvas.
 
-### 5. Branches page (`app/dashboard/group/branches/page.tsx`)
+### 5. Brand-view banner in the merchant dashboard (`app/dashboard/components/BrandViewBanner.tsx`)
+
+A new component, mounted next to `<ImpersonationBanner>` at the top of `/dashboard/layout.tsx` and `/staff/layout.tsx`, visible when `localStorage.brandViewing === "true"`:
+
+> "Viewing **{Branch.name}** as a brand admin. **End view** to return to {Home Branch.name}."
+
+`End view` → `POST /auth/end-brand-view` → swap tokens + `localStorage.merchant`, drop `localStorage.brandViewing` + `localStorage.homeMerchantId`, `router.push('/dashboard')`.
+
+Distinct from `<ImpersonationBanner>`: different copy, different color (sage background — informational, not warn — since brand-viewing is normal-day-of-work for a brand admin, not a privileged super-admin action). The two banners can never render simultaneously: `POST /group/view-as-branch` rejects impersonating sessions, and `POST /super/impersonate` is updated in this change to also reject brand-viewing sessions, so only one mode is ever active.
+
+### 6. Branches page (`app/dashboard/group/branches/page.tsx`)
 
 Same palette migration as overview/clients, plus two new affordances:
 
@@ -234,15 +307,27 @@ Click "Group"
 
 ## Testing
 
-- Manual: log in as a merchant_user with `brand_admin_group_id` set → confirm the "Group" sidebar item appears, clicks through to `/dashboard/group/overview`, the group name renders, the back link returns to `/dashboard`.
-- Manual: log in as a merchant_user without `brand_admin_group_id` → confirm no "Group" sidebar item appears, direct nav to `/dashboard/group/overview` either renders nothing useful or the API returns 403 (the existing 401/403 redirect kicks in).
-- Manual: log in as a legacy group_users account → confirm the existing flow (group name in sidebar header, no merchant data, "Back to dashboard" fallback wording) still works.
-- Manual: as brand admin, click "+ New branch", submit a valid form → branch appears in the list, public `/booking/<slug>` resolves (empty services so the booking page should render an "no services" state but the merchant row exists).
-- Manual: as brand admin, edit an existing branch → name change reflects on the merchant dashboard's branch name (cross-check `/super` Merchants table).
-- Manual: attempt `PATCH /group/branches/:id` with `slug` or `subscriptionTier` in the body → 400 (zod strips). Attempt `POST /group/branches` with a slug already in use → 409.
-- Manual: attempt `POST /group/branches` from a brand admin in group A targeting a body that mentions group B (no field exists for it, but verify the JWT-derived groupId is the only source) → branch created in A.
-- Visual: spot-check the migrated pages against the palette spec — no `indigo-*` or other forbidden hues remain in `app/dashboard/group/**`.
-- Typecheck: `pnpm --filter @glowos/web typecheck` and `pnpm --filter @glowos/api typecheck` clean.
+Auth + entry:
+- Manual: log in as a merchant_user with `brand_admin_group_id` set → confirm the "Group" sidebar item appears, clicks through to `/dashboard/group/overview`, the group name renders, the picker shows their home branch.
+- Manual: log in as a merchant_user without `brand_admin_group_id` → confirm no "Group" sidebar item appears, direct nav to `/dashboard/group/overview` returns 403 from the API and the existing 401/403 redirect kicks in.
+- Manual: log in as a legacy group_users account → existing flow (group name in sidebar header, "Back to dashboard" fallback, no picker) still works.
+
+Branch CRUD:
+- Manual: as brand admin, click "+ New branch", submit a valid form → branch appears in the list and is reachable at `/booking/<slug>` (empty-services state).
+- Manual: as brand admin, edit an existing branch → name change reflects on the `/super` Merchants table and on the branch's own dashboard the next time its owner logs in.
+- Manual: `PATCH /group/branches/:id` with `slug` or `subscriptionTier` in the body → 400. `POST /group/branches` with a slug already in use → 409. `POST /group/branches` from group A → branch created with `groupId = A` regardless of body shape.
+
+Branch switching:
+- Manual: as brand admin (currently in home branch), open the picker → see all branches in the group; pick a different branch → land on `/dashboard` for that branch with the brand-view banner showing.
+- Manual: while brand-viewing branch B, edit a service → the audit row shows the brand admin's userId (not a phantom owner of branch B).
+- Manual: while brand-viewing, open `/group/overview` → still works (picker remains usable so admin can hop to another branch).
+- Manual: while brand-viewing, click "End view" in the banner → return to home branch dashboard, banner gone, tokens swapped.
+- Manual: revoke `brand_admin_group_id` on the user mid-session → next request inside the brand-viewed branch returns 403 → frontend lands on `/login`. Same for deleting the target branch mid-session.
+- Manual: a super admin attempting `/super/impersonate` while brand-viewing → 403 (and vice-versa: `/group/view-as-branch` while impersonating → 403).
+
+Visual + typecheck:
+- Spot-check the migrated `/group` pages: no `indigo-*` or other forbidden hues.
+- `pnpm --filter @glowos/web typecheck` and `pnpm --filter @glowos/api typecheck` clean.
 
 ---
 
