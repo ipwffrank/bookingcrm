@@ -1639,7 +1639,7 @@ function BirthdayField({ profileId, initialValue }: { profileId: string; initial
     setSaving(true);
     try {
       await apiFetch(`/merchant/clients/${profileId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         body: JSON.stringify({ birthday: isoSentinel }),
       });
       setValue(isoSentinel);
