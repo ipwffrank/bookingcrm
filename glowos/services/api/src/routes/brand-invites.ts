@@ -121,6 +121,7 @@ brandInvitesRouter.post("/:token/accept", requireMerchant, async (c) => {
     if (user.email.toLowerCase() !== invite.inviteeEmail.toLowerCase()) {
       return { error: "wrong_email" as const, expected: invite.inviteeEmail };
     }
+    if (user.role === "staff") return { error: "staff_role" as const };
     if (user.brandAdminGroupId) return { error: "already_brand_admin" as const };
 
     const [merchant] = await tx
@@ -187,6 +188,15 @@ brandInvitesRouter.post("/:token/accept", requireMerchant, async (c) => {
         return c.json(
           { error: "Conflict", message: "You are already a brand admin" },
           409,
+        );
+      case "staff_role":
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Staff cannot be brand admins. The branch owner must promote you to manager or owner first.",
+          },
+          403,
         );
       case "merchant_missing":
         return c.json({ error: "Not Found", message: "Your merchant was not found" }, 404);

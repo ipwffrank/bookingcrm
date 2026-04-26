@@ -560,6 +560,7 @@ groupRouter.post("/admins", zValidator(promoteAdminSchema), async (c) => {
       id: merchantUsers.id,
       name: merchantUsers.name,
       email: merchantUsers.email,
+      role: merchantUsers.role,
       isActive: merchantUsers.isActive,
       brandAdminGroupId: merchantUsers.brandAdminGroupId,
       merchantId: merchantUsers.merchantId,
@@ -576,6 +577,16 @@ groupRouter.post("/admins", zValidator(promoteAdminSchema), async (c) => {
   }
   if (!target.isActive) {
     return c.json({ error: "Conflict", message: "User account is inactive" }, 409);
+  }
+  if (target.role === "staff") {
+    return c.json(
+      {
+        error: "Conflict",
+        message:
+          "Staff cannot be brand admins. Promote them to manager or owner of their branch first.",
+      },
+      409,
+    );
   }
   if (target.brandAdminGroupId) {
     return c.json({ error: "Conflict", message: "User is already a brand admin" }, 409);

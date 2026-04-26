@@ -398,7 +398,8 @@ function AddAdminModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           </button>
         </div>
         <p className="text-sm text-grey-60 mb-4">
-          The user must already have a branch in this brand. They&apos;ll see the Group sidebar item the next time they refresh or sign in.
+          The user must already have a branch in this brand and be an{' '}
+          <span className="text-tone-ink">owner or manager</span> of that branch — staff cannot be brand admins. They&apos;ll see the Group sidebar item the next time they sign in.
         </p>
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
