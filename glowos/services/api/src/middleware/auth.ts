@@ -63,6 +63,9 @@ export async function requireMerchant(c: AppContext, next: Next) {
     if (payload.actorUserId) c.set("actorUserId", payload.actorUserId);
     if (payload.actorEmail) c.set("actorEmail", payload.actorEmail);
   }
+  if (payload.brandAdminGroupId) {
+    c.set("brandAdminGroupId", payload.brandAdminGroupId);
+  }
 
   await next();
 }
@@ -79,6 +82,28 @@ export async function requireSuperAdmin(c: AppContext, next: Next) {
   if (c.get("impersonating")) {
     return c.json(
       { error: "Forbidden", message: "End impersonation before accessing /super" },
+      403,
+    );
+  }
+  await next();
+}
+
+/**
+ * Requires the caller to be acting as a brand admin — their JWT must carry a
+ * brandAdminGroupId, set when their merchant_users row has a non-null
+ * brand_admin_group_id. The targeted group is always taken from the JWT, never
+ * from a path param, so a brand admin for group A cannot reach into group B.
+ *
+ * Blocks impersonating sessions: a superadmin viewing-as a merchant should
+ * not also wield brand-admin powers in the same hop.
+ */
+export async function requireBrandAdmin(c: AppContext, next: Next) {
+  if (!c.get("brandAdminGroupId")) {
+    return c.json({ error: "Forbidden", message: "Brand admin access required" }, 403);
+  }
+  if (c.get("impersonating")) {
+    return c.json(
+      { error: "Forbidden", message: "End impersonation before accessing /group" },
       403,
     );
   }

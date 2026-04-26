@@ -24,6 +24,11 @@ export const merchantUsers = pgTable("merchant_users", {
     .$type<"owner" | "manager" | "staff">(),
   photoUrl: text("photo_url"),
   isActive: boolean("is_active").notNull().default(true),
+  // When non-null, this merchant_user also has brand-admin authority over
+  // every merchant in the named group. Lets a branch owner hold both roles
+  // with a single login. Bare UUID (no FK) to avoid the merchants ↔ groups
+  // circular import — application layer enforces validity.
+  brandAdminGroupId: uuid("brand_admin_group_id"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

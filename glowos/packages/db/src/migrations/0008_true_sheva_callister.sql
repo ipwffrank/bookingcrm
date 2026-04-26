@@ -1,0 +1,1 @@
+ALTER TABLE "merchant_users" ADD COLUMN "brand_admin_group_id" uuid;

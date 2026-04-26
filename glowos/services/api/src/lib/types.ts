@@ -13,5 +13,8 @@ export type AppVariables = {
   impersonating?: boolean;
   actorUserId?: string;
   actorEmail?: string;
+  // Set when the authenticated merchant_user holds brand-admin authority
+  // (merchant_users.brand_admin_group_id). Powers /group/* writes.
+  brandAdminGroupId?: string;
   body: unknown;
 };

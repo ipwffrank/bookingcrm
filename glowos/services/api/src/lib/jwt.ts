@@ -16,6 +16,10 @@ export interface AccessTokenPayload {
   impersonating?: boolean;
   actorUserId?: string;
   actorEmail?: string;
+  // Brand-admin authority — set when this merchant_user has a
+  // brand_admin_group_id. The same JWT lets the user act as a normal branch
+  // admin AND as a brand admin over every merchant in the named group.
+  brandAdminGroupId?: string;
 }
 
 export interface RefreshTokenPayload {
@@ -27,6 +31,9 @@ export interface RefreshTokenPayload {
   impersonating?: boolean;
   actorUserId?: string;
   actorEmail?: string;
+  // Same reasoning for brand-admin: needs to survive token refresh so the
+  // brand-view UI doesn't silently lose authority partway through a session.
+  brandAdminGroupId?: string;
 }
 
 export function generateAccessToken(payload: AccessTokenPayload): string {

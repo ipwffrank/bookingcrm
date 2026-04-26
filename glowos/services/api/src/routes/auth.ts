@@ -150,14 +150,19 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
     await db.update(merchantUsers).set({ lastLoginAt: new Date() }).where(eq(merchantUsers.id, user.id));
 
     const superAdmin = isSuperAdminEmail(user.email);
+    const brandAdminGroupId = user.brandAdminGroupId ?? undefined;
     const accessToken = generateAccessToken({
       userId: user.id,
       merchantId: merchant.id,
       role: user.role,
       ...(user.staffId ? { staffId: user.staffId } : {}),
       ...(superAdmin ? { superAdmin: true } : {}),
+      ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
     });
-    const refreshToken = generateRefreshToken({ userId: user.id });
+    const refreshToken = generateRefreshToken({
+      userId: user.id,
+      ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    });
     const { passwordHash: _pw, ...safeUser } = user;
 
     if (user.role === 'staff') {
@@ -258,6 +263,12 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
     typeof payload.actorUserId === "string" &&
     isSuperAdminEmail(payload.actorEmail);
 
+  // Brand-admin claim survives refresh by re-reading from the live DB (so
+  // revoking a user's brand authority takes effect on the next refresh
+  // rather than waiting for refresh-token expiry). Falling back to the
+  // payload value would let stale grants linger up to 30 days.
+  const brandAdminGroupId = user.brandAdminGroupId ?? undefined;
+
   const accessToken = generateAccessToken({
     userId: user.id,
     merchantId: merchant.id,
@@ -271,17 +282,19 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
           actorEmail: payload.actorEmail!,
         }
       : {}),
+    ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
   });
-  const refreshToken = generateRefreshToken(
-    isImpersonating
+  const refreshToken = generateRefreshToken({
+    userId: user.id,
+    ...(isImpersonating
       ? {
-          userId: user.id,
           impersonating: true,
           actorUserId: payload.actorUserId!,
           actorEmail: payload.actorEmail!,
         }
-      : { userId: user.id },
-  );
+      : {}),
+    ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+  });
 
   return c.json({
     access_token: accessToken,
@@ -450,6 +463,7 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
       role: merchantUsers.role,
       staffId: merchantUsers.staffId,
       isActive: merchantUsers.isActive,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
     })
     .from(merchantUsers)
     .where(eq(merchantUsers.id, actorUserId))
@@ -459,14 +473,19 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
     return c.json({ error: "Forbidden", message: "Actor account invalid" }, 403);
   }
 
+  const actorBrandAdminGroupId = actor.brandAdminGroupId ?? undefined;
   const accessToken = generateAccessToken({
     userId: actor.id,
     merchantId: actor.merchantId,
     role: actor.role,
     ...(actor.staffId ? { staffId: actor.staffId } : {}),
     superAdmin: true,
+    ...(actorBrandAdminGroupId ? { brandAdminGroupId: actorBrandAdminGroupId } : {}),
   });
-  const refreshToken = generateRefreshToken({ userId: actor.id });
+  const refreshToken = generateRefreshToken({
+    userId: actor.id,
+    ...(actorBrandAdminGroupId ? { brandAdminGroupId: actorBrandAdminGroupId } : {}),
+  });
 
   await db.insert(superAdminAuditLog).values({
     actorUserId: actor.id,
