@@ -82,7 +82,7 @@ export default function GroupOverviewPage() {
         <DateRangePicker from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} />
       </div>
 
-      {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{error}</div>}
+      {error && <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/30 px-4 py-3 text-sm text-semantic-danger">{error}</div>}
 
       {loading ? (
         <div className="text-sm text-grey-60">Loading...</div>
