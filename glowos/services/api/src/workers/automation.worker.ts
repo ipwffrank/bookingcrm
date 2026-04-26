@@ -115,10 +115,25 @@ async function sendAutomationMessage(params: {
  * who haven't been sent a birthday message this calendar year.
  */
 export async function handleBirthday(automation: typeof automations.$inferSelect): Promise<number> {
-  const today = new Date();
-  const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(today.getUTCDate()).padStart(2, "0");
-  const year = String(today.getUTCFullYear());
+  // Load merchant first — we need their timezone to compute "today's" MM-DD
+  // correctly. The cron may run at any UTC hour but a SE-Asian merchant
+  // (e.g., Asia/Singapore +08, Asia/Bangkok +07) sees a different calendar
+  // date for ~16 hours of each UTC day.
+  const [merchant] = await db
+    .select({ name: merchants.name, timezone: merchants.timezone })
+    .from(merchants)
+    .where(eq(merchants.id, automation.merchantId))
+    .limit(1);
+
+  const tz = merchant?.timezone ?? "UTC";
+  // en-CA gives ISO-style YYYY-MM-DD which is unambiguous to split.
+  const dateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [year, mm, dd] = dateStr.split("-");
 
   // Find clients of this merchant whose birthday month-day matches today
   const rows = await db
@@ -138,13 +153,6 @@ export async function handleBirthday(automation: typeof automations.$inferSelect
     );
 
   if (rows.length === 0) return 0;
-
-  // Load merchant for name
-  const [merchant] = await db
-    .select({ name: merchants.name })
-    .from(merchants)
-    .where(eq(merchants.id, automation.merchantId))
-    .limit(1);
 
   const merchantName = merchant?.name ?? "";
   const promoCode = automation.promoCode ?? "";
