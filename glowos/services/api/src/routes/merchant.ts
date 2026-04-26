@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, merchants } from "@glowos/db";
+import { db, merchants, merchantUsers, groups } from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
+import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -33,6 +34,10 @@ const updateMerchantSchema = z.object({
     })
   ).optional(),
 });
+
+const upgradeToBrandSchema = z.object({
+  groupName: z.string().trim().min(1).max(255),
+}).strict();
 
 // ─── GET /merchant/me ──────────────────────────────────────────────────────────
 
@@ -176,6 +181,137 @@ merchantRouter.patch(
 
     return c.json({
       gbp_booking_link_connected_at: updated.gbpBookingLinkConnectedAt,
+    });
+  },
+);
+
+// ─── POST /merchant/upgrade-to-brand ───────────────────────────────────────────
+// Self-upgrade: an owner-role merchant_user creates a new group with their
+// existing merchant as the first branch and grants themselves brand-admin
+// authority. Re-issues tokens so the upgrade takes effect without a logout.
+//
+// Refuses to run for managers/staff (frontend gates anyway, but the API is
+// authoritative), for users who already hold brandAdminGroupId, for merchants
+// already in a group, and for impersonating sessions.
+merchantRouter.post(
+  "/upgrade-to-brand",
+  requireMerchant,
+  requireRole("owner"),
+  zValidator(upgradeToBrandSchema),
+  async (c) => {
+    const userId = c.get("userId")!;
+    const merchantId = c.get("merchantId")!;
+    const body = c.get("body") as z.infer<typeof upgradeToBrandSchema>;
+
+    if (c.get("impersonating")) {
+      return c.json(
+        { error: "Forbidden", message: "End impersonation before upgrading" },
+        403,
+      );
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [user] = await tx
+        .select({
+          id: merchantUsers.id,
+          email: merchantUsers.email,
+          name: merchantUsers.name,
+          role: merchantUsers.role,
+          staffId: merchantUsers.staffId,
+          brandAdminGroupId: merchantUsers.brandAdminGroupId,
+          merchantId: merchantUsers.merchantId,
+          isActive: merchantUsers.isActive,
+        })
+        .from(merchantUsers)
+        .where(eq(merchantUsers.id, userId))
+        .limit(1);
+
+      if (!user || !user.isActive) {
+        return { error: "user_inactive" as const };
+      }
+      if (user.brandAdminGroupId) {
+        return { error: "already_brand_admin" as const };
+      }
+
+      const [merchant] = await tx
+        .select()
+        .from(merchants)
+        .where(eq(merchants.id, merchantId))
+        .limit(1);
+
+      if (!merchant) {
+        return { error: "merchant_missing" as const };
+      }
+      if (merchant.groupId) {
+        return { error: "merchant_in_group" as const };
+      }
+
+      const [newGroup] = await tx
+        .insert(groups)
+        .values({ name: body.groupName })
+        .returning({ id: groups.id, name: groups.name });
+
+      await tx
+        .update(merchants)
+        .set({ groupId: newGroup.id, updatedAt: new Date() })
+        .where(eq(merchants.id, merchantId));
+
+      await tx
+        .update(merchantUsers)
+        .set({ brandAdminGroupId: newGroup.id })
+        .where(eq(merchantUsers.id, userId));
+
+      return {
+        ok: true as const,
+        user,
+        merchant: { ...merchant, groupId: newGroup.id },
+        group: newGroup,
+      };
+    });
+
+    if ("error" in result) {
+      switch (result.error) {
+        case "user_inactive":
+          return c.json({ error: "Unauthorized", message: "Account inactive" }, 401);
+        case "already_brand_admin":
+          return c.json(
+            { error: "Conflict", message: "You are already a brand admin" },
+            409,
+          );
+        case "merchant_in_group":
+          return c.json(
+            {
+              error: "Conflict",
+              message:
+                "This branch is already part of a group. Contact support to merge or transfer.",
+            },
+            409,
+          );
+        case "merchant_missing":
+          return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+      }
+    }
+
+    const { user, merchant, group } = result;
+
+    const accessToken = generateAccessToken({
+      userId: user.id,
+      merchantId: user.merchantId,
+      role: user.role,
+      ...(user.staffId ? { staffId: user.staffId } : {}),
+      brandAdminGroupId: group.id,
+    });
+    const refreshToken = generateRefreshToken({
+      userId: user.id,
+      brandAdminGroupId: group.id,
+    });
+
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: { ...user, brandAdminGroupId: group.id },
+      merchant,
+      group,
     });
   },
 );

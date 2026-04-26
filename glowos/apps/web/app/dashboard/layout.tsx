@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
+import { BrandViewBanner } from './components/BrandViewBanner';
 
 interface Merchant {
   id: string;
@@ -12,7 +13,7 @@ interface Merchant {
   slug: string;
 }
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: CalendarIcon },
   { href: '/dashboard/analytics', label: 'Analytics', icon: ChartBarIcon },
   { href: '/dashboard/services', label: 'Services', icon: ScissorsIcon },
@@ -105,6 +106,14 @@ function MegaphoneIcon({ className }: { className?: string }) {
   );
 }
 
+function BuildingIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z" />
+    </svg>
+  );
+}
+
 function ImportIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -151,12 +160,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // currently impersonating — mirrors the API's requireSuperAdmin rule so
   // the UI matches what the route will allow.
   const [showSuperLink, setShowSuperLink] = useState(false);
+  const [isBrandAdmin, setIsBrandAdmin] = useState(false);
+  const [userName, setUserName] = useState<string>('');
+  const [roleLabel, setRoleLabel] = useState<string>('');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isSuper = localStorage.getItem('superAdmin') === 'true';
     const impersonating = localStorage.getItem('impersonating') === 'true';
     setShowSuperLink(isSuper && !impersonating);
+    try {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
+      const hasBrand = Boolean(u.brandAdminGroupId);
+      setIsBrandAdmin(hasBrand);
+      setUserName(u.name ?? u.email ?? '');
+      setRoleLabel(
+        hasBrand
+          ? 'Brand Admin'
+          : u.role === 'staff'
+            ? 'Staff'
+            : u.role === 'owner' || u.role === 'manager'
+              ? 'Branch Admin'
+              : '',
+      );
+    } catch { /* ignore */ }
   }, [pathname]);
+
+  const navItems = isBrandAdmin
+    ? [...BASE_NAV_ITEMS, { href: '/dashboard/group/overview', label: 'Group', icon: BuildingIcon }]
+    : BASE_NAV_ITEMS;
 
   function toggleCollapse() {
     setSidebarCollapsed(prev => {
@@ -226,11 +257,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {merchant && (
               <p className="font-inter text-[11px] text-grey-45 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
             )}
+            {userName && (
+              <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-medium text-grey-75 truncate">{userName}</span>
+                {roleLabel && (
+                  <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                    roleLabel === 'Brand Admin'
+                      ? 'bg-tone-sage/10 text-tone-sage border-tone-sage/30'
+                      : roleLabel === 'Staff'
+                        ? 'bg-grey-10 text-grey-70 border-grey-20'
+                        : 'bg-tone-ink/5 text-tone-ink border-tone-ink/20'
+                  }`}>
+                    {roleLabel}
+                  </span>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
       <div className={`flex-1 ${collapsed ? 'px-2' : 'px-3'} py-4 space-y-0.5 overflow-y-auto`}>
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (
@@ -373,6 +420,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
 
         <ImpersonationBanner />
+        <BrandViewBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">
           {children}
         </main>

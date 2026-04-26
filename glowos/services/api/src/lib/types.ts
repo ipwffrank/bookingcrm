@@ -13,5 +13,12 @@ export type AppVariables = {
   impersonating?: boolean;
   actorUserId?: string;
   actorEmail?: string;
+  // Set when the authenticated merchant_user holds brand-admin authority
+  // (merchant_users.brand_admin_group_id). Powers /group/* writes.
+  brandAdminGroupId?: string;
+  // View-as-branch — set when a brand-admin is previewing a specific branch.
+  brandViewing?: boolean;
+  homeMerchantId?: string;
+  viewingMerchantId?: string;
   body: unknown;
 };

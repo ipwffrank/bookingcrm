@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from '../dashboard/components/ImpersonationBanner';
+import { BrandViewBanner } from '../dashboard/components/BrandViewBanner';
 
 function MenuIcon() {
   return (
@@ -67,7 +68,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         {info && (
           <>
             <p className="font-inter text-[11px] text-grey-45 mt-1 truncate uppercase tracking-wider">{info.merchantName}</p>
-            <p className="text-xs font-medium text-grey-75 mt-0.5 truncate">{info.name}</p>
+            <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-medium text-grey-75 truncate">{info.name}</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border bg-grey-10 text-grey-70 border-grey-20">Staff</span>
+            </div>
           </>
         )}
       </div>
@@ -129,6 +133,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         </header>
 
         <ImpersonationBanner />
+        <BrandViewBanner />
         <main className="flex-1 p-4 lg:p-6 min-w-0">
           {children}
         </main>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { BranchPicker } from './components/BranchPicker';
 
 interface Group {
   id: string;
@@ -13,7 +14,16 @@ const GROUP_NAV = [
   { href: '/dashboard/group/overview', label: 'Overview', icon: ChartIcon },
   { href: '/dashboard/group/branches', label: 'Branches', icon: BuildingIcon },
   { href: '/dashboard/group/clients', label: 'Clients', icon: UsersIcon },
+  { href: '/dashboard/group/admins', label: 'Admins', icon: ShieldIcon },
 ];
+
+function ShieldIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.745 3.745 0 0 1 3.296-1.043A3.745 3.745 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+    </svg>
+  );
+}
 
 function ChartIcon({ className }: { className?: string }) {
   return (
@@ -84,11 +94,12 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
 
   const Sidebar = () => (
     <nav className="flex flex-col h-full">
-      <div className="px-6 py-5 border-b border-gray-100">
-        <Link href="/" className="text-xl font-bold text-indigo-600">GlowOS</Link>
-        {group && <p className="text-xs text-gray-500 mt-0.5 truncate">{group.name} — Group Admin</p>}
+      <div className="px-6 py-5 border-b border-grey-10">
+        <Link href="/" className="text-xl font-bold text-tone-ink">GlowOS</Link>
+        {group && <p className="text-xs text-grey-60 mt-0.5 truncate">{group.name} — Group Admin</p>}
       </div>
       <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <BranchPicker />
         {GROUP_NAV.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
@@ -98,21 +109,21 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
               href={item.href}
               onClick={() => setSidebarOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                active ? 'bg-tone-sage/10 text-tone-sage' : 'text-grey-70 hover:bg-tone-surface-warm hover:text-tone-ink'
               }`}
             >
-              <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+              <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-tone-sage' : 'text-grey-40'}`} />
               {item.label}
             </Link>
           );
         })}
       </div>
-      <div className="px-3 py-4 border-t border-gray-100">
+      <div className="px-3 py-4 border-t border-grey-10">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-grey-60 hover:bg-tone-surface-warm hover:text-tone-ink transition-colors"
         >
-          <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="w-5 h-5 text-grey-40" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
           </svg>
           Logout
@@ -122,17 +133,17 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-200 fixed inset-y-0 left-0 z-30">
+    <div className="min-h-screen bg-tone-surface-warm flex">
+      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-grey-20 fixed inset-y-0 left-0 z-30">
         <Sidebar />
       </aside>
 
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-40 flex">
-          <div className="fixed inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
+          <div className="fixed inset-0 bg-tone-ink/30" onClick={() => setSidebarOpen(false)} />
           <aside className="relative z-50 flex flex-col w-64 bg-white shadow-xl">
             <div className="absolute top-4 right-4">
-              <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600">
+              <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-md text-grey-40 hover:text-grey-70">
                 <XIcon className="w-5 h-5" />
               </button>
             </div>
@@ -142,12 +153,12 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
       )}
 
       <div className="flex-1 lg:ml-60 flex flex-col min-h-screen">
-        <header className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-md text-gray-500 hover:bg-gray-100">
+        <header className="lg:hidden bg-white border-b border-grey-20 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-md text-grey-60 hover:bg-grey-10">
             <MenuIcon className="w-5 h-5" />
           </button>
-          <Link href="/" className="text-lg font-bold text-indigo-600">GlowOS</Link>
-          <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700">Logout</button>
+          <Link href="/" className="text-lg font-bold text-tone-ink">GlowOS</Link>
+          <button onClick={handleLogout} className="text-sm text-grey-60 hover:text-tone-ink">Logout</button>
         </header>
         <main className="flex-1 px-4 lg:px-8 py-6">{children}</main>
       </div>

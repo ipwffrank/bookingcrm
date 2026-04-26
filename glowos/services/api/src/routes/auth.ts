@@ -150,15 +150,33 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
     await db.update(merchantUsers).set({ lastLoginAt: new Date() }).where(eq(merchantUsers.id, user.id));
 
     const superAdmin = isSuperAdminEmail(user.email);
+    const brandAdminGroupId = user.brandAdminGroupId ?? undefined;
     const accessToken = generateAccessToken({
       userId: user.id,
       merchantId: merchant.id,
       role: user.role,
       ...(user.staffId ? { staffId: user.staffId } : {}),
       ...(superAdmin ? { superAdmin: true } : {}),
+      ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
     });
-    const refreshToken = generateRefreshToken({ userId: user.id });
+    const refreshToken = generateRefreshToken({
+      userId: user.id,
+      ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    });
     const { passwordHash: _pw, ...safeUser } = user;
+
+    let group: { id: string; name: string } | null = null;
+    if (brandAdminGroupId) {
+      const [groupRow] = await db
+        .select({ id: groups.id, name: groups.name })
+        .from(groups)
+        .where(eq(groups.id, brandAdminGroupId))
+        .limit(1);
+      if (groupRow) group = groupRow;
+      // Else: brand_admin_group_id points to a missing/deleted group.
+      // Don't fail login — just omit `group` from the response. The frontend
+      // will not render the Group sidebar item; superadmin can clean up.
+    }
 
     if (user.role === 'staff') {
       return c.json({
@@ -167,6 +185,7 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
         userType: 'staff',
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
         merchant: { id: merchant.id, name: merchant.name, slug: merchant.slug },
+        ...(group ? { group } : {}),
         ...(superAdmin ? { superAdmin: true } : {}),
       });
     }
@@ -175,6 +194,7 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
       userType: "merchant",
       user: safeUser,
       merchant,
+      ...(group ? { group } : {}),
       access_token: accessToken,
       refresh_token: refreshToken,
       ...(superAdmin ? { superAdmin: true } : {}),
@@ -258,6 +278,19 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
     typeof payload.actorUserId === "string" &&
     isSuperAdminEmail(payload.actorEmail);
 
+  // Brand-admin claim survives refresh by re-reading from the live DB (so
+  // revoking a user's brand authority takes effect on the next refresh
+  // rather than waiting for refresh-token expiry). Falling back to the
+  // payload value would let stale grants linger up to 30 days.
+  const brandAdminGroupId = user.brandAdminGroupId ?? undefined;
+
+  // View-as-branch claims are forwarded from the existing refresh token so
+  // that a brand admin in view-as-branch mode does not silently fall back to
+  // home-branch context every 15 minutes when the access token is refreshed.
+  const viewingMerchantId = payload.viewingMerchantId;
+  const brandViewing = payload.brandViewing;
+  const homeMerchantId = payload.homeMerchantId;
+
   const accessToken = generateAccessToken({
     userId: user.id,
     merchantId: merchant.id,
@@ -271,17 +304,25 @@ auth.post("/refresh-token", zValidator(refreshSchema), async (c) => {
           actorEmail: payload.actorEmail!,
         }
       : {}),
+    ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    ...(viewingMerchantId ? { viewingMerchantId } : {}),
+    ...(brandViewing ? { brandViewing: true as const } : {}),
+    ...(homeMerchantId ? { homeMerchantId } : {}),
   });
-  const refreshToken = generateRefreshToken(
-    isImpersonating
+  const refreshToken = generateRefreshToken({
+    userId: user.id,
+    ...(isImpersonating
       ? {
-          userId: user.id,
           impersonating: true,
           actorUserId: payload.actorUserId!,
           actorEmail: payload.actorEmail!,
         }
-      : { userId: user.id },
-  );
+      : {}),
+    ...(brandAdminGroupId ? { brandAdminGroupId } : {}),
+    ...(viewingMerchantId ? { viewingMerchantId } : {}),
+    ...(brandViewing ? { brandViewing: true as const } : {}),
+    ...(homeMerchantId ? { homeMerchantId } : {}),
+  });
 
   return c.json({
     access_token: accessToken,
@@ -450,6 +491,7 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
       role: merchantUsers.role,
       staffId: merchantUsers.staffId,
       isActive: merchantUsers.isActive,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
     })
     .from(merchantUsers)
     .where(eq(merchantUsers.id, actorUserId))
@@ -459,14 +501,19 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
     return c.json({ error: "Forbidden", message: "Actor account invalid" }, 403);
   }
 
+  const actorBrandAdminGroupId = actor.brandAdminGroupId ?? undefined;
   const accessToken = generateAccessToken({
     userId: actor.id,
     merchantId: actor.merchantId,
     role: actor.role,
     ...(actor.staffId ? { staffId: actor.staffId } : {}),
     superAdmin: true,
+    ...(actorBrandAdminGroupId ? { brandAdminGroupId: actorBrandAdminGroupId } : {}),
   });
-  const refreshToken = generateRefreshToken({ userId: actor.id });
+  const refreshToken = generateRefreshToken({
+    userId: actor.id,
+    ...(actorBrandAdminGroupId ? { brandAdminGroupId: actorBrandAdminGroupId } : {}),
+  });
 
   await db.insert(superAdminAuditLog).values({
     actorUserId: actor.id,
@@ -479,6 +526,63 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
     access_token: accessToken,
     refresh_token: refreshToken,
     userType: "merchant",
+  });
+});
+
+// ─── POST /auth/end-brand-view ─────────────────────────────────────────────────
+// Counterpart of /auth/end-impersonation for brand-viewing sessions. Lives on
+// /auth so it remains callable while view-as-branch claims are active.
+auth.post("/end-brand-view", requireMerchant, async (c) => {
+  if (!c.get("brandViewing")) {
+    return c.json({ error: "Conflict", message: "Not currently brand-viewing" }, 409);
+  }
+
+  const userId = c.get("userId")!;
+
+  const [user] = await db
+    .select({
+      id: merchantUsers.id,
+      email: merchantUsers.email,
+      isActive: merchantUsers.isActive,
+      merchantId: merchantUsers.merchantId,
+      role: merchantUsers.role,
+      staffId: merchantUsers.staffId,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+    })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, userId))
+    .limit(1);
+
+  if (!user || !user.isActive) {
+    return c.json({ error: "Forbidden", message: "Account inactive" }, 403);
+  }
+
+  const superAdmin = isSuperAdminEmail(user.email);
+  const accessToken = generateAccessToken({
+    userId: user.id,
+    merchantId: user.merchantId,
+    role: user.role,
+    ...(user.staffId ? { staffId: user.staffId } : {}),
+    ...(superAdmin ? { superAdmin: true } : {}),
+    ...(user.brandAdminGroupId ? { brandAdminGroupId: user.brandAdminGroupId } : {}),
+  });
+  const refreshToken = generateRefreshToken({
+    userId: user.id,
+    ...(user.brandAdminGroupId ? { brandAdminGroupId: user.brandAdminGroupId } : {}),
+  });
+
+  // Return the home merchant row so the frontend can write it back into
+  // localStorage.merchant.
+  const [homeMerchant] = await db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, user.merchantId))
+    .limit(1);
+
+  return c.json({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    merchant: homeMerchant,
   });
 });
 

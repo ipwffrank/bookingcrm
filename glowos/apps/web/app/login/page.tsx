@@ -1,12 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 
+// Only allow same-site relative paths starting with one of these prefixes.
+// Anything else is ignored to prevent open-redirect via the return_to query.
+const ALLOWED_RETURN_PREFIXES = ['/brand-invite/'];
+
+function safeReturnTo(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/')) return null;
+  if (raw.startsWith('//') || raw.startsWith('/\\')) return null;
+  return ALLOWED_RETURN_PREFIXES.some((p) => raw.startsWith(p)) ? raw : null;
+}
+
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = safeReturnTo(searchParams.get('return_to'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -43,7 +63,9 @@ export default function LoginPage() {
         localStorage.setItem('merchant', JSON.stringify(data.merchant));
         if (data.superAdmin) localStorage.setItem('superAdmin', 'true');
         else localStorage.removeItem('superAdmin');
-        router.push(data.superAdmin ? '/super' : '/staff/dashboard');
+        if (data.group) localStorage.setItem('group', JSON.stringify(data.group));
+        else localStorage.removeItem('group');
+        router.push(returnTo ?? (data.superAdmin ? '/super' : '/staff/dashboard'));
       } else {
         localStorage.setItem('access_token', data.access_token);
         localStorage.setItem('refresh_token', data.refresh_token);
@@ -51,7 +73,9 @@ export default function LoginPage() {
         localStorage.setItem('merchant', JSON.stringify(data.merchant));
         if (data.superAdmin) localStorage.setItem('superAdmin', 'true');
         else localStorage.removeItem('superAdmin');
-        router.push(data.superAdmin ? '/super' : '/dashboard');
+        if (data.group) localStorage.setItem('group', JSON.stringify(data.group));
+        else localStorage.removeItem('group');
+        router.push(returnTo ?? (data.superAdmin ? '/super' : '/dashboard'));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');

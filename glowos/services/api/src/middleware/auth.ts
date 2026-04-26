@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono";
 import { eq } from "drizzle-orm";
 import { db } from "@glowos/db";
-import { merchantUsers } from "@glowos/db";
+import { merchantUsers, merchants } from "@glowos/db";
 import { verifyAccessToken, type AccessTokenPayload } from "../lib/jwt.js";
 import { isSuperAdminEmail } from "../lib/config.js";
 import type { AppVariables } from "../lib/types.js";
@@ -38,6 +38,7 @@ export async function requireMerchant(c: AppContext, next: Next) {
       merchantId: merchantUsers.merchantId,
       role: merchantUsers.role,
       staffId: merchantUsers.staffId,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
     })
     .from(merchantUsers)
     .where(eq(merchantUsers.id, payload.userId))
@@ -45,6 +46,40 @@ export async function requireMerchant(c: AppContext, next: Next) {
 
   if (!user || !user.isActive) {
     return c.json({ error: "Unauthorized", message: "User account is inactive or not found" }, 401);
+  }
+
+  // view-as-branch: brand admin scoping their session to a branch in their group.
+  // The JWT carries the target merchantId; we re-validate group membership on every
+  // request so revoking brand authority or moving a branch out of the group takes
+  // effect immediately.
+  if (payload.viewingMerchantId) {
+    if (!user.brandAdminGroupId) {
+      return c.json(
+        { error: "Forbidden", message: "Brand authority revoked" },
+        403,
+      );
+    }
+    const [target] = await db
+      .select({ id: merchants.id, groupId: merchants.groupId })
+      .from(merchants)
+      .where(eq(merchants.id, payload.viewingMerchantId))
+      .limit(1);
+    if (!target || target.groupId !== user.brandAdminGroupId) {
+      return c.json(
+        { error: "Forbidden", message: "Branch not in your group" },
+        403,
+      );
+    }
+    c.set("userId", user.id);
+    c.set("merchantId", payload.viewingMerchantId);
+    c.set("userRole", "owner"); // synthetic — brand admin holds owner-equivalent within their group
+    c.set("brandViewing", true);
+    c.set("homeMerchantId", user.merchantId);
+    c.set("viewingMerchantId", payload.viewingMerchantId);
+    if (user.staffId) c.set("staffId", user.staffId);
+    if (payload.brandAdminGroupId) c.set("brandAdminGroupId", payload.brandAdminGroupId);
+    await next();
+    return;
   }
 
   c.set("userId", user.id);
@@ -63,6 +98,9 @@ export async function requireMerchant(c: AppContext, next: Next) {
     if (payload.actorUserId) c.set("actorUserId", payload.actorUserId);
     if (payload.actorEmail) c.set("actorEmail", payload.actorEmail);
   }
+  if (payload.brandAdminGroupId) {
+    c.set("brandAdminGroupId", payload.brandAdminGroupId);
+  }
 
   await next();
 }
@@ -79,6 +117,28 @@ export async function requireSuperAdmin(c: AppContext, next: Next) {
   if (c.get("impersonating")) {
     return c.json(
       { error: "Forbidden", message: "End impersonation before accessing /super" },
+      403,
+    );
+  }
+  await next();
+}
+
+/**
+ * Requires the caller to be acting as a brand admin — their JWT must carry a
+ * brandAdminGroupId, set when their merchant_users row has a non-null
+ * brand_admin_group_id. The targeted group is always taken from the JWT, never
+ * from a path param, so a brand admin for group A cannot reach into group B.
+ *
+ * Blocks impersonating sessions: a superadmin viewing-as a merchant should
+ * not also wield brand-admin powers in the same hop.
+ */
+export async function requireBrandAdmin(c: AppContext, next: Next) {
+  if (!c.get("brandAdminGroupId")) {
+    return c.json({ error: "Forbidden", message: "Brand admin access required" }, 403);
+  }
+  if (c.get("impersonating")) {
+    return c.json(
+      { error: "Forbidden", message: "End impersonation before accessing /group" },
       403,
     );
   }
