@@ -210,7 +210,22 @@ groupRouter.get("/branches/:merchantId", async (c) => {
 
   // Verify this merchant belongs to the group
   const [merchant] = await db
-    .select({ id: merchants.id, name: merchants.name, addressLine1: merchants.addressLine1 })
+    .select({
+      id: merchants.id,
+      slug: merchants.slug,
+      name: merchants.name,
+      country: merchants.country,
+      timezone: merchants.timezone,
+      category: merchants.category,
+      addressLine1: merchants.addressLine1,
+      addressLine2: merchants.addressLine2,
+      postalCode: merchants.postalCode,
+      phone: merchants.phone,
+      email: merchants.email,
+      description: merchants.description,
+      logoUrl: merchants.logoUrl,
+      coverPhotoUrl: merchants.coverPhotoUrl,
+    })
     .from(merchants)
     .where(and(eq(merchants.id, merchantId), eq(merchants.groupId, groupId)))
     .limit(1);
@@ -247,7 +262,7 @@ groupRouter.get("/branches/:merchantId", async (c) => {
     .limit(10);
 
   return c.json({
-    merchant: { id: merchant.id, name: merchant.name, location: merchant.addressLine1 ?? "" },
+    merchant,
     revenue: parseFloat(stats?.revenue ?? "0"),
     bookingCount: stats?.bookingCount ?? 0,
     activeClients: activeClients ?? 0,
