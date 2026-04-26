@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
+import { ClientDetailPanel } from '../../dashboard/components/ClientDetailPanel';
 
 interface ClientRow {
   profile: { id: string; vipTier: string | null; totalVisits?: number; totalSpendSgd?: string; lastVisitAt?: string | null };
@@ -15,6 +15,7 @@ export default function StaffClientsPage() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -55,10 +56,11 @@ export default function StaffClientsPage() {
       ) : (
         <div className="space-y-2">
           {clients.map(row => (
-            <Link
+            <button
               key={row.profile.id}
-              href={`/staff/clients/${row.profile.id}`}
-              className="flex items-center justify-between bg-tone-surface border border-grey-15 rounded-xl px-4 py-3 hover:bg-grey-5 transition-colors"
+              type="button"
+              onClick={() => setSelectedProfileId(row.profile.id)}
+              className="w-full text-left flex items-center justify-between bg-tone-surface border border-grey-15 rounded-xl px-4 py-3 hover:bg-grey-5 transition-colors"
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-tone-sage/15 flex items-center justify-center text-tone-sage font-semibold text-xs">
@@ -75,9 +77,16 @@ export default function StaffClientsPage() {
                   <span className="text-[10px] font-medium text-grey-75 capitalize">{row.profile.vipTier}</span>
                 )}
               </div>
-            </Link>
+            </button>
           ))}
         </div>
+      )}
+
+      {selectedProfileId && (
+        <ClientDetailPanel
+          profileId={selectedProfileId}
+          onClose={() => setSelectedProfileId(null)}
+        />
       )}
     </div>
   );

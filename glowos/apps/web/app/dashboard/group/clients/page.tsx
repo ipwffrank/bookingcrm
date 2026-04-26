@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { GroupClientDetailPanel } from '../../components/ClientDetailPanel';
 
 interface GroupClient {
   id: string;
@@ -26,6 +27,7 @@ export default function GroupClientsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const limit = 20;
 
   const fetchClients = useCallback(() => {
@@ -95,7 +97,11 @@ export default function GroupClientsPage() {
               </thead>
               <tbody className="divide-y divide-grey-20">
                 {clients.map((cl) => (
-                  <tr key={cl.id} className="hover:bg-tone-surface-warm transition-colors">
+                  <tr
+                    key={cl.id}
+                    onClick={() => setSelectedClientId(cl.id)}
+                    className="hover:bg-tone-surface-warm transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <p className="font-medium text-tone-ink">{cl.name}</p>
                       {cl.email && <p className="text-xs text-grey-40">{cl.email}</p>}
@@ -139,6 +145,13 @@ export default function GroupClientsPage() {
             </div>
           )}
         </>
+      )}
+
+      {selectedClientId && (
+        <GroupClientDetailPanel
+          clientId={selectedClientId}
+          onClose={() => setSelectedClientId(null)}
+        />
       )}
     </div>
   );

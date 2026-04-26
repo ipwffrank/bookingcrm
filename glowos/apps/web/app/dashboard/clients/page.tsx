@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
 import { NoShowChip } from '../components/NoShowChip';
+import { ClientDetailPanel } from '../components/ClientDetailPanel';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,291 +147,6 @@ function ChurnBadge({ risk }: { risk: ChurnRisk | null }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.className}`}>
       {cfg.label} risk
     </span>
-  );
-}
-
-// ─── Client Detail Drawer ──────────────────────────────────────────────────────
-
-interface NoteEntry {
-  id: string;
-  staffName: string | null;
-  content: string;
-  createdAt: string;
-}
-
-function ClientDetailDrawer({
-  profileId,
-  onClose,
-}: {
-  profileId: string;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const [detail, setDetail] = useState<ClientDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [treatmentLog, setTreatmentLog] = useState<NoteEntry[]>([]);
-  const [newNoteContent, setNewNoteContent] = useState('');
-  const [addingNote, setAddingNote] = useState(false);
-  const [showAddNote, setShowAddNote] = useState(false);
-  const [clientPkgs, setClientPkgs] = useState<any[]>([]);
-
-  useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (!token) { router.push('/login'); return; }
-
-    Promise.all([
-      apiFetch(`/merchant/clients/${profileId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      apiFetch(`/merchant/clients/${profileId}/notes`).catch(() => ({ notes: [] })),
-    ])
-      .then(([clientData, notesData]) => {
-        const d = clientData as ClientDetail;
-        setDetail(d);
-        setTreatmentLog((notesData as { notes: NoteEntry[] }).notes ?? []);
-        // Fetch packages
-        if (d.client?.id) {
-          apiFetch(`/merchant/packages/client/${d.client.id}`)
-            .then((pd: any) => setClientPkgs(pd.packages ?? []))
-            .catch(() => {});
-        }
-      })
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          router.push('/login');
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [profileId, router]);
-
-  async function handleAddNote() {
-    if (!newNoteContent.trim()) return;
-    setAddingNote(true);
-    try {
-      const result = await apiFetch(`/merchant/clients/${profileId}/notes`, {
-        method: 'POST',
-        body: JSON.stringify({ content: newNoteContent.trim() }),
-      }) as { note: NoteEntry };
-      setTreatmentLog(prev => [result.note, ...prev]);
-      setNewNoteContent('');
-      setShowAddNote(false);
-    } catch {
-      alert('Failed to save note');
-    } finally {
-      setAddingNote(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
-      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-tone-surface rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg z-10 max-h-[85vh] overflow-y-auto">
-        <div className="sticky top-0 bg-tone-surface border-b border-grey-5 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-tone-ink">Client Details</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {loading && (
-          <div className="p-8">
-            <Spinner />
-          </div>
-        )}
-
-        {!loading && detail && (
-          <div className="p-6 space-y-5">
-            {/* Header */}
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-xl font-bold text-tone-sage">
-                  {(detail.client.name ?? '?').charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-tone-ink text-lg">{detail.client.name ?? 'Unknown'}</h3>
-                <p className="text-sm text-grey-60">{detail.client.phone}</p>
-                {detail.client.email && <p className="text-xs text-grey-45 mt-0.5">{detail.client.email}</p>}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  <VipBadge tier={detail.profile.vipTier} />
-                  <ChurnBadge risk={detail.profile.churnRisk} />
-                </div>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-grey-5 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-tone-ink">{detail.profile.totalVisits ?? detail.profile.rfmFrequency ?? 0}</p>
-                <p className="text-xs text-grey-60">Visits</p>
-              </div>
-              <div className="bg-tone-sage/10 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-tone-sage">
-                  S${parseFloat(detail.profile.totalSpendSgd ?? detail.profile.rfmMonetary ?? '0').toFixed(0)}
-                </p>
-                <p className="text-xs text-grey-60">Spend</p>
-              </div>
-              <div className="bg-grey-5 rounded-xl p-3 text-center">
-                <p className="text-xs font-semibold text-tone-ink">{formatDate(detail.profile.lastVisitAt ?? detail.profile.lastVisitDate)}</p>
-                <p className="text-xs text-grey-60">Last Visit</p>
-              </div>
-            </div>
-
-            {/* Recent bookings */}
-            <div>
-              <h4 className="text-sm font-semibold text-tone-ink mb-2">Recent Bookings</h4>
-              {detail.recent_bookings.length === 0 ? (
-                <p className="text-sm text-grey-45 italic">No bookings yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {detail.recent_bookings.map((entry) => (
-                    <div key={entry.booking.id} className="flex items-center justify-between bg-grey-5 rounded-lg px-3 py-2.5">
-                      <div>
-                        <p className="text-xs font-medium text-tone-ink">{entry.service.name}</p>
-                        <p className="text-xs text-grey-60">{entry.staffMember.name} · {formatDate(entry.booking.startTime)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs font-semibold text-tone-ink">S${parseFloat(entry.booking.priceSgd).toFixed(2)}</p>
-                        <p className="text-xs text-grey-45 capitalize">{entry.booking.status.replace('_', ' ')}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Treatment Log */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-tone-ink">Treatment Log</h4>
-                <button
-                  onClick={() => setShowAddNote(true)}
-                  className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors"
-                >
-                  + Add Entry
-                </button>
-              </div>
-
-              {/* Add note form */}
-              {showAddNote && (
-                <div className="space-y-2">
-                  <textarea
-                    value={newNoteContent}
-                    onChange={e => setNewNoteContent(e.target.value)}
-                    rows={3}
-                    placeholder="Treatment details, client preferences, observations..."
-                    className="w-full border border-grey-15 rounded-lg px-3 py-2 text-sm text-grey-90 focus:outline-none focus:ring-1 focus:ring-tone-sage/30 resize-none"
-                    autoFocus
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleAddNote}
-                      disabled={!newNoteContent.trim() || addingNote}
-                      className="px-4 py-1.5 bg-tone-ink text-white text-xs font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
-                    >
-                      {addingNote ? 'Saving...' : 'Save Entry'}
-                    </button>
-                    <button
-                      onClick={() => { setShowAddNote(false); setNewNoteContent(''); }}
-                      className="px-4 py-1.5 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-15 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {treatmentLog.length === 0 ? (
-                <p className="text-xs text-grey-45 italic">No entries yet.</p>
-              ) : (
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {treatmentLog.map(entry => (
-                    <div key={entry.id} className="border-l-2 border-tone-sage/30 pl-3 py-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-grey-75">{entry.staffName || 'Admin'}</span>
-                        <span className="text-[10px] text-grey-45">
-                          {new Date(entry.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          {' '}
-                          {new Date(entry.createdAt).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-grey-75 mt-1 leading-relaxed whitespace-pre-wrap">{entry.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Packages */}
-            {clientPkgs.length > 0 && (
-              <div>
-                <h4 className="text-sm font-semibold text-tone-ink mb-3">Packages</h4>
-                <div className="space-y-3">
-                  {clientPkgs.map((pkg: any) => (
-                    <div key={pkg.id} className="border border-grey-5 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-tone-ink">{pkg.packageName}</span>
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          pkg.status === 'active' ? 'bg-tone-sage/5 text-tone-sage' :
-                          pkg.status === 'completed' ? 'bg-grey-15 text-grey-60' :
-                          'bg-semantic-danger/5 text-semantic-danger'
-                        }`}>{pkg.status}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="flex-1 h-1.5 bg-grey-15 rounded-full overflow-hidden">
-                          <div className="h-full bg-tone-ink rounded-full" style={{ width: `${(pkg.sessionsUsed / pkg.sessionsTotal) * 100}%` }} />
-                        </div>
-                        <span className="text-[10px] font-medium text-grey-60">{pkg.sessionsUsed}/{pkg.sessionsTotal}</span>
-                      </div>
-                      <div className="space-y-1">
-                        {pkg.sessions?.map((s: any) => (
-                          <div key={s.id} className="flex items-center justify-between text-xs py-1">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'completed' ? 'bg-tone-sage' : s.status === 'booked' ? 'bg-grey-45' : 'bg-grey-30'}`} />
-                              <span className="text-grey-75 truncate">
-                                {s.serviceName ?? `Session ${s.sessionNumber}`}
-                                {s.serviceName ? ` · #${s.sessionNumber}` : ''}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-grey-45 capitalize">{s.status}</span>
-                              {s.status === 'pending' || s.status === 'booked' ? (
-                                <button
-                                  onClick={async () => {
-                                    if (!confirm(`Mark ${s.serviceName ?? `Session ${s.sessionNumber}`} as completed?`)) return;
-                                    try {
-                                      await apiFetch(`/merchant/packages/sessions/${s.id}/complete`, {
-                                        method: 'PUT',
-                                        body: JSON.stringify({}),
-                                      });
-                                      // Refresh packages
-                                      if (detail?.client?.id) {
-                                        const pd = await apiFetch(`/merchant/packages/client/${detail.client.id}`) as any;
-                                        setClientPkgs(pd.packages ?? []);
-                                      }
-                                    } catch { alert('Failed to update session'); }
-                                  }}
-                                  className="text-[10px] text-tone-sage hover:text-tone-sage font-medium"
-                                >
-                                  Mark Done
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-grey-45 mt-1">Expires {new Date(pkg.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -651,18 +366,9 @@ export default function ClientsPage() {
                       <ChurnBadge risk={row.profile.churnRisk} />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/dashboard/clients/${row.profile.id}`}
-                          onClick={e => e.stopPropagation()}
-                          className="text-xs text-[#1a2313] font-medium hover:underline whitespace-nowrap"
-                        >
-                          View Profile
-                        </Link>
-                        <svg className="w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                        </svg>
-                      </div>
+                      <svg className="w-4 h-4 text-grey-45" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                      </svg>
                     </td>
                   </tr>
                 ))}
@@ -673,7 +379,7 @@ export default function ClientsPage() {
       )}
 
       {selectedProfileId && (
-        <ClientDetailDrawer
+        <ClientDetailPanel
           profileId={selectedProfileId}
           onClose={() => setSelectedProfileId(null)}
         />

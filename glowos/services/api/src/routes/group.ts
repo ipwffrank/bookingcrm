@@ -359,6 +359,91 @@ groupRouter.get("/clients", async (c) => {
   });
 });
 
+// ─── GET /group/clients/:clientId — aggregate + per-branch breakdown ────────────
+groupRouter.get("/clients/:clientId", async (c) => {
+  const groupId = c.get("groupId")!;
+  const clientId = c.req.param("clientId")!;
+
+  // Resolve all branches in the group
+  const merchantRows = await db
+    .select({ id: merchants.id, name: merchants.name })
+    .from(merchants)
+    .where(eq(merchants.groupId, groupId));
+  const merchantIds = merchantRows.map((m) => m.id);
+  if (merchantIds.length === 0) {
+    return c.json({ error: "Not Found", message: "No branches in this brand" }, 404);
+  }
+
+  // Verify the client has bookings in at least one branch in this group
+  const [client] = await db
+    .select({ id: clients.id, name: clients.name, phone: clients.phone, email: clients.email })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  if (!client) {
+    return c.json({ error: "Not Found", message: "Client not found" }, 404);
+  }
+
+  // Aggregate stats across all group branches
+  const [agg] = await db
+    .select({
+      totalSpend: sum(bookings.priceSgd),
+      totalVisits: count(bookings.id),
+      lastVisit: sql<Date | null>`MAX(${bookings.startTime})`,
+      branchCount: countDistinct(bookings.merchantId),
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, clientId),
+        inArray(bookings.merchantId, merchantIds),
+        eq(bookings.status, "completed"),
+      ),
+    );
+
+  if (!agg || (agg.totalVisits ?? 0) === 0) {
+    return c.json({ error: "Not Found", message: "Client has no record in this brand" }, 404);
+  }
+
+  // Per-branch breakdown
+  const perBranchRows = await db
+    .select({
+      merchantId: bookings.merchantId,
+      visits: count(bookings.id),
+      spend: sum(bookings.priceSgd),
+      lastVisit: sql<Date | null>`MAX(${bookings.startTime})`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, clientId),
+        inArray(bookings.merchantId, merchantIds),
+        eq(bookings.status, "completed"),
+      ),
+    )
+    .groupBy(bookings.merchantId)
+    .orderBy(desc(sum(bookings.priceSgd)));
+
+  const nameMap = Object.fromEntries(merchantRows.map((m) => [m.id, m.name]));
+
+  return c.json({
+    client,
+    aggregate: {
+      totalSpend: parseFloat(agg.totalSpend ?? "0"),
+      totalVisits: agg.totalVisits ?? 0,
+      lastVisit: agg.lastVisit,
+      branchCount: agg.branchCount ?? 0,
+    },
+    branches: perBranchRows.map((r) => ({
+      merchantId: r.merchantId,
+      merchantName: nameMap[r.merchantId] ?? "Unknown",
+      visits: r.visits,
+      spend: parseFloat(r.spend ?? "0"),
+      lastVisit: r.lastVisit,
+    })),
+  });
+});
+
 // ─── POST /group/branches ──────────────────────────────────────────────────────
 groupRouter.post("/branches", zValidator(createBranchSchema), async (c) => {
   const groupId = c.get("groupId")!;
