@@ -234,6 +234,93 @@ function AutomationCard({
           </button>
         </div>
       </div>
+
+      <RecentSends kind={automation.kind} />
+    </div>
+  );
+}
+
+// ─── RecentSends ────────────────────────────────────────────────────────────
+// Per-card disclosure showing the last N clients this automation has been sent
+// to. Lazy-loaded on first expand.
+interface SendRow {
+  id: string;
+  sentAt: string;
+  channel: string;
+  clientId: string;
+  clientName: string | null;
+  clientPhone: string | null;
+  bookingId: string | null;
+}
+
+function RecentSends({ kind }: { kind: AutomationKind }) {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sends, setSends] = useState<SendRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  async function ensureLoaded() {
+    if (loaded || loading) return;
+    setLoading(true);
+    try {
+      const data = (await apiFetch(`/merchant/automations/${kind}/sends?limit=50`)) as { sends: SendRow[] };
+      setSends(data.sends ?? []);
+      setLoaded(true);
+    } catch {
+      setError('Failed to load send history');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="pt-2 border-t border-grey-10">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); if (!open) ensureLoaded(); }}
+        className="text-xs font-medium text-tone-sage hover:text-tone-ink"
+      >
+        {open ? '▾' : '▸'} Recent sends{loaded ? ` (${sends.length})` : ''}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {loading && <p className="text-xs text-grey-50">Loading…</p>}
+          {error && <p className="text-xs text-semantic-danger">{error}</p>}
+          {loaded && sends.length === 0 && (
+            <p className="text-xs text-grey-50 italic">
+              Nothing sent yet. Sends will appear here after the next daily run (01:05 UTC).
+            </p>
+          )}
+          {loaded && sends.length > 0 && (
+            <div className="bg-grey-5 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-tone-surface-warm border-b border-grey-15">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-grey-70">Client</th>
+                    <th className="text-left px-3 py-2 font-medium text-grey-70">Channel</th>
+                    <th className="text-right px-3 py-2 font-medium text-grey-70">Sent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-grey-10">
+                  {sends.map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-3 py-1.5 text-tone-ink">
+                        {s.clientName ?? <span className="text-grey-50">—</span>}
+                        {s.clientPhone && <span className="text-grey-50 ml-1.5">· {s.clientPhone}</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-grey-70 capitalize">{s.channel}</td>
+                      <td className="px-3 py-1.5 text-right text-grey-70">
+                        {new Date(s.sentAt).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

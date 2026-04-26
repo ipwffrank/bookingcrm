@@ -1,9 +1,9 @@
 // Owner/manager-gated CRUD on automation rules. One row per (merchant, kind);
 // upsert semantics on PUT.
 import { Hono } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
-import { db, automations, automationKind } from "@glowos/db";
+import { db, automations, automationKind, automationSends, clients } from "@glowos/db";
 import type { AutomationKind } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -124,6 +124,46 @@ automationsRouter.put("/:kind", zValidator(updateSchema), async (c) => {
     .returning();
 
   return c.json({ automation: row });
+});
+
+// ─── GET /merchant/automations/:kind/sends ─────────────────────────────────────
+// Recent sends for one automation, joined with the client name. Default limit
+// 50, max 200. Use this to show "who got what" history per automation card.
+
+automationsRouter.get("/:kind/sends", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const kind = c.req.param("kind");
+  if (!automationKind.includes(kind as AutomationKind)) {
+    return c.json({ error: "Bad Request", message: "Unknown kind" }, 400);
+  }
+  const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50));
+
+  const [rule] = await db
+    .select({ id: automations.id })
+    .from(automations)
+    .where(and(eq(automations.merchantId, merchantId), eq(automations.kind, kind as AutomationKind)))
+    .limit(1);
+  if (!rule) {
+    return c.json({ sends: [] });
+  }
+
+  const rows = await db
+    .select({
+      id: automationSends.id,
+      sentAt: automationSends.sentAt,
+      channel: automationSends.channel,
+      clientId: automationSends.clientId,
+      clientName: clients.name,
+      clientPhone: clients.phone,
+      bookingId: automationSends.bookingId,
+    })
+    .from(automationSends)
+    .leftJoin(clients, eq(automationSends.clientId, clients.id))
+    .where(eq(automationSends.automationId, rule.id))
+    .orderBy(desc(automationSends.sentAt))
+    .limit(limit);
+
+  return c.json({ sends: rows });
 });
 
 export { automationsRouter };
