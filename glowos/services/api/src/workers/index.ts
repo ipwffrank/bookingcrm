@@ -43,12 +43,15 @@ export function startWorkers(): void {
     { repeat: { pattern: "5 0 * * *" } } // 00:05 daily, server time
   );
 
-  // Marketing automation daily sweep: birthday / win-back / re-booking.
+  // Marketing automation hourly sweep: birthday / win-back / re-booking.
+  // Hourly (vs daily) so a merchant who enables an automation mid-day doesn't
+  // wait until tomorrow for today's matches. Dedupe keys keep this idempotent
+  // (per-client-per-year for birthdays, etc.) so re-runs cost nothing.
   void addJob(
     "automations",
     "automation_daily_sweep",
     {},
-    { repeat: { pattern: "5 1 * * *" } } // 01:05 UTC daily
+    { repeat: { pattern: "5 * * * *" } } // every hour at :05 UTC
   );
 
   // Treatment-quote daily cron: expire past-validUntil pending quotes, then

@@ -124,7 +124,37 @@ automationsRouter.put("/:kind", zValidator(updateSchema), async (c) => {
     })
     .returning();
 
-  return c.json({ automation: row });
+  // Fire the matching handler immediately when the rule is saved as enabled,
+  // so a merchant who flips the toggle on at 14:00 doesn't have to wait until
+  // tomorrow's cron to catch today's matches. Dedupe makes this idempotent.
+  let firedSent: number | undefined = undefined;
+  if (row.enabled) {
+    try {
+      switch (kind as AutomationKind) {
+        case "birthday":
+          firedSent = await handleBirthday(row);
+          break;
+        case "winback":
+          firedSent = await handleWinback(row);
+          break;
+        case "rebook":
+          firedSent = await handleRebook(row);
+          break;
+      }
+      if (firedSent !== undefined) {
+        await db
+          .update(automations)
+          .set({ lastRunAt: new Date() })
+          .where(eq(automations.id, row.id));
+      }
+    } catch (err) {
+      // Don't fail the save if the immediate fire blows up — the hourly cron
+      // will retry. Just log so we know.
+      console.error("[automations] save-time fire failed", { kind, err });
+    }
+  }
+
+  return c.json({ automation: row, sentOnSave: firedSent });
 });
 
 // ─── GET /merchant/automations/:kind/sends ─────────────────────────────────────
