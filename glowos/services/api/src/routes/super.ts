@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { and, count, desc, eq, gte, ilike, or, sql, sum } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -494,6 +496,245 @@ superRouter.get("/audit-log", async (c) => {
     .offset(offset);
 
   return c.json({ entries: rows, limit, offset });
+});
+
+// ─── /super/users — user account management ────────────────────────────────────
+// Super admin can deactivate (reversible), reactivate, and delete (irreversible
+// PII scrub) any merchant_user account. Hard DELETE is intentionally not used —
+// FK references to merchant_users (audit log, booking_edits, treatment_quotes,
+// booking_groups) would either cascade-orphan or block. "Delete" instead means
+// permanent anonymization: scrub email/name/passwordHash and lock the row.
+
+// Marker for "deleted" rows. We detect deleted state by email pattern instead
+// of adding a deletedAt column to avoid a schema migration.
+const DELETED_EMAIL_DOMAIN = "@deleted.glowos.app";
+function deletedEmailFor(userId: string): string {
+  return `deleted-${userId}${DELETED_EMAIL_DOMAIN}`;
+}
+function isDeletedEmail(email: string): boolean {
+  return email.endsWith(DELETED_EMAIL_DOMAIN);
+}
+
+const listUsersQuery = z.object({
+  search: z.string().trim().min(1).max(100).optional(),
+  status: z.enum(["all", "active", "inactive", "deleted"]).default("all"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+// GET /super/users — list merchant_users with filters
+superRouter.get("/users", async (c) => {
+  const parsed = listUsersQuery.safeParse({
+    search: c.req.query("search"),
+    status: c.req.query("status"),
+    limit: c.req.query("limit"),
+    offset: c.req.query("offset"),
+  });
+  if (!parsed.success) {
+    return c.json({ error: "Bad Request", message: parsed.error.message }, 400);
+  }
+  const { search, status, limit, offset } = parsed.data;
+
+  const conditions = [];
+  if (search) {
+    const pat = `%${search}%`;
+    conditions.push(or(ilike(merchantUsers.email, pat), ilike(merchantUsers.name, pat)));
+  }
+  if (status === "active") {
+    conditions.push(eq(merchantUsers.isActive, true));
+    conditions.push(sql`${merchantUsers.email} NOT LIKE ${"%" + DELETED_EMAIL_DOMAIN}`);
+  } else if (status === "inactive") {
+    conditions.push(eq(merchantUsers.isActive, false));
+    conditions.push(sql`${merchantUsers.email} NOT LIKE ${"%" + DELETED_EMAIL_DOMAIN}`);
+  } else if (status === "deleted") {
+    conditions.push(sql`${merchantUsers.email} LIKE ${"%" + DELETED_EMAIL_DOMAIN}`);
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({
+      id: merchantUsers.id,
+      name: merchantUsers.name,
+      email: merchantUsers.email,
+      role: merchantUsers.role,
+      isActive: merchantUsers.isActive,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+      lastLoginAt: merchantUsers.lastLoginAt,
+      createdAt: merchantUsers.createdAt,
+      merchantId: merchantUsers.merchantId,
+      merchantName: merchants.name,
+    })
+    .from(merchantUsers)
+    .leftJoin(merchants, eq(merchantUsers.merchantId, merchants.id))
+    .where(whereClause)
+    .orderBy(desc(merchantUsers.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(merchantUsers)
+    .where(whereClause);
+
+  const callerUserId = c.get("userId");
+
+  await logAudit({
+    actorUserId: callerUserId,
+    actorEmail: c.get("actorEmail") ?? "",
+    action: "read",
+    method: "GET",
+    path: "/super/users",
+  });
+
+  return c.json({
+    users: rows.map((r) => ({
+      ...r,
+      isSelf: r.id === callerUserId,
+      isSuperAdmin: isSuperAdminEmail(r.email),
+      isDeleted: isDeletedEmail(r.email),
+    })),
+    total,
+    limit,
+    offset,
+  });
+});
+
+// Shared self-protection check
+function rejectIfSelf(callerUserId: string | undefined, targetUserId: string) {
+  return callerUserId === targetUserId;
+}
+
+// PATCH /super/users/:id/deactivate
+superRouter.patch("/users/:id/deactivate", async (c) => {
+  const callerUserId = c.get("userId")!;
+  const targetId = c.req.param("id")!;
+  if (rejectIfSelf(callerUserId, targetId)) {
+    return c.json(
+      { error: "Forbidden", message: "Cannot deactivate yourself" },
+      403,
+    );
+  }
+  const [target] = await db
+    .select({ id: merchantUsers.id, email: merchantUsers.email, isActive: merchantUsers.isActive })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, targetId))
+    .limit(1);
+  if (!target) {
+    return c.json({ error: "Not Found", message: "User not found" }, 404);
+  }
+  if (isDeletedEmail(target.email)) {
+    return c.json(
+      { error: "Conflict", message: "Cannot modify a deleted account" },
+      409,
+    );
+  }
+  if (!target.isActive) {
+    return c.json({ user: { id: target.id, isActive: false } });
+  }
+  await db
+    .update(merchantUsers)
+    .set({ isActive: false })
+    .where(eq(merchantUsers.id, targetId));
+  await logAudit({
+    actorUserId: callerUserId,
+    actorEmail: c.get("actorEmail") ?? "",
+    action: "write",
+    method: "PATCH",
+    path: `/super/users/${targetId}/deactivate`,
+    metadata: { subAction: "deactivate_user", targetUserId: targetId, targetEmail: target.email },
+  });
+  return c.json({ user: { id: target.id, isActive: false } });
+});
+
+// PATCH /super/users/:id/reactivate
+superRouter.patch("/users/:id/reactivate", async (c) => {
+  const callerUserId = c.get("userId")!;
+  const targetId = c.req.param("id")!;
+  const [target] = await db
+    .select({ id: merchantUsers.id, email: merchantUsers.email, isActive: merchantUsers.isActive })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, targetId))
+    .limit(1);
+  if (!target) {
+    return c.json({ error: "Not Found", message: "User not found" }, 404);
+  }
+  if (isDeletedEmail(target.email)) {
+    return c.json(
+      { error: "Conflict", message: "Cannot reactivate a deleted account" },
+      409,
+    );
+  }
+  if (target.isActive) {
+    return c.json({ user: { id: target.id, isActive: true } });
+  }
+  await db
+    .update(merchantUsers)
+    .set({ isActive: true })
+    .where(eq(merchantUsers.id, targetId));
+  await logAudit({
+    actorUserId: callerUserId,
+    actorEmail: c.get("actorEmail") ?? "",
+    action: "write",
+    method: "PATCH",
+    path: `/super/users/${targetId}/reactivate`,
+    metadata: { subAction: "reactivate_user", targetUserId: targetId, targetEmail: target.email },
+  });
+  return c.json({ user: { id: target.id, isActive: true } });
+});
+
+// DELETE /super/users/:id — irreversible PII scrub. Email is replaced with a
+// deleted-{uuid}@deleted.glowos.app sentinel; name → "[deleted]";
+// passwordHash → bcrypt of an unguessable random string; isActive → false;
+// staffId / brandAdminGroupId cleared. Row is preserved so FK references
+// (audit logs, booking edits) stay intact.
+superRouter.delete("/users/:id", async (c) => {
+  const callerUserId = c.get("userId")!;
+  const targetId = c.req.param("id")!;
+  if (rejectIfSelf(callerUserId, targetId)) {
+    return c.json({ error: "Forbidden", message: "Cannot delete yourself" }, 403);
+  }
+  const [target] = await db
+    .select({ id: merchantUsers.id, email: merchantUsers.email })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, targetId))
+    .limit(1);
+  if (!target) {
+    return c.json({ error: "Not Found", message: "User not found" }, 404);
+  }
+  if (isDeletedEmail(target.email)) {
+    return c.json({ user: { id: target.id, isDeleted: true } });
+  }
+
+  const newEmail = deletedEmailFor(targetId);
+  const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
+
+  await db
+    .update(merchantUsers)
+    .set({
+      email: newEmail,
+      name: "[deleted]",
+      passwordHash,
+      isActive: false,
+      staffId: null,
+      brandAdminGroupId: null,
+    })
+    .where(eq(merchantUsers.id, targetId));
+
+  await logAudit({
+    actorUserId: callerUserId,
+    actorEmail: c.get("actorEmail") ?? "",
+    action: "write",
+    method: "DELETE",
+    path: `/super/users/${targetId}`,
+    metadata: {
+      subAction: "delete_user",
+      targetUserId: targetId,
+      originalEmail: target.email, // recorded in audit log only — not on the row anymore
+    },
+  });
+
+  return c.json({ user: { id: target.id, isDeleted: true } });
 });
 
 export { superRouter };
