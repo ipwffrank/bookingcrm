@@ -77,6 +77,13 @@ superRouter.post("/impersonate", zValidator(impersonateSchema), async (c) => {
     return c.json({ error: "Forbidden", message: "Not eligible for impersonation" }, 403);
   }
 
+  if (c.get("brandViewing")) {
+    return c.json(
+      { error: "Forbidden", message: "End brand-view before impersonating" },
+      403,
+    );
+  }
+
   // Resolve target merchant + pick an owner to impersonate. We prefer the
   // canonical owner so the JWT's role matches what the merchant themselves
   // would see.
