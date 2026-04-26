@@ -161,6 +161,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // the UI matches what the route will allow.
   const [showSuperLink, setShowSuperLink] = useState(false);
   const [isBrandAdmin, setIsBrandAdmin] = useState(false);
+  const [userName, setUserName] = useState<string>('');
+  const [roleLabel, setRoleLabel] = useState<string>('');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isSuper = localStorage.getItem('superAdmin') === 'true';
@@ -168,7 +170,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setShowSuperLink(isSuper && !impersonating);
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      setIsBrandAdmin(Boolean(u.brandAdminGroupId));
+      const hasBrand = Boolean(u.brandAdminGroupId);
+      setIsBrandAdmin(hasBrand);
+      setUserName(u.name ?? u.email ?? '');
+      setRoleLabel(
+        hasBrand
+          ? 'Brand Admin'
+          : u.role === 'staff'
+            ? 'Staff'
+            : u.role === 'owner' || u.role === 'manager'
+              ? 'Branch Admin'
+              : '',
+      );
     } catch { /* ignore */ }
   }, [pathname]);
 
@@ -243,6 +256,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Link href="/" className="font-newsreader text-xl font-semibold text-[#1a2313] hover:text-[#456466] transition-colors">GlowOS</Link>
             {merchant && (
               <p className="font-inter text-[11px] text-grey-45 mt-1 truncate uppercase tracking-wider">{merchant.name}</p>
+            )}
+            {userName && (
+              <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-medium text-grey-75 truncate">{userName}</span>
+                {roleLabel && (
+                  <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                    roleLabel === 'Brand Admin'
+                      ? 'bg-tone-sage/10 text-tone-sage border-tone-sage/30'
+                      : roleLabel === 'Staff'
+                        ? 'bg-grey-10 text-grey-70 border-grey-20'
+                        : 'bg-tone-ink/5 text-tone-ink border-tone-ink/20'
+                  }`}>
+                    {roleLabel}
+                  </span>
+                )}
+              </div>
             )}
           </>
         )}
