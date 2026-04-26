@@ -87,6 +87,8 @@ function AutomationCard({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<string | null>(null);
 
   async function handleSave() {
     setSaving(true);
@@ -99,6 +101,28 @@ function AutomationCard({
       setSaveError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRunNow() {
+    if (!state.enabled) {
+      setRunResult('Enable + save first');
+      setTimeout(() => setRunResult(null), 3000);
+      return;
+    }
+    if (!confirm(`Run ${automation.kind} automation now? This will send messages to every matching client immediately.`)) {
+      return;
+    }
+    setRunning(true);
+    setRunResult(null);
+    try {
+      const data = (await apiFetch(`/merchant/automations/${automation.kind}/run-now`, { method: 'POST' })) as { sent: number };
+      setRunResult(`Sent ${data.sent} message${data.sent === 1 ? '' : 's'}`);
+      setTimeout(() => setRunResult(null), 5000);
+    } catch (err) {
+      setRunResult(err instanceof Error ? err.message : 'Run failed');
+    } finally {
+      setRunning(false);
     }
   }
 
@@ -224,6 +248,18 @@ function AutomationCard({
           {saved && (
             <p className="text-xs text-grey-60">Saved</p>
           )}
+          {runResult && (
+            <p className="text-xs text-grey-60">{runResult}</p>
+          )}
+          <button
+            type="button"
+            onClick={handleRunNow}
+            disabled={running || !state.enabled}
+            title={state.enabled ? 'Run now (debug — bypasses the daily cron)' : 'Enable and save first'}
+            className="px-3 py-1.5 border border-grey-20 bg-tone-surface text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-5 disabled:opacity-50 transition-colors"
+          >
+            {running ? 'Running…' : '⚡ Run now'}
+          </button>
           <button
             type="button"
             onClick={handleSave}

@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, automations, automationKind, automationSends, clients } from "@glowos/db";
 import type { AutomationKind } from "@glowos/db";
+import { handleBirthday, handleWinback, handleRebook } from "../workers/automation.worker.js";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
@@ -164,6 +165,59 @@ automationsRouter.get("/:kind/sends", async (c) => {
     .limit(limit);
 
   return c.json({ sends: rows });
+});
+
+// ─── POST /merchant/automations/:kind/run-now ──────────────────────────────────
+// Synchronously fires the automation's handler against this merchant's
+// matching clients RIGHT NOW (vs waiting for the daily 01:05 UTC cron).
+// Useful for testing + on-demand catch-up. Owner/manager only (the router
+// guard above already enforces).
+
+automationsRouter.post("/:kind/run-now", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const kind = c.req.param("kind") as AutomationKind;
+  if (!automationKind.includes(kind)) {
+    return c.json({ error: "Bad Request", message: "Unknown automation kind" }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(automations)
+    .where(and(eq(automations.merchantId, merchantId), eq(automations.kind, kind)))
+    .limit(1);
+
+  if (!row) {
+    return c.json(
+      { error: "Conflict", message: "Automation not configured yet — save settings first." },
+      409,
+    );
+  }
+  if (!row.enabled) {
+    return c.json(
+      { error: "Conflict", message: "Automation is disabled. Enable it before running." },
+      409,
+    );
+  }
+
+  let sent = 0;
+  switch (kind) {
+    case "birthday":
+      sent = await handleBirthday(row);
+      break;
+    case "winback":
+      sent = await handleWinback(row);
+      break;
+    case "rebook":
+      sent = await handleRebook(row);
+      break;
+  }
+
+  await db
+    .update(automations)
+    .set({ lastRunAt: new Date() })
+    .where(eq(automations.id, row.id));
+
+  return c.json({ sent });
 });
 
 export { automationsRouter };

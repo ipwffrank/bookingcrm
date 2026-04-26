@@ -114,7 +114,7 @@ async function sendAutomationMessage(params: {
  * Birthday sweep: find clients where birthday MM-DD = today's MM-DD,
  * who haven't been sent a birthday message this calendar year.
  */
-async function handleBirthday(automation: typeof automations.$inferSelect): Promise<number> {
+export async function handleBirthday(automation: typeof automations.$inferSelect): Promise<number> {
   const today = new Date();
   const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(today.getUTCDate()).padStart(2, "0");
@@ -220,7 +220,7 @@ async function handleBirthday(automation: typeof automations.$inferSelect): Prom
  * Win-back sweep: find clients whose last completed booking is >= afterDays ago,
  * and who haven't received a win-back within the cooldown window (afterDays * 1.5).
  */
-async function handleWinback(automation: typeof automations.$inferSelect): Promise<number> {
+export async function handleWinback(automation: typeof automations.$inferSelect): Promise<number> {
   const cfg = automation.config as { afterDays?: number };
   const afterDays = cfg.afterDays ?? 90;
   const cooldownDays = Math.round(afterDays * 1.5);
@@ -350,7 +350,7 @@ async function handleWinback(automation: typeof automations.$inferSelect): Promi
  * Re-booking sweep: find completed bookings whose endTime was exactly
  * defaultAfterDays (or per-service days) ago, and no rebook send exists yet.
  */
-async function handleRebook(automation: typeof automations.$inferSelect): Promise<number> {
+export async function handleRebook(automation: typeof automations.$inferSelect): Promise<number> {
   const cfg = automation.config as {
     defaultAfterDays?: number;
     perService?: Record<string, number>;
