@@ -73,8 +73,10 @@ export function BranchPicker() {
       localStorage.setItem('merchant', JSON.stringify(data.merchant));
       localStorage.setItem('brandViewing', 'true');
       localStorage.setItem('homeMerchantId', data.homeMerchantId);
-      router.push('/dashboard');
-      router.refresh();
+      // Hard reload so the merchant dashboard re-reads localStorage and
+      // the BrandViewBanner mounts. router.push alone doesn't remount
+      // sibling client components.
+      window.location.assign('/dashboard');
     } catch {
       setBusy(false);
     }

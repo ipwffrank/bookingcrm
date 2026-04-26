@@ -43,8 +43,11 @@ export function BrandViewBanner() {
       localStorage.removeItem('brandViewing');
       localStorage.removeItem('homeMerchantId');
       localStorage.removeItem('homeMerchantName');
-      router.push('/dashboard');
-      router.refresh();
+      // Hard reload to /dashboard. router.push doesn't trigger navigation when
+      // we're already on /dashboard, and the banner state wouldn't reset on its
+      // own — useEffect only runs on mount. window.location forces a remount
+      // and re-reads localStorage, which is the simplest correct path.
+      window.location.assign('/dashboard');
     } catch {
       setExiting(false);
     }

@@ -132,7 +132,7 @@ export function BranchForm({ mode, merchantId, onClose, onSaved }: BranchFormPro
                 type="text"
                 required={mode === 'create'}
                 disabled={mode === 'edit'}
-                pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+                pattern="[a-z0-9](?:[-a-z0-9]*[a-z0-9])?"
                 minLength={3} maxLength={100}
                 value={state.slug}
                 onChange={(e) => set('slug', e.target.value.toLowerCase())}
