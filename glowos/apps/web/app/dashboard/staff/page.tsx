@@ -412,8 +412,11 @@ function StaffCard({
   onDelete,
   deleting,
   loginEmail,
+  loginRole,
+  callerIsOwner,
   onCreateLogin,
   onResetPassword,
+  onChangeRole,
 }: {
   member: StaffMember;
   services: ServiceOption[];
@@ -421,8 +424,11 @@ function StaffCard({
   onDelete: () => void;
   deleting: boolean;
   loginEmail?: string;
+  loginRole?: 'staff' | 'manager' | 'owner';
+  callerIsOwner: boolean;
   onCreateLogin: () => void;
   onResetPassword: () => void;
+  onChangeRole: (role: 'staff' | 'manager') => void;
 }) {
   const assignedServices = services.filter((s) => member.service_ids.includes(s.id));
 
@@ -449,18 +455,44 @@ function StaffCard({
           {member.isAnyAvailable && (
             <p className="text-xs text-tone-sage mt-1">Available as &ldquo;Any staff&rdquo;</p>
           )}
-          {/* Login badge / Create Login button */}
+          {/* Login badge / Create Login button + role */}
           {loginEmail ? (
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="text-xs text-tone-sage bg-tone-sage/5 px-2 py-0.5 rounded-full border border-tone-sage/30">
                 Login: {loginEmail}
               </span>
+              {loginRole === 'manager' && (
+                <span className="text-xs text-tone-ink bg-tone-ink/5 px-2 py-0.5 rounded-full border border-tone-ink/30">
+                  Manager
+                </span>
+              )}
+              {loginRole === 'owner' && (
+                <span className="text-xs text-tone-ink bg-tone-ink/10 px-2 py-0.5 rounded-full border border-tone-ink/40 font-medium">
+                  Owner
+                </span>
+              )}
               <button
                 onClick={onResetPassword}
                 className="text-xs text-grey-60 hover:text-grey-75 underline"
               >
                 Reset Password
               </button>
+              {callerIsOwner && loginRole === 'staff' && (
+                <button
+                  onClick={() => onChangeRole('manager')}
+                  className="text-xs text-tone-sage hover:text-tone-ink underline"
+                >
+                  Promote to manager
+                </button>
+              )}
+              {callerIsOwner && loginRole === 'manager' && (
+                <button
+                  onClick={() => onChangeRole('staff')}
+                  className="text-xs text-grey-60 hover:text-tone-ink underline"
+                >
+                  Demote to staff
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -513,7 +545,35 @@ export default function StaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [staffLogins, setStaffLogins] = useState<Record<string, string>>({});
+  const [staffLogins, setStaffLogins] = useState<Record<string, { email: string; role: 'staff' | 'manager' | 'owner' }>>({});
+  const [callerRole, setCallerRole] = useState<'staff' | 'manager' | 'owner' | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
+      if (u.role === 'staff' || u.role === 'manager' || u.role === 'owner') {
+        setCallerRole(u.role);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  async function changeRole(staffId: string, newRole: 'staff' | 'manager') {
+    const current = staffLogins[staffId];
+    if (!current) return;
+    setStaffLogins((prev) => ({ ...prev, [staffId]: { ...current, role: newRole } }));
+    try {
+      await apiFetch(`/merchant/staff/${staffId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: newRole }),
+      });
+    } catch (err) {
+      // Revert optimistic update
+      setStaffLogins((prev) => ({ ...prev, [staffId]: current }));
+      const msg = err instanceof ApiError ? err.message ?? 'Failed to change role' : 'Failed to change role';
+      alert(msg);
+    }
+  }
   const [loginModal, setLoginModal] = useState<{ staffId: string; name: string } | null>(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -548,9 +608,9 @@ export default function StaffPage() {
         setStaffList(staffData.staff ?? []);
         setServices(servicesData.services ?? []);
         // Fetch which staff have logins
-        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string }> }) => {
-          const map: Record<string, string> = {};
-          (d.logins ?? []).forEach(l => { if (l.staffId) map[l.staffId] = l.email; });
+        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string; role: 'staff' | 'manager' | 'owner' }> }) => {
+          const map: Record<string, { email: string; role: 'staff' | 'manager' | 'owner' }> = {};
+          (d.logins ?? []).forEach((l) => { if (l.staffId) map[l.staffId] = { email: l.email, role: l.role }; });
           setStaffLogins(map);
         }).catch(() => {});
       })
@@ -640,9 +700,12 @@ export default function StaffPage() {
               onEdit={() => { setEditing(member); setModalOpen(true); }}
               onDelete={() => handleDelete(member.id)}
               deleting={deleting === member.id}
-              loginEmail={staffLogins[member.id]}
+              loginEmail={staffLogins[member.id]?.email}
+              loginRole={staffLogins[member.id]?.role}
+              callerIsOwner={callerRole === 'owner'}
               onCreateLogin={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: '', password: '' }); setLoginError(''); }}
-              onResetPassword={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: staffLogins[member.id]!, password: '' }); setLoginError(''); }}
+              onResetPassword={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: staffLogins[member.id]?.email ?? '', password: '' }); setLoginError(''); }}
+              onChangeRole={(newRole) => changeRole(member.id, newRole)}
             />
           ))}
         </div>
@@ -664,9 +727,9 @@ export default function StaffPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-tone-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold">
-              {staffLogins[loginModal.staffId] ? 'Reset Password' : 'Create Login'} — {loginModal.name}
+              {staffLogins[loginModal.staffId]?.email ? 'Reset Password' : 'Create Login'} — {loginModal.name}
             </h2>
-            {!staffLogins[loginModal.staffId] && (
+            {!staffLogins[loginModal.staffId]?.email && (
               <div>
                 <label className="block text-xs font-medium text-grey-75 mb-1">Email</label>
                 <input
@@ -680,7 +743,7 @@ export default function StaffPage() {
             )}
             <div>
               <label className="block text-xs font-medium text-grey-75 mb-1">
-                {staffLogins[loginModal.staffId] ? 'New Password' : 'Temporary Password'}
+                {staffLogins[loginModal.staffId]?.email ? 'New Password' : 'Temporary Password'}
               </label>
               <input
                 type="password"
@@ -696,7 +759,7 @@ export default function StaffPage() {
                 onClick={async () => {
                   setLoginError('');
                   try {
-                    if (staffLogins[loginModal.staffId]) {
+                    if (staffLogins[loginModal.staffId]?.email) {
                       await apiFetch(`/merchant/staff/${loginModal.staffId}/reset-password`, {
                         method: 'POST',
                         body: JSON.stringify({ password: loginForm.password }),
@@ -706,7 +769,7 @@ export default function StaffPage() {
                         method: 'POST',
                         body: JSON.stringify({ email: loginForm.email, password: loginForm.password }),
                       });
-                      setStaffLogins(prev => ({ ...prev, [loginModal.staffId]: loginForm.email }));
+                      setStaffLogins((prev) => ({ ...prev, [loginModal.staffId]: { email: loginForm.email, role: 'staff' } }));
                     }
                     setLoginModal(null);
                   } catch (err) {

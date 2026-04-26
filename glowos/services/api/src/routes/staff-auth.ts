@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db, merchantUsers, staff } from "@glowos/db";
@@ -21,14 +21,18 @@ const resetPasswordSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-// GET /merchant/staff/logins — list which staff have logins
+// GET /merchant/staff/logins — list which staff have logins (any non-owner role)
 staffAuthRouter.get("/logins", async (c) => {
   const merchantId = c.get("merchantId")!;
   const logins = await db
-    .select({ staffId: merchantUsers.staffId, email: merchantUsers.email })
+    .select({
+      staffId: merchantUsers.staffId,
+      email: merchantUsers.email,
+      role: merchantUsers.role,
+    })
     .from(merchantUsers)
-    .where(and(eq(merchantUsers.merchantId, merchantId), eq(merchantUsers.role, "staff")));
-  return c.json({ logins: logins.filter(l => l.staffId !== null) });
+    .where(eq(merchantUsers.merchantId, merchantId));
+  return c.json({ logins: logins.filter((l) => l.staffId !== null) });
 });
 
 // POST /merchant/staff/:id/create-login
@@ -112,6 +116,82 @@ staffAuthRouter.post("/:id/reset-password", zValidator(resetPasswordSchema), asy
     .where(eq(merchantUsers.id, user.id));
 
   return c.json({ success: true });
+});
+
+// PATCH /merchant/staff/:id/role — promote staff↔manager. Owner-only.
+// If demoting from manager to staff and the user is a brand admin, the
+// brand-admin claim is cascade-cleared (subject to a last-admin guard so the
+// brand can't be orphaned).
+const updateRoleSchema = z.object({
+  role: z.enum(["staff", "manager"]),
+}).strict();
+
+staffAuthRouter.patch("/:id/role", zValidator(updateRoleSchema), async (c) => {
+  const callerRole = c.get("userRole");
+  if (callerRole !== "owner") {
+    return c.json(
+      { error: "Forbidden", message: "Only the owner can change team roles" },
+      403,
+    );
+  }
+  const merchantId = c.get("merchantId")!;
+  const staffId = c.req.param("id");
+  const body = c.get("body") as z.infer<typeof updateRoleSchema>;
+
+  const [user] = await db
+    .select({
+      id: merchantUsers.id,
+      role: merchantUsers.role,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+    })
+    .from(merchantUsers)
+    .where(and(eq(merchantUsers.staffId, staffId!), eq(merchantUsers.merchantId, merchantId)))
+    .limit(1);
+
+  if (!user) {
+    return c.json({ error: "Not Found", message: "No login found for this staff member" }, 404);
+  }
+  if (user.role === "owner") {
+    return c.json(
+      { error: "Conflict", message: "Cannot change the owner's role here" },
+      409,
+    );
+  }
+  if (user.role === body.role) {
+    return c.json({ user: { id: user.id, role: user.role } });
+  }
+
+  // Cascade rule: a staff-role user cannot be a brand admin (per the role gate
+  // in /group/admins). If we're demoting a manager-with-brand-admin-claim to
+  // staff, also drop the claim — but refuse to do so if it would orphan the
+  // group with zero brand admins.
+  if (body.role === "staff" && user.brandAdminGroupId) {
+    const [{ count: adminCount }] = await db
+      .select({ count: count(merchantUsers.id) })
+      .from(merchantUsers)
+      .where(eq(merchantUsers.brandAdminGroupId, user.brandAdminGroupId));
+    if (adminCount <= 1) {
+      return c.json(
+        {
+          error: "Conflict",
+          message:
+            "Cannot demote — they are the last brand admin. Promote another brand admin first, then demote.",
+        },
+        409,
+      );
+    }
+    await db
+      .update(merchantUsers)
+      .set({ role: body.role, brandAdminGroupId: null })
+      .where(eq(merchantUsers.id, user.id));
+  } else {
+    await db
+      .update(merchantUsers)
+      .set({ role: body.role })
+      .where(eq(merchantUsers.id, user.id));
+  }
+
+  return c.json({ user: { id: user.id, role: body.role } });
 });
 
 export { staffAuthRouter };
