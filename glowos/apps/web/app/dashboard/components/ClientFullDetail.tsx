@@ -1638,7 +1638,7 @@ function BirthdayField({ profileId, initialValue }: { profileId: string; initial
     const isoSentinel = `2000-${month}-${day.padStart(2, '0')}`;
     setSaving(true);
     try {
-      await apiFetch(`/merchant/clients/${profileId}`, {
+      await apiFetch(`/merchant/clients/${profileId}/notes`, {
         method: 'PUT',
         body: JSON.stringify({ birthday: isoSentinel }),
       });
