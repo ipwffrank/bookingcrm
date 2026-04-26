@@ -24,6 +24,7 @@ const BASE_NAV_ITEMS = [
   { href: '/dashboard/reviews', label: 'Reviews', icon: StarIcon },
   { href: '/dashboard/import', label: 'Import Clients', icon: ImportIcon },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: MegaphoneIcon },
+  { href: '/dashboard/marketing/automation', label: 'Automation', icon: AutomationIcon },
 ];
 
 function CalendarIcon({ className }: { className?: string }) {
@@ -102,6 +103,14 @@ function MegaphoneIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 1 8.835-2.535m0 0A23.74 23.74 0 0 1 18.795 3c1.167 0 2.301.068 3.268.2M19.175 4.125c.027.406.044.813.05 1.221M19.175 4.125a23.704 23.704 0 0 0-.05 14.75m0 0c-.005.408-.022.815-.05 1.221" />
+    </svg>
+  );
+}
+
+function AutomationIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
     </svg>
   );
 }

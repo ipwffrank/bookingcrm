@@ -1,0 +1,74 @@
+<h2>Review Submission Page</h2>
+<p class="subtitle">What the client sees when they tap the review link from WhatsApp — at <code>/review/{bookingId}</code></p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Minimal — Stars + Comment</h3>
+      <div class="mockup" style="margin-top: 12px;">
+        <div class="mockup-header">Mobile View — /review/abc123</div>
+        <div class="mockup-body" style="background: #fafaf8; text-align: center; padding: 32px 20px;">
+          <!-- Merchant header -->
+          <div style="margin-bottom: 24px;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #c4a778, #d4b88a); margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px;">G</div>
+            <div style="font-family: serif; font-size: 20px; font-weight: 600; color: #1a1a2e;">Glow Aesthetics</div>
+            <div style="font-size: 13px; color: #888; margin-top: 4px;">How was your Hydrafacial on 17 Apr?</div>
+          </div>
+          <!-- Stars -->
+          <div style="margin-bottom: 20px;">
+            <span style="font-size: 36px; cursor: pointer; letter-spacing: 4px;">★★★★<span style="opacity: 0.25;">★</span></span>
+            <div style="font-size: 13px; color: #888; margin-top: 4px;">Tap to rate</div>
+          </div>
+          <!-- Comment -->
+          <div style="text-align: left; margin-bottom: 20px;">
+            <textarea placeholder="Tell us about your experience (optional)" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; font-size: 14px; min-height: 80px; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+          </div>
+          <!-- Submit -->
+          <button style="width: 100%; padding: 14px; background: #1a1a2e; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;">Submit Review</button>
+          <div style="font-size: 11px; color: #aaa; margin-top: 12px;">Your review is shared with the business only, not displayed publicly.</div>
+        </div>
+      </div>
+      <p style="margin-top: 8px; font-size: 13px; color: #888;">Clean, fast. One tap for stars, optional comment, submit. Highest completion rate.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Minimal + Staff Attribution</h3>
+      <div class="mockup" style="margin-top: 12px;">
+        <div class="mockup-header">Mobile View — /review/abc123</div>
+        <div class="mockup-body" style="background: #fafaf8; text-align: center; padding: 32px 20px;">
+          <!-- Merchant header -->
+          <div style="margin-bottom: 24px;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #c4a778, #d4b88a); margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 20px;">G</div>
+            <div style="font-family: serif; font-size: 20px; font-weight: 600; color: #1a1a2e;">Glow Aesthetics</div>
+            <div style="font-size: 13px; color: #888; margin-top: 4px;">How was your Hydrafacial on 17 Apr?</div>
+          </div>
+          <!-- Staff card -->
+          <div style="background: white; border: 1px solid #e8e8e8; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px; text-align: left;">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: #e8e4f0; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #6b5b95; flex-shrink: 0;">JL</div>
+            <div>
+              <div style="font-weight: 600; font-size: 14px; color: #1a1a2e;">Jessica Lee</div>
+              <div style="font-size: 12px; color: #888;">Your aesthetician</div>
+            </div>
+          </div>
+          <!-- Stars -->
+          <div style="margin-bottom: 20px;">
+            <span style="font-size: 36px; cursor: pointer; letter-spacing: 4px;">★★★★<span style="opacity: 0.25;">★</span></span>
+            <div style="font-size: 13px; color: #888; margin-top: 4px;">Tap to rate</div>
+          </div>
+          <!-- Comment -->
+          <div style="text-align: left; margin-bottom: 20px;">
+            <textarea placeholder="Tell us about your experience (optional)" style="width: 100%; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; font-size: 14px; min-height: 80px; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+          </div>
+          <!-- Submit -->
+          <button style="width: 100%; padding: 14px; background: #1a1a2e; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;">Submit Review</button>
+          <div style="font-size: 11px; color: #aaa; margin-top: 12px;">Your review is shared with the business only, not displayed publicly.</div>
+        </div>
+      </div>
+      <p style="margin-top: 8px; font-size: 13px; color: #888;">Same simplicity, but shows who served them. Review is tied to that staff member in analytics. Adds context without adding friction.</p>
+    </div>
+  </div>
+</div>

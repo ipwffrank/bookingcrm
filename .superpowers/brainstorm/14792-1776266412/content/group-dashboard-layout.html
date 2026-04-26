@@ -1,0 +1,107 @@
+<h2>Group Admin Dashboard — Layout Options</h2>
+<p class="subtitle">Which overview layout works better for the COO persona?</p>
+
+<div class="split">
+  <div class="mockup" data-choice="a" onclick="toggleSelect(this)" style="cursor:pointer">
+    <div class="mockup-header">A — Stats First</div>
+    <div class="mockup-body" style="padding:12px;font-size:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#16a34a;">$48,200</div>
+          <div style="color:#6b7280;font-size:10px;">Revenue MTD</div>
+        </div>
+        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:8px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#2563eb;">342</div>
+          <div style="color:#6b7280;font-size:10px;">Bookings MTD</div>
+        </div>
+        <div style="background:#fdf4ff;border:1px solid #d8b4fe;border-radius:6px;padding:8px;text-align:center;">
+          <div style="font-size:18px;font-weight:700;color:#9333ea;">1,204</div>
+          <div style="color:#6b7280;font-size:10px;">Active Clients</div>
+        </div>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-bottom:8px;">
+        <div style="font-weight:600;font-size:11px;margin-bottom:6px;color:#374151;">Revenue by Branch</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div style="font-size:10px;width:80px;color:#374151;">Orchard</div>
+          <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;">
+            <div style="width:75%;background:#16a34a;height:8px;border-radius:4px;"></div>
+          </div>
+          <div style="font-size:10px;color:#374151;">$21,400</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div style="font-size:10px;width:80px;color:#374151;">Bugis</div>
+          <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;">
+            <div style="width:55%;background:#16a34a;height:8px;border-radius:4px;"></div>
+          </div>
+          <div style="font-size:10px;color:#374151;">$15,800</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="font-size:10px;width:80px;color:#374151;">Tampines</div>
+          <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px;">
+            <div style="width:38%;background:#16a34a;height:8px;border-radius:4px;"></div>
+          </div>
+          <div style="font-size:10px;color:#374151;">$11,000</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+          <div style="font-weight:600;font-size:10px;margin-bottom:4px;color:#374151;">Ops Health</div>
+          <div style="font-size:10px;color:#16a34a;">● Orchard — 89% full</div>
+          <div style="font-size:10px;color:#f59e0b;">● Bugis — 62% full</div>
+          <div style="font-size:10px;color:#ef4444;">● Tampines — 41% full</div>
+        </div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+          <div style="font-weight:600;font-size:10px;margin-bottom:4px;color:#374151;">Top Clients</div>
+          <div style="font-size:10px;color:#374151;">Sarah T. — $3,200</div>
+          <div style="font-size:10px;color:#374151;">James L. — $2,800</div>
+          <div style="font-size:10px;color:#374151;">Mei Lin — $1,950</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup" data-choice="b" onclick="toggleSelect(this)" style="cursor:pointer">
+    <div class="mockup-header">B — Branch Cards First</div>
+    <div class="mockup-body" style="padding:12px;font-size:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+          <div style="font-weight:600;font-size:11px;color:#374151;margin-bottom:2px;">🏥 Orchard</div>
+          <div style="font-size:16px;font-weight:700;color:#16a34a;">$21,400</div>
+          <div style="font-size:10px;color:#6b7280;">142 bookings · 89% full</div>
+          <div style="margin-top:4px;font-size:10px;color:#2563eb;cursor:pointer;">View branch →</div>
+        </div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+          <div style="font-weight:600;font-size:11px;color:#374151;margin-bottom:2px;">🏥 Bugis</div>
+          <div style="font-size:16px;font-weight:700;color:#16a34a;">$15,800</div>
+          <div style="font-size:10px;color:#6b7280;">118 bookings · 62% full</div>
+          <div style="margin-top:4px;font-size:10px;color:#2563eb;cursor:pointer;">View branch →</div>
+        </div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+          <div style="font-weight:600;font-size:11px;color:#374151;margin-bottom:2px;">🏥 Tampines</div>
+          <div style="font-size:16px;font-weight:700;color:#16a34a;">$11,000</div>
+          <div style="font-size:10px;color:#6b7280;">82 bookings · 41% full</div>
+          <div style="margin-top:4px;font-size:10px;color:#2563eb;cursor:pointer;">View branch →</div>
+        </div>
+        <div style="background:#f0fdf4;border:2px dashed #86efac;border-radius:6px;padding:8px;display:flex;align-items:center;justify-content:center;">
+          <div style="text-align:center;color:#16a34a;font-size:10px;">+ Add Branch</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px;text-align:center;">
+          <div style="font-size:15px;font-weight:700;color:#16a34a;">$48,200</div>
+          <div style="color:#6b7280;font-size:9px;">Total Revenue</div>
+        </div>
+        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:6px;text-align:center;">
+          <div style="font-size:15px;font-weight:700;color:#2563eb;">342</div>
+          <div style="color:#6b7280;font-size:9px;">Total Bookings</div>
+        </div>
+        <div style="background:#fdf4ff;border:1px solid #d8b4fe;border-radius:6px;padding:6px;text-align:center;">
+          <div style="font-size:15px;font-weight:700;color:#9333ea;">1,204</div>
+          <div style="color:#6b7280;font-size:9px;">Active Clients</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Click a layout to select it</p>
