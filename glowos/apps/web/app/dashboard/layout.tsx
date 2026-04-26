@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
+import { BrandViewBanner } from './components/BrandViewBanner';
 
 interface Merchant {
   id: string;
@@ -373,6 +374,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
 
         <ImpersonationBanner />
+        <BrandViewBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">
           {children}
         </main>
