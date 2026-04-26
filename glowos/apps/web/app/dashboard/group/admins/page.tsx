@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiFetch, ApiError } from '../../../lib/api';
 
 interface Admin {
   userId: string;
@@ -11,8 +12,6 @@ interface Admin {
   isSelf: boolean;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
 export default function GroupAdminsPage() {
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,37 +21,26 @@ export default function GroupAdminsPage() {
   const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
     setLoading(true);
-    fetch(`${API_URL}/group/admins`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (r) => {
-        if (!r.ok) {
-          const j = await r.json().catch(() => ({}));
-          throw new Error(j.message ?? 'Failed to load brand admins');
-        }
-        return r.json();
-      })
+    setPageError(null);
+    apiFetch('/group/admins')
       .then((d: { admins: Admin[] }) => setAdmins(d.admins))
-      .catch((e: Error) => setPageError(e.message))
+      .catch((e: unknown) => {
+        if (e instanceof ApiError) setPageError(e.message ?? 'Failed to load brand admins');
+        else setPageError('Failed to load brand admins');
+      })
       .finally(() => setLoading(false));
   }, [refetchKey]);
 
   async function remove(userId: string) {
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
-    const r = await fetch(`${API_URL}/group/admins/${userId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      setPageError(j.message ?? 'Failed to remove brand admin');
+    try {
+      await apiFetch(`/group/admins/${userId}`, { method: 'DELETE' });
       setConfirmingRemoval(null);
-      return;
+      setRefetchKey((k) => k + 1);
+    } catch (e) {
+      setPageError(e instanceof ApiError ? e.message ?? 'Failed to remove brand admin' : 'Failed to remove brand admin');
+      setConfirmingRemoval(null);
     }
-    setConfirmingRemoval(null);
-    setRefetchKey((k) => k + 1);
   }
 
   return (
@@ -156,20 +144,16 @@ function AddAdminModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     if (!email.trim()) return;
     setSubmitting(true);
     setError(null);
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
-    const r = await fetch(`${API_URL}/group/admins`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ email: email.trim().toLowerCase() }),
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      setError(j.message ?? 'Failed to add brand admin');
+    try {
+      await apiFetch('/group/admins', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      onAdded();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message ?? 'Failed to add brand admin' : 'Failed to add brand admin');
       setSubmitting(false);
-      return;
     }
-    onAdded();
   }
 
   return (
