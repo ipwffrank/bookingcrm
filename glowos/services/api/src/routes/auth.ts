@@ -165,6 +165,19 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
     });
     const { passwordHash: _pw, ...safeUser } = user;
 
+    let group: { id: string; name: string } | null = null;
+    if (brandAdminGroupId) {
+      const [groupRow] = await db
+        .select({ id: groups.id, name: groups.name })
+        .from(groups)
+        .where(eq(groups.id, brandAdminGroupId))
+        .limit(1);
+      if (groupRow) group = groupRow;
+      // Else: brand_admin_group_id points to a missing/deleted group.
+      // Don't fail login — just omit `group` from the response. The frontend
+      // will not render the Group sidebar item; superadmin can clean up.
+    }
+
     if (user.role === 'staff') {
       return c.json({
         access_token: accessToken,
@@ -172,6 +185,7 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
         userType: 'staff',
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
         merchant: { id: merchant.id, name: merchant.name, slug: merchant.slug },
+        ...(group ? { group } : {}),
         ...(superAdmin ? { superAdmin: true } : {}),
       });
     }
@@ -180,6 +194,7 @@ auth.post("/login", zValidator(loginSchema), async (c) => {
       userType: "merchant",
       user: safeUser,
       merchant,
+      ...(group ? { group } : {}),
       access_token: accessToken,
       refresh_token: refreshToken,
       ...(superAdmin ? { superAdmin: true } : {}),
