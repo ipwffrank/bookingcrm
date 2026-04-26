@@ -529,6 +529,63 @@ auth.post("/end-impersonation", requireMerchant, async (c) => {
   });
 });
 
+// ─── POST /auth/end-brand-view ─────────────────────────────────────────────────
+// Counterpart of /auth/end-impersonation for brand-viewing sessions. Lives on
+// /auth so it remains callable while view-as-branch claims are active.
+auth.post("/end-brand-view", requireMerchant, async (c) => {
+  if (!c.get("brandViewing")) {
+    return c.json({ error: "Conflict", message: "Not currently brand-viewing" }, 409);
+  }
+
+  const userId = c.get("userId")!;
+
+  const [user] = await db
+    .select({
+      id: merchantUsers.id,
+      email: merchantUsers.email,
+      isActive: merchantUsers.isActive,
+      merchantId: merchantUsers.merchantId,
+      role: merchantUsers.role,
+      staffId: merchantUsers.staffId,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+    })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, userId))
+    .limit(1);
+
+  if (!user || !user.isActive) {
+    return c.json({ error: "Forbidden", message: "Account inactive" }, 403);
+  }
+
+  const superAdmin = isSuperAdminEmail(user.email);
+  const accessToken = generateAccessToken({
+    userId: user.id,
+    merchantId: user.merchantId,
+    role: user.role,
+    ...(user.staffId ? { staffId: user.staffId } : {}),
+    ...(superAdmin ? { superAdmin: true } : {}),
+    ...(user.brandAdminGroupId ? { brandAdminGroupId: user.brandAdminGroupId } : {}),
+  });
+  const refreshToken = generateRefreshToken({
+    userId: user.id,
+    ...(user.brandAdminGroupId ? { brandAdminGroupId: user.brandAdminGroupId } : {}),
+  });
+
+  // Return the home merchant row so the frontend can write it back into
+  // localStorage.merchant.
+  const [homeMerchant] = await db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, user.merchantId))
+    .limit(1);
+
+  return c.json({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    merchant: homeMerchant,
+  });
+});
+
 // ─── POST /auth/logout ─────────────────────────────────────────────────────────
 
 auth.post("/logout", requireMerchant, async (c) => {
