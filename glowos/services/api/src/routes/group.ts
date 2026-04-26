@@ -1,11 +1,14 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { randomBytes } from "node:crypto";
 import { eq, inArray, and, gte, lt, sum, count, countDistinct, desc, or, ilike, sql } from "drizzle-orm";
-import { db, merchants, merchantUsers, bookings, clients } from "@glowos/db";
+import { db, merchants, merchantUsers, bookings, clients, brandInvites } from "@glowos/db";
 import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
 import { z } from "zod";
 import { zValidator } from "../middleware/validate.js";
+
+type AppContext = Context<{ Variables: AppVariables }>;
 
 const groupRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -640,6 +643,190 @@ groupRouter.delete("/admins/:userId", async (c) => {
     .where(eq(merchantUsers.id, userId));
 
   return c.json({ removed: true });
+});
+
+// ─── Brand invites (admin-side) ────────────────────────────────────────────────
+
+const createInviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  expiresInDays: z.number().int().min(1).max(30).optional(),
+}).strict();
+
+function publicWebUrl(c: AppContext): string {
+  const fromEnv = process.env.PUBLIC_WEB_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  const origin = c.req.header("Origin") ?? c.req.header("Referer");
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      return `${u.protocol}//${u.host}`;
+    } catch { /* fall through */ }
+  }
+  return "http://localhost:3000";
+}
+
+// POST /group/invites — create a single-use, email-bound invite token
+groupRouter.post("/invites", zValidator(createInviteSchema), async (c) => {
+  const groupId = c.get("groupId")!;
+  const userId = c.get("userId")!;
+  const body = c.get("body") as z.infer<typeof createInviteSchema>;
+
+  // Reject if the email is already a brand admin of THIS group (no-op)
+  const [existingAdmin] = await db
+    .select({ id: merchantUsers.id })
+    .from(merchantUsers)
+    .where(
+      and(
+        eq(merchantUsers.email, body.email),
+        eq(merchantUsers.brandAdminGroupId, groupId),
+      ),
+    )
+    .limit(1);
+  if (existingAdmin) {
+    return c.json(
+      { error: "Conflict", message: "User is already a brand admin of this group" },
+      409,
+    );
+  }
+
+  // Reject if there's an active invite for the same email + group
+  const now = new Date();
+  const [activeInvite] = await db
+    .select({ id: brandInvites.id })
+    .from(brandInvites)
+    .where(
+      and(
+        eq(brandInvites.groupId, groupId),
+        eq(brandInvites.inviteeEmail, body.email),
+        sql`${brandInvites.acceptedAt} IS NULL`,
+        sql`${brandInvites.canceledAt} IS NULL`,
+        gte(brandInvites.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  if (activeInvite) {
+    return c.json(
+      {
+        error: "Conflict",
+        message: "An active invite for this email already exists. Cancel it first.",
+      },
+      409,
+    );
+  }
+
+  const days = body.expiresInDays ?? 7;
+  const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  const token = randomBytes(32).toString("base64url");
+
+  const [created] = await db
+    .insert(brandInvites)
+    .values({
+      groupId,
+      createdByUserId: userId,
+      inviteeEmail: body.email,
+      token,
+      expiresAt,
+    })
+    .returning();
+
+  return c.json(
+    {
+      invite: {
+        id: created.id,
+        inviteeEmail: created.inviteeEmail,
+        token: created.token,
+        expiresAt: created.expiresAt,
+        createdAt: created.createdAt,
+        shareUrl: `${publicWebUrl(c)}/brand-invite/${created.token}`,
+      },
+    },
+    201,
+  );
+});
+
+// GET /group/invites?status=outstanding|all
+groupRouter.get("/invites", async (c) => {
+  const groupId = c.get("groupId")!;
+  const status = c.req.query("status") === "all" ? "all" : "outstanding";
+  const now = new Date();
+
+  const baseQuery = db
+    .select({
+      id: brandInvites.id,
+      inviteeEmail: brandInvites.inviteeEmail,
+      token: brandInvites.token,
+      expiresAt: brandInvites.expiresAt,
+      createdAt: brandInvites.createdAt,
+      acceptedAt: brandInvites.acceptedAt,
+      canceledAt: brandInvites.canceledAt,
+      createdByName: merchantUsers.name,
+      createdByEmail: merchantUsers.email,
+    })
+    .from(brandInvites)
+    .leftJoin(merchantUsers, eq(brandInvites.createdByUserId, merchantUsers.id))
+    .where(eq(brandInvites.groupId, groupId))
+    .orderBy(desc(brandInvites.createdAt))
+    .limit(200);
+
+  const rows = await baseQuery;
+  const baseUrl = publicWebUrl(c);
+
+  const enriched = rows.map((r) => {
+    const computedStatus: "outstanding" | "accepted" | "canceled" | "expired" = r.acceptedAt
+      ? "accepted"
+      : r.canceledAt
+        ? "canceled"
+        : new Date(r.expiresAt).getTime() <= now.getTime()
+          ? "expired"
+          : "outstanding";
+    return {
+      ...r,
+      status: computedStatus,
+      shareUrl: `${baseUrl}/brand-invite/${r.token}`,
+    };
+  });
+
+  const filtered = status === "outstanding"
+    ? enriched.filter((r) => r.status === "outstanding")
+    : enriched;
+
+  return c.json({ invites: filtered });
+});
+
+// DELETE /group/invites/:id — cancel an outstanding invite
+groupRouter.delete("/invites/:id", async (c) => {
+  const groupId = c.get("groupId")!;
+  const id = c.req.param("id")!;
+
+  const [invite] = await db
+    .select({
+      id: brandInvites.id,
+      acceptedAt: brandInvites.acceptedAt,
+      canceledAt: brandInvites.canceledAt,
+    })
+    .from(brandInvites)
+    .where(and(eq(brandInvites.id, id), eq(brandInvites.groupId, groupId)))
+    .limit(1);
+
+  if (!invite) {
+    return c.json({ error: "Not Found", message: "Invite not found" }, 404);
+  }
+  if (invite.acceptedAt) {
+    return c.json(
+      { error: "Conflict", message: "Invite already accepted; cannot cancel" },
+      409,
+    );
+  }
+  if (invite.canceledAt) {
+    return c.json({ canceled: true });
+  }
+
+  await db
+    .update(brandInvites)
+    .set({ canceledAt: new Date() })
+    .where(eq(brandInvites.id, id));
+
+  return c.json({ canceled: true });
 });
 
 export { groupRouter };

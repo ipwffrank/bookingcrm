@@ -29,6 +29,7 @@ export default {
     "./src/schema/super-admin.ts",
     "./src/schema/ipay88.ts",
     "./src/schema/treatment-quotes.ts",
+    "./src/schema/brand-invites.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
