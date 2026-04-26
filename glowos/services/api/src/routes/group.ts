@@ -3,10 +3,32 @@ import { eq, inArray, and, gte, lt, sum, count, countDistinct, desc, or, ilike, 
 import { db, merchants, bookings, clients } from "@glowos/db";
 import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
+import { z } from "zod";
+import { zValidator } from "../middleware/validate.js";
 
 const groupRouter = new Hono<{ Variables: AppVariables }>();
 
 groupRouter.use("*", requireGroupAccess);
+
+const createBranchSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  slug: z
+    .string()
+    .trim()
+    .min(3)
+    .max(100)
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, "slug must be lowercase letters, numbers, dashes; no leading/trailing dash"),
+  country: z.enum(["SG", "MY"]),
+  category: z
+    .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"])
+    .optional(),
+  addressLine1: z.string().max(255).optional(),
+  addressLine2: z.string().max(255).optional(),
+  postalCode: z.string().max(10).optional(),
+  phone: z.string().max(20).optional(),
+  email: z.string().email().max(255).optional(),
+  description: z.string().optional(),
+}).strict();
 
 function parseDateRange(fromStr: string | undefined, toStr: string | undefined): { from: Date; to: Date } {
   const now = new Date();
@@ -296,6 +318,47 @@ groupRouter.get("/clients", async (c) => {
     page,
     limit,
   });
+});
+
+// ─── POST /group/branches ──────────────────────────────────────────────────────
+groupRouter.post("/branches", zValidator(createBranchSchema), async (c) => {
+  const groupId = c.get("groupId")!;
+  const body = c.get("body") as z.infer<typeof createBranchSchema>;
+
+  // Slug uniqueness — explicit pre-check for a friendly 409 ahead of the unique-
+  // constraint violation that would surface as a generic 500.
+  const [existing] = await db
+    .select({ id: merchants.id })
+    .from(merchants)
+    .where(eq(merchants.slug, body.slug))
+    .limit(1);
+  if (existing) {
+    return c.json({ error: "Conflict", message: "Slug already taken" }, 409);
+  }
+
+  const timezone = body.country === "MY" ? "Asia/Kuala_Lumpur" : "Asia/Singapore";
+  const paymentGateway = body.country === "MY" ? "ipay88" : "stripe";
+
+  const [created] = await db
+    .insert(merchants)
+    .values({
+      slug: body.slug,
+      name: body.name,
+      country: body.country,
+      timezone,
+      paymentGateway,
+      groupId,
+      ...(body.category ? { category: body.category } : {}),
+      ...(body.addressLine1 !== undefined ? { addressLine1: body.addressLine1 } : {}),
+      ...(body.addressLine2 !== undefined ? { addressLine2: body.addressLine2 } : {}),
+      ...(body.postalCode !== undefined ? { postalCode: body.postalCode } : {}),
+      ...(body.phone !== undefined ? { phone: body.phone } : {}),
+      ...(body.email !== undefined ? { email: body.email } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
+    })
+    .returning();
+
+  return c.json({ merchant: created }, 201);
 });
 
 export { groupRouter };
