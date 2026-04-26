@@ -61,6 +61,8 @@ export const clinicalRecords = pgTable(
     // Future-proofing for photos + consent forms; nullable for now.
     attachments: jsonb("attachments"),
     signedConsent: jsonb("signed_consent"),
+    // Set once a consent form is submitted; locks the record from further writes.
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
