@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { BranchPicker } from './components/BranchPicker';
 
 interface Group {
   id: string;
@@ -55,20 +56,11 @@ function XIcon({ className }: { className?: string }) {
   );
 }
 
-function ArrowLeftIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-    </svg>
-  );
-}
-
 export default function GroupLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [group, setGroup] = useState<Group | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [merchantName, setMerchantName] = useState<string>('');
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -79,10 +71,6 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
     const cached = localStorage.getItem('group');
     if (cached) {
       try { setGroup(JSON.parse(cached) as Group); } catch { /* ignore */ }
-    }
-    const cachedMerchant = localStorage.getItem('merchant');
-    if (cachedMerchant) {
-      try { setMerchantName((JSON.parse(cachedMerchant) as { name?: string }).name ?? ''); } catch { /* ignore */ }
     }
   }, [router]);
 
@@ -102,15 +90,7 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
         {group && <p className="text-xs text-grey-60 mt-0.5 truncate">{group.name} — Group Admin</p>}
       </div>
       <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {merchantName && (
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 px-3 py-2 mb-1 text-xs font-medium text-grey-60 hover:text-tone-ink"
-          >
-            <ArrowLeftIcon className="w-4 h-4" />
-            Back to {merchantName}
-          </Link>
-        )}
+        <BranchPicker />
         {GROUP_NAV.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
