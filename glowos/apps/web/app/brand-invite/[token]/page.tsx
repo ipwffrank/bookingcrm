@@ -12,6 +12,7 @@ interface InviteValid {
   inviterName: string | null;
   inviterEmail: string | null;
   inviteeEmail: string;
+  hasAccount: boolean;
 }
 
 interface InviteInvalid {
@@ -85,6 +86,7 @@ export default function BrandInviteAcceptPage() {
           ) : (
             <Valid
               data={data}
+              token={token}
               signedInEmail={signedInEmail}
               accepting={accepting}
               error={error}
@@ -118,6 +120,7 @@ function Invalid({ reason }: { reason: 'expired' | 'used' | 'canceled' | 'not_fo
 
 function Valid({
   data,
+  token,
   signedInEmail,
   accepting,
   error,
@@ -125,6 +128,7 @@ function Valid({
   onSignIn,
 }: {
   data: InviteValid;
+  token: string;
   signedInEmail: string | null;
   accepting: boolean;
   error: string | null;
@@ -132,6 +136,8 @@ function Valid({
   onSignIn: () => void;
 }) {
   const emailMatches = signedInEmail && signedInEmail === data.inviteeEmail.toLowerCase();
+  const isNewAccountPath = !signedInEmail && !data.hasAccount;
+
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-grey-60 mb-1">You&apos;ve been invited to join</p>
@@ -151,15 +157,27 @@ function Valid({
       <div className="bg-tone-surface-warm border border-grey-10 rounded-md p-4 mb-6">
         <p className="text-xs uppercase tracking-wide text-grey-60 mb-2">Accepting will</p>
         <ul className="text-sm text-tone-ink space-y-1">
-          <li>• Move your branch into this brand</li>
-          <li>• Make you a co-brand-admin</li>
-          <li>• Re-issue your session</li>
+          {isNewAccountPath ? (
+            <>
+              <li>• Create your GlowOS account</li>
+              <li>• Make you a co-brand-admin of {data.groupName}</li>
+              <li>• Sign you in</li>
+            </>
+          ) : (
+            <>
+              <li>• Move your branch into this brand</li>
+              <li>• Make you a co-brand-admin</li>
+              <li>• Re-issue your session</li>
+            </>
+          )}
         </ul>
       </div>
 
       {error && <p className="text-sm text-semantic-danger mb-4">{error}</p>}
 
-      {!signedInEmail ? (
+      {isNewAccountPath ? (
+        <SignupForm token={token} email={data.inviteeEmail} />
+      ) : !signedInEmail ? (
         <button
           onClick={onSignIn}
           className="w-full bg-tone-ink text-tone-surface px-4 py-2.5 rounded-md text-sm font-medium hover:opacity-90"
@@ -197,5 +215,92 @@ function Valid({
         </div>
       )}
     </div>
+  );
+}
+
+function SignupForm({ token, email }: { token: string; email: string }) {
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || password.length < 8) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = (await apiFetch(`/brand-invite/${token}/signup-and-accept`, {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim(), password }),
+      })) as {
+        access_token: string;
+        refresh_token: string;
+        user: unknown;
+        merchant: unknown;
+        group: unknown;
+      };
+      localStorage.setItem('access_token', res.access_token);
+      localStorage.setItem('refresh_token', res.refresh_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
+      localStorage.setItem('merchant', JSON.stringify(res.merchant));
+      localStorage.setItem('group', JSON.stringify(res.group));
+      window.location.assign('/dashboard/group/overview');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message ?? 'Signup failed' : 'Signup failed');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <label className="block">
+        <span className="block text-xs uppercase tracking-wide text-grey-60 mb-1">Email</span>
+        <input
+          type="email"
+          value={email}
+          disabled
+          className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm bg-grey-10 text-grey-50"
+        />
+      </label>
+      <label className="block">
+        <span className="block text-xs uppercase tracking-wide text-grey-60 mb-1">Your name</span>
+        <input
+          type="text"
+          value={name}
+          onChange={(ev) => setName(ev.target.value)}
+          required
+          maxLength={100}
+          autoFocus
+          className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tone-sage focus:border-tone-sage"
+        />
+      </label>
+      <label className="block">
+        <span className="block text-xs uppercase tracking-wide text-grey-60 mb-1">Choose a password</span>
+        <input
+          type="password"
+          value={password}
+          onChange={(ev) => setPassword(ev.target.value)}
+          required
+          minLength={8}
+          className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tone-sage focus:border-tone-sage"
+        />
+        <span className="block text-xs text-grey-50 mt-1">Minimum 8 characters.</span>
+      </label>
+      {error && <p className="text-sm text-semantic-danger">{error}</p>}
+      <button
+        type="submit"
+        disabled={submitting || !name.trim() || password.length < 8}
+        className="w-full bg-tone-ink text-tone-surface px-4 py-2.5 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+      >
+        {submitting ? 'Creating account…' : 'Create account & accept'}
+      </button>
+      <p className="text-xs text-grey-50 text-center pt-1">
+        Already have an account with this email?{' '}
+        <Link href={`/login?return_to=${encodeURIComponent(`/brand-invite/${token}`)}`} className="text-tone-sage hover:text-tone-ink underline underline-offset-2">
+          Sign in to accept
+        </Link>
+      </p>
+    </form>
   );
 }
