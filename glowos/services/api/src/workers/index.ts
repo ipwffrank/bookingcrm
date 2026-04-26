@@ -2,6 +2,7 @@ import type { Worker } from "bullmq";
 import { createNotificationWorker } from "./notification.worker.js";
 import { createCrmWorker } from "./crm.worker.js";
 import { createVipWorker } from "./vip.worker.js";
+import { createAutomationWorker } from "./automation.worker.js";
 import { addJob } from "../lib/queue.js";
 import { sweepExpiredQuotes } from "../routes/quotes.js";
 
@@ -28,6 +29,7 @@ export function startWorkers(): void {
     createNotificationWorker(),
     createCrmWorker(),
     createVipWorker(),
+    createAutomationWorker(),
   ];
 
   console.log("[Workers] All workers started", { count: workers.length });
@@ -39,6 +41,14 @@ export function startWorkers(): void {
     "waitlist_expire_stale",
     {},
     { repeat: { pattern: "5 0 * * *" } } // 00:05 daily, server time
+  );
+
+  // Marketing automation daily sweep: birthday / win-back / re-booking.
+  void addJob(
+    "automations",
+    "automation_daily_sweep",
+    {},
+    { repeat: { pattern: "5 1 * * *" } } // 01:05 UTC daily
   );
 
   // Treatment-quote daily cron: expire past-validUntil pending quotes, then

@@ -23,6 +23,8 @@ export const vipQueue = new Queue("vip", { connection, prefix: QUEUE_PREFIX });
 
 export const churnQueue = new Queue("churn", { connection, prefix: QUEUE_PREFIX });
 
+export const automationsQueue = new Queue("automations", { connection, prefix: QUEUE_PREFIX });
+
 // ─── Queue registry for addJob ─────────────────────────────────────────────────
 
 const queues: Record<string, Queue> = {
@@ -30,6 +32,7 @@ const queues: Record<string, Queue> = {
   crm: crmQueue,
   vip: vipQueue,
   churn: churnQueue,
+  automations: automationsQueue,
 };
 
 // ─── Default retry options ─────────────────────────────────────────────────────

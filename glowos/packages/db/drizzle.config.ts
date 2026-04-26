@@ -31,6 +31,7 @@ export default {
     "./src/schema/treatment-quotes.ts",
     "./src/schema/brand-invites.ts",
     "./src/schema/clinical-records.ts",
+    "./src/schema/automations.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",
