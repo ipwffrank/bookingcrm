@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { eq, inArray, and, gte, lt, sum, count, countDistinct, desc, or, ilike, sql } from "drizzle-orm";
 import { db, merchants, bookings, clients } from "@glowos/db";
-import { requireGroupAdmin } from "../middleware/groupAuth.js";
+import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
 
 const groupRouter = new Hono<{ Variables: AppVariables }>();
 
-groupRouter.use("*", requireGroupAdmin);
+groupRouter.use("*", requireGroupAccess);
 
 function parseDateRange(fromStr: string | undefined, toStr: string | undefined): { from: Date; to: Date } {
   const now = new Date();
