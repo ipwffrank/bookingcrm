@@ -514,4 +514,132 @@ groupRouter.post("/view-as-branch", zValidator(viewAsBranchSchema), async (c) =>
   });
 });
 
+// ─── Co-brand-admin promotion ──────────────────────────────────────────────────
+
+const promoteAdminSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+}).strict();
+
+// GET /group/admins — list current brand admins for the caller's group
+groupRouter.get("/admins", async (c) => {
+  const groupId = c.get("groupId")!;
+  const callerUserId = c.get("userId")!;
+
+  const rows = await db
+    .select({
+      userId: merchantUsers.id,
+      name: merchantUsers.name,
+      email: merchantUsers.email,
+      homeMerchantId: merchantUsers.merchantId,
+      homeMerchantName: merchants.name,
+    })
+    .from(merchantUsers)
+    .innerJoin(merchants, eq(merchantUsers.merchantId, merchants.id))
+    .where(eq(merchantUsers.brandAdminGroupId, groupId));
+
+  const admins = rows
+    .map((r) => ({ ...r, isSelf: r.userId === callerUserId }))
+    .sort((a, b) => {
+      if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+      return (a.name ?? "").localeCompare(b.name ?? "") || a.email.localeCompare(b.email);
+    });
+
+  return c.json({ admins });
+});
+
+// POST /group/admins — promote by email; target's merchant must already be in this group
+groupRouter.post("/admins", zValidator(promoteAdminSchema), async (c) => {
+  const groupId = c.get("groupId")!;
+  const body = c.get("body") as z.infer<typeof promoteAdminSchema>;
+
+  const [target] = await db
+    .select({
+      id: merchantUsers.id,
+      name: merchantUsers.name,
+      email: merchantUsers.email,
+      isActive: merchantUsers.isActive,
+      brandAdminGroupId: merchantUsers.brandAdminGroupId,
+      merchantId: merchantUsers.merchantId,
+      merchantGroupId: merchants.groupId,
+      merchantName: merchants.name,
+    })
+    .from(merchantUsers)
+    .innerJoin(merchants, eq(merchantUsers.merchantId, merchants.id))
+    .where(eq(merchantUsers.email, body.email))
+    .limit(1);
+
+  if (!target) {
+    return c.json({ error: "Not Found", message: "No user with that email" }, 404);
+  }
+  if (!target.isActive) {
+    return c.json({ error: "Conflict", message: "User account is inactive" }, 409);
+  }
+  if (target.brandAdminGroupId) {
+    return c.json({ error: "Conflict", message: "User is already a brand admin" }, 409);
+  }
+  if (target.merchantGroupId !== groupId) {
+    return c.json(
+      { error: "Conflict", message: "User's branch must be in this brand before promotion" },
+      409,
+    );
+  }
+
+  await db
+    .update(merchantUsers)
+    .set({ brandAdminGroupId: groupId })
+    .where(eq(merchantUsers.id, target.id));
+
+  return c.json(
+    {
+      admin: {
+        userId: target.id,
+        name: target.name,
+        email: target.email,
+        homeMerchantId: target.merchantId,
+        homeMerchantName: target.merchantName,
+        isSelf: false,
+      },
+    },
+    201,
+  );
+});
+
+// DELETE /group/admins/:userId — demote; rejects if it would leave zero admins
+groupRouter.delete("/admins/:userId", async (c) => {
+  const groupId = c.get("groupId")!;
+  const userId = c.req.param("userId")!;
+
+  const [target] = await db
+    .select({ id: merchantUsers.id, brandAdminGroupId: merchantUsers.brandAdminGroupId })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, userId))
+    .limit(1);
+
+  if (!target || target.brandAdminGroupId !== groupId) {
+    return c.json({ error: "Not Found", message: "User is not a brand admin of this group" }, 404);
+  }
+
+  const [{ count: adminCount }] = await db
+    .select({ count: count(merchantUsers.id) })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.brandAdminGroupId, groupId));
+
+  if (adminCount <= 1) {
+    return c.json(
+      {
+        error: "Conflict",
+        message: "Cannot remove the last brand admin. Promote someone else first.",
+      },
+      409,
+    );
+  }
+
+  await db
+    .update(merchantUsers)
+    .set({ brandAdminGroupId: null })
+    .where(eq(merchantUsers.id, userId));
+
+  return c.json({ removed: true });
+});
+
 export { groupRouter };
