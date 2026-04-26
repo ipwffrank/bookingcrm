@@ -148,21 +148,30 @@ function AutomationCard({
           </div>
         </div>
         {/* Toggle */}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={state.enabled}
-          onClick={() => setState((s) => ({ ...s, enabled: !s.enabled }))}
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-            state.enabled ? 'bg-tone-ink' : 'bg-grey-20'
-          }`}
-        >
-          <span
-            className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
-              state.enabled ? 'translate-x-5' : 'translate-x-0'
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className={`text-xs font-semibold uppercase tracking-wider ${state.enabled ? 'text-tone-sage' : 'text-grey-50'}`}>
+            {state.enabled ? 'On' : 'Off'}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.enabled}
+            onClick={() => setState((s) => ({ ...s, enabled: !s.enabled }))}
+            className={`relative inline-flex h-7 w-13 flex-shrink-0 rounded-full border-2 transition-colors focus:outline-none focus:ring-2 focus:ring-tone-sage/30 ${
+              state.enabled
+                ? 'bg-tone-sage border-tone-sage'
+                : 'bg-grey-15 border-grey-30'
             }`}
-          />
-        </button>
+            style={{ width: '3rem' }}
+          >
+            <span
+              className={`inline-block h-5 w-5 rounded-full bg-tone-surface shadow-md ring-1 ring-grey-30/50 transform transition-transform ${
+                state.enabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+              style={{ marginTop: '1px' }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Config inputs per kind */}
