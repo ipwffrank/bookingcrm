@@ -30,6 +30,22 @@ const createBranchSchema = z.object({
   description: z.string().optional(),
 }).strict();
 
+const updateBranchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255),
+    category: z.enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"]),
+    addressLine1: z.string().max(255).nullable(),
+    addressLine2: z.string().max(255).nullable(),
+    postalCode: z.string().max(10).nullable(),
+    phone: z.string().max(20).nullable(),
+    email: z.string().email().max(255).nullable(),
+    description: z.string().nullable(),
+    logoUrl: z.string().url().nullable(),
+    coverPhotoUrl: z.string().url().nullable(),
+  })
+  .partial()
+  .strict();
+
 function parseDateRange(fromStr: string | undefined, toStr: string | undefined): { from: Date; to: Date } {
   const now = new Date();
   const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
@@ -360,5 +376,38 @@ groupRouter.post("/branches", zValidator(createBranchSchema), async (c) => {
 
   return c.json({ merchant: created }, 201);
 });
+
+// ─── PATCH /group/branches/:merchantId ─────────────────────────────────────────
+groupRouter.patch(
+  "/branches/:merchantId",
+  zValidator(updateBranchSchema),
+  async (c) => {
+    const groupId = c.get("groupId")!;
+    const merchantId = c.req.param("merchantId")!;
+    const body = c.get("body") as z.infer<typeof updateBranchSchema>;
+
+    if (Object.keys(body).length === 0) {
+      return c.json({ error: "Bad Request", message: "No fields provided" }, 400);
+    }
+
+    // Verify target is in caller's group
+    const [target] = await db
+      .select({ id: merchants.id })
+      .from(merchants)
+      .where(and(eq(merchants.id, merchantId), eq(merchants.groupId, groupId)))
+      .limit(1);
+    if (!target) {
+      return c.json({ error: "Not Found", message: "Branch not in your group" }, 404);
+    }
+
+    const [updated] = await db
+      .update(merchants)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(merchants.id, merchantId))
+      .returning();
+
+    return c.json({ merchant: updated });
+  },
+);
 
 export { groupRouter };
