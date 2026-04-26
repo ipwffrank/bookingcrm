@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { BranchForm } from './components/BranchForm';
 
 interface Branch {
   merchantId: string;
@@ -25,6 +26,9 @@ export default function BranchesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [refetchKey, setRefetchKey] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -37,60 +41,101 @@ export default function BranchesPage() {
       .then((d: { branches: Branch[] }) => setBranches(d.branches))
       .catch(() => setError('Failed to load branches'))
       .finally(() => setLoading(false));
-  }, [from, to]);
+  }, [from, to, refetchKey]);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Branches</h1>
-        <div className="flex items-center gap-2">
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500" />
-          <span className="text-xs text-gray-400">to</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div>
+          <h1 className="text-2xl font-semibold text-tone-ink">Branches</h1>
+          <p className="text-sm text-grey-60">Every location in your brand.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+              className="text-xs border border-grey-20 rounded-lg px-2 py-1.5 text-grey-70 outline-none focus:ring-2 focus:ring-tone-sage" />
+            <span className="text-xs text-grey-40">to</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+              className="text-xs border border-grey-20 rounded-lg px-2 py-1.5 text-grey-70 outline-none focus:ring-2 focus:ring-tone-sage" />
+          </div>
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="bg-tone-ink text-tone-surface px-4 py-2 rounded-md text-sm font-medium hover:opacity-90"
+          >
+            + New branch
+          </button>
         </div>
       </div>
 
-      {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">{error}</div>}
+      {error && <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/20 px-4 py-3 text-sm text-semantic-danger">{error}</div>}
 
       {loading ? (
-        <div className="text-sm text-gray-500">Loading...</div>
+        <div className="text-sm text-grey-60">Loading...</div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-tone-surface rounded-xl border border-grey-20 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-tone-surface-warm border-b border-grey-20">
               <tr>
-                <th className="text-left px-4 py-3 font-semibold text-gray-600">Branch</th>
-                <th className="text-left px-4 py-3 font-semibold text-gray-600 hidden sm:table-cell">Location</th>
-                <th className="text-right px-4 py-3 font-semibold text-gray-600">Revenue</th>
-                <th className="text-right px-4 py-3 font-semibold text-gray-600 hidden md:table-cell">Bookings</th>
+                <th className="text-left px-4 py-3 font-semibold text-grey-70">Branch</th>
+                <th className="text-left px-4 py-3 font-semibold text-grey-70 hidden sm:table-cell">Location</th>
+                <th className="text-right px-4 py-3 font-semibold text-grey-70">Revenue</th>
+                <th className="text-right px-4 py-3 font-semibold text-grey-70 hidden md:table-cell">Bookings</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-grey-10">
               {branches.map((b) => (
-                <tr key={b.merchantId} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-800">{b.name}</td>
-                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{b.location || '—'}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-green-600">{fmtCurrency(b.revenue)}</td>
-                  <td className="px-4 py-3 text-right text-gray-600 hidden md:table-cell">{b.bookingCount}</td>
+                <tr key={b.merchantId} className="hover:bg-tone-surface-warm transition-colors">
+                  <td className="px-4 py-3 font-medium text-tone-ink">{b.name}</td>
+                  <td className="px-4 py-3 text-grey-60 hidden sm:table-cell">{b.location || '—'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-tone-ink">{fmtCurrency(b.revenue)}</td>
+                  <td className="px-4 py-3 text-right text-grey-70 hidden md:table-cell">{b.bookingCount}</td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/dashboard/group/branches/${b.merchantId}?from=${from}&to=${to}`}
-                      className="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
-                    >
-                      View →
-                    </Link>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => setEditing(b.merchantId)}
+                        className="text-sm text-tone-sage hover:text-tone-ink underline underline-offset-2"
+                      >
+                        Edit
+                      </button>
+                      <Link
+                        href={`/dashboard/group/branches/${b.merchantId}?from=${from}&to=${to}`}
+                        className="text-tone-sage hover:text-tone-ink text-xs font-medium"
+                      >
+                        View →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}
               {branches.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">No branches found.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-grey-40 text-sm">No branches found.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+      )}
+
+      {createOpen && (
+        <BranchForm
+          mode="create"
+          onClose={() => setCreateOpen(false)}
+          onSaved={() => {
+            setCreateOpen(false);
+            setRefetchKey((k) => k + 1);
+          }}
+        />
+      )}
+      {editing && (
+        <BranchForm
+          mode="edit"
+          merchantId={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            setRefetchKey((k) => k + 1);
+          }}
+        />
       )}
     </div>
   );
