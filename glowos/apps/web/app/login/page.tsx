@@ -43,6 +43,8 @@ export default function LoginPage() {
         localStorage.setItem('merchant', JSON.stringify(data.merchant));
         if (data.superAdmin) localStorage.setItem('superAdmin', 'true');
         else localStorage.removeItem('superAdmin');
+        if (data.group) localStorage.setItem('group', JSON.stringify(data.group));
+        else localStorage.removeItem('group');
         router.push(data.superAdmin ? '/super' : '/staff/dashboard');
       } else {
         localStorage.setItem('access_token', data.access_token);
@@ -51,6 +53,8 @@ export default function LoginPage() {
         localStorage.setItem('merchant', JSON.stringify(data.merchant));
         if (data.superAdmin) localStorage.setItem('superAdmin', 'true');
         else localStorage.removeItem('superAdmin');
+        if (data.group) localStorage.setItem('group', JSON.stringify(data.group));
+        else localStorage.removeItem('group');
         router.push(data.superAdmin ? '/super' : '/dashboard');
       }
     } catch (err) {
