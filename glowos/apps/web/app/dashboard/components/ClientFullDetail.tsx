@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
 import { NoShowChip } from './NoShowChip';
+import { PrivatePhoto } from './PrivatePhoto';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,7 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   interface ClinicalAttachment {
     id: string;
     url: string;
+    pathname?: string;   // private blob path — present on new uploads
     mime: string;
     size: number;
     name: string;
@@ -180,6 +182,7 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
     signedAt: string;
     signerIp: string | null;
     signatureUrl: string;
+    signaturePathname?: string;  // private blob path — present on new uploads
     contentHash: string;
   }
 
@@ -239,6 +242,9 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoKind, setPhotoKind] = useState<'before' | 'after' | 'other'>('other');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Lightbox for full-size private photo view
+  const [lightbox, setLightbox] = useState<{ recordId: string; attachmentId: string; alt: string } | null>(null);
 
   // Consent form state (keyed by recordId)
   const [showConsentForm, setShowConsentForm] = useState<string | null>(null);
@@ -1159,14 +1165,12 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                         <div className="mt-2 flex flex-wrap gap-2">
                           {attachments.map(att => (
                             <div key={att.id} className="relative group">
-                              <a href={att.url} target="_blank" rel="noopener noreferrer">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={att.url}
-                                  alt={att.name}
-                                  className="w-20 h-20 object-cover rounded-lg border border-grey-15"
-                                />
-                              </a>
+                              <PrivatePhoto
+                                proxyPath={`/merchant/clients/${profileId}/clinical-records/${record.id}/photos/${att.id}`}
+                                alt={att.name}
+                                className="w-20 h-20 object-cover rounded-lg border border-grey-15 cursor-pointer"
+                                onClick={() => setLightbox({ recordId: record.id, attachmentId: att.id, alt: att.name })}
+                              />
                               <span className="absolute top-1 left-1 text-[9px] font-semibold px-1 py-0.5 rounded bg-tone-ink/70 text-white uppercase tracking-wide">
                                 {kindLabel[att.kind as keyof typeof kindLabel] ?? att.kind}
                               </span>
@@ -1244,9 +1248,9 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                             Signed by <span className="font-semibold">{record.signedConsent.signerName}</span>
                             {' '}at {new Date(record.signedConsent.signedAt).toLocaleString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
-                          {record.signedConsent.signatureUrl && (
-                            <img
-                              src={record.signedConsent.signatureUrl}
+                          {(record.signedConsent.signaturePathname || record.signedConsent.signatureUrl) && (
+                            <PrivatePhoto
+                              proxyPath={`/merchant/clients/${profileId}/clinical-records/${record.id}/consent-signature`}
                               alt="Client signature"
                               className="mt-1 border border-grey-15 rounded-md bg-tone-surface max-h-24 w-full object-contain"
                             />
@@ -1697,6 +1701,20 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
         }
         description="Email and SMS opt-in status, campaign eligibility, and unsubscribe history will be tracked here."
       />
+
+      {/* ── Private photo lightbox ── */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-tone-ink/80 flex items-center justify-center p-4 print:hidden"
+          onClick={() => setLightbox(null)}
+        >
+          <PrivatePhoto
+            proxyPath={`/merchant/clients/${profileId}/clinical-records/${lightbox.recordId}/photos/${lightbox.attachmentId}`}
+            alt={lightbox.alt}
+            className="max-w-full max-h-full object-contain"
+          />
+        </div>
+      )}
 
     </div>
   );

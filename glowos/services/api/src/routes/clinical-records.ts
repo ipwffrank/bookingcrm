@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
-import { put, del } from "@vercel/blob";
+import { put, del, get } from "@vercel/blob";
 import { randomBytes, createHash } from "node:crypto";
 import {
   db,
@@ -270,6 +270,7 @@ clinicalRecordsRouter.post(
 interface Attachment {
   id: string;
   url: string;
+  pathname?: string;    // private blob path for proxy reads
   mime: string;
   size: number;
   name: string;
@@ -337,7 +338,7 @@ clinicalRecordsRouter.post(
     const blobPath = `clinical/${merchantId}/${recordId}/${id}-${safeName}`;
 
     const blobResult = await put(blobPath, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       contentType: file.type,
     });
@@ -353,6 +354,7 @@ clinicalRecordsRouter.post(
     const newAttachment: Attachment = {
       id,
       url: blobResult.url,
+      pathname: blobResult.pathname,   // used by proxy endpoint
       mime: file.type,
       size: file.size,
       name: safeName,
@@ -418,8 +420,8 @@ clinicalRecordsRouter.delete(
     if (!target)
       return c.json({ error: "Not Found", message: "Photo not found" }, 404);
 
-    // Best-effort blob deletion — keep row update consistent even if Blob API fails
-    await del(target.url).catch(() => {});
+    // Best-effort blob deletion — prefer pathname (private blobs), fall back to url for legacy
+    await del(target.pathname ?? target.url).catch(() => {});
 
     const updatedAttachments = existing.filter((a) => a.id !== photoId);
     await db
@@ -497,7 +499,7 @@ clinicalRecordsRouter.post(
     const sigBlobPath = `clinical/${merchantId}/${recordId}/consent-signature-${sigId}.png`;
 
     const sigBlob = await put(sigBlobPath, signatureBuffer, {
-      access: "public",
+      access: "private",
       contentType: "image/png",
     });
 
@@ -512,6 +514,7 @@ clinicalRecordsRouter.post(
       signedAt: new Date().toISOString(),
       signerIp: clientIp(c),
       signatureUrl: sigBlob.url,
+      signaturePathname: sigBlob.pathname,   // used by proxy endpoint
       contentHash,
     };
 
@@ -535,6 +538,135 @@ clinicalRecordsRouter.post(
     });
 
     return c.json({ record: updated });
+  },
+);
+
+// GET /merchant/clients/:profileId/clinical-records/:recordId/photos/:attachmentId
+// Streams private blob bytes back through the API after auth + record-membership checks.
+// Logs the read to clinical_record_access_log.
+clinicalRecordsRouter.get(
+  "/:profileId/clinical-records/:recordId/photos/:attachmentId",
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const profileId = c.req.param("profileId")!;
+    const recordId = c.req.param("recordId")!;
+    const attachmentId = c.req.param("attachmentId")!;
+    const userId = c.get("userId")!;
+    const userEmail = c.get("actorEmail") ?? "";
+
+    const clientId = await resolveClientId(profileId, merchantId);
+    if (!clientId) return c.json({ error: "Not Found", message: "Client not found" }, 404);
+
+    const [record] = await db
+      .select()
+      .from(clinicalRecords)
+      .where(
+        and(
+          eq(clinicalRecords.id, recordId),
+          eq(clinicalRecords.merchantId, merchantId),
+          eq(clinicalRecords.clientId, clientId),
+        ),
+      )
+      .limit(1);
+    if (!record) return c.json({ error: "Not Found", message: "Record not found" }, 404);
+
+    const attachments = (record.attachments as Array<{ id: string; pathname?: string; url?: string; mime?: string; name?: string }> | null) ?? [];
+    const target = attachments.find((a) => a.id === attachmentId);
+    if (!target) return c.json({ error: "Not Found", message: "Attachment not found" }, 404);
+
+    // Fetch from Vercel Blob (private)
+    const pathname = target.pathname ?? target.url;
+    if (!pathname) return c.json({ error: "Conflict", message: "Attachment has no storage path" }, 409);
+
+    let blobResult;
+    try {
+      blobResult = await get(pathname, { access: "private" });
+    } catch (err) {
+      console.error("[clinical-records] photo proxy fetch failed", { recordId, attachmentId, err });
+      return c.json({ error: "Internal Server Error", message: "Failed to fetch photo" }, 500);
+    }
+    if (!blobResult) {
+      return c.json({ error: "Not Found", message: "Photo not found in storage" }, 404);
+    }
+
+    // Log the read for audit trail
+    await db.insert(clinicalRecordAccessLog).values({
+      merchantId,
+      recordId,
+      clientId,
+      userId,
+      userEmail,
+      action: "read",
+      ipAddress: clientIp(c),
+    });
+
+    // Stream back. blobResult.headers carries content-type; supplement if needed.
+    const headers = new Headers(blobResult.headers ?? {});
+    if (target.mime && !headers.get("content-type")) {
+      headers.set("content-type", target.mime);
+    }
+    headers.set("cache-control", "private, max-age=3600"); // browser can cache for an hour
+
+    return new Response(blobResult.stream, { status: 200, headers });
+  },
+);
+
+// GET /merchant/clients/:profileId/clinical-records/:recordId/consent-signature
+// Streams the consent signature PNG through the API. Auth + record-membership checked.
+clinicalRecordsRouter.get(
+  "/:profileId/clinical-records/:recordId/consent-signature",
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const profileId = c.req.param("profileId")!;
+    const recordId = c.req.param("recordId")!;
+    const userId = c.get("userId")!;
+    const userEmail = c.get("actorEmail") ?? "";
+
+    const clientId = await resolveClientId(profileId, merchantId);
+    if (!clientId) return c.json({ error: "Not Found", message: "Client not found" }, 404);
+
+    const [record] = await db
+      .select()
+      .from(clinicalRecords)
+      .where(
+        and(
+          eq(clinicalRecords.id, recordId),
+          eq(clinicalRecords.merchantId, merchantId),
+          eq(clinicalRecords.clientId, clientId),
+        ),
+      )
+      .limit(1);
+    if (!record) return c.json({ error: "Not Found", message: "Record not found" }, 404);
+
+    const consent = record.signedConsent as { signaturePathname?: string; signatureUrl?: string } | null;
+    const pathname = consent?.signaturePathname ?? consent?.signatureUrl;
+    if (!pathname) return c.json({ error: "Not Found", message: "No signature on record" }, 404);
+
+    let blobResult;
+    try {
+      blobResult = await get(pathname, { access: "private" });
+    } catch (err) {
+      console.error("[clinical-records] consent signature proxy fetch failed", { recordId, err });
+      return c.json({ error: "Internal Server Error", message: "Failed to fetch signature" }, 500);
+    }
+    if (!blobResult) {
+      return c.json({ error: "Not Found", message: "Signature not found in storage" }, 404);
+    }
+
+    await db.insert(clinicalRecordAccessLog).values({
+      merchantId,
+      recordId,
+      clientId,
+      userId,
+      userEmail,
+      action: "read",
+      ipAddress: clientIp(c),
+    });
+
+    const headers = new Headers(blobResult.headers ?? {});
+    headers.set("content-type", "image/png");
+    headers.set("cache-control", "private, max-age=3600");
+    return new Response(blobResult.stream, { status: 200, headers });
   },
 );
 
