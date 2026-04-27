@@ -165,7 +165,7 @@ export default function SuperUsersPage() {
                       {u.name ?? <span className="text-grey-50">—</span>}
                       {u.isSelf && <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-tone-ink/5 text-tone-ink border border-tone-ink/20">You</span>}
                       {u.isSuperAdmin && <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-tone-ink text-tone-surface">Super</span>}
-                      {u.brandAdminGroupId && !u.isDeleted && <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-tone-sage/10 text-tone-sage border border-tone-sage/30">Brand admin</span>}
+                      {u.brandAdminGroupId && !u.isDeleted && <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-tone-sage/10 text-tone-sage border border-tone-sage/30">Group admin</span>}
                     </div>
                     <div className="text-xs text-grey-60 mt-0.5 truncate">{u.email}</div>
                   </td>

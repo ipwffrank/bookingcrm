@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
-import { UpgradeToBrandCard } from './components/UpgradeToBrandCard';
+import { UpgradeToGroupCard } from './components/UpgradeToGroupCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2081,7 +2081,7 @@ function SettingsContent() {
         <p className="text-sm text-gray-500 mt-0.5">Manage your business profile, policies, and integrations</p>
       </div>
 
-      <UpgradeToBrandCard />
+      <UpgradeToGroupCard />
 
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200 -mx-4 lg:-mx-8 px-4 lg:px-8">

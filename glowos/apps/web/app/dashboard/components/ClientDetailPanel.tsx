@@ -151,7 +151,7 @@ export function GroupClientDetailPanel({ clientId, onClose }: { clientId: string
           </div>
 
           <div>
-            <p className="text-xs uppercase tracking-wider text-grey-50 mb-2">Across the brand</p>
+            <p className="text-xs uppercase tracking-wider text-grey-50 mb-2">Across the group</p>
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-grey-5 rounded-lg p-3 text-center">
                 <p className="text-lg font-semibold text-tone-ink">{data.aggregate.totalVisits}</p>

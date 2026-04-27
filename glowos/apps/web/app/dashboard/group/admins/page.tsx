@@ -59,8 +59,8 @@ export default function GroupAdminsPage() {
         setInvites(i.invites);
       })
       .catch((e: unknown) => {
-        if (e instanceof ApiError) setPageError(e.message ?? 'Failed to load brand admins');
-        else setPageError('Failed to load brand admins');
+        if (e instanceof ApiError) setPageError(e.message ?? 'Failed to load group admins');
+        else setPageError('Failed to load group admins');
       })
       .finally(() => setLoading(false));
   }, [refetchKey]);
@@ -77,7 +77,7 @@ export default function GroupAdminsPage() {
       setConfirmingRemoval(null);
       setRefetchKey((k) => k + 1);
     } catch (e) {
-      setPageError(e instanceof ApiError ? e.message ?? 'Failed to remove brand admin' : 'Failed to remove brand admin');
+      setPageError(e instanceof ApiError ? e.message ?? 'Failed to remove group admin' : 'Failed to remove group admin');
       setConfirmingRemoval(null);
     }
   }
@@ -106,7 +106,7 @@ export default function GroupAdminsPage() {
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-tone-ink">Brand admins</h1>
+          <h1 className="text-2xl font-semibold text-tone-ink">Group admins</h1>
           <p className="text-sm text-grey-60">Anyone here can manage every branch in this brand.</p>
         </div>
         <button
@@ -126,7 +126,7 @@ export default function GroupAdminsPage() {
       {loading ? (
         <p className="text-sm text-grey-60">Loading…</p>
       ) : admins.length === 0 ? (
-        <p className="text-sm text-grey-60">No brand admins yet.</p>
+        <p className="text-sm text-grey-60">No group admins yet.</p>
       ) : (
         <div className="bg-tone-surface rounded-lg border border-grey-20 overflow-hidden">
           <table className="w-full text-sm">
@@ -182,7 +182,7 @@ export default function GroupAdminsPage() {
 
       <div className="mt-10 mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-tone-ink">Invite a brand owner</h2>
+          <h2 className="text-lg font-semibold text-tone-ink">Invite a group owner</h2>
           <p className="text-sm text-grey-60">Send a one-time link. Acceptance moves their branch into this brand and makes them a co-admin.</p>
         </div>
         <button
@@ -381,7 +381,7 @@ function AddAdminModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
       });
       onAdded();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message ?? 'Failed to add brand admin' : 'Failed to add brand admin');
+      setError(e instanceof ApiError ? e.message ?? 'Failed to add group admin' : 'Failed to add group admin');
       setSubmitting(false);
     }
   }
@@ -390,7 +390,7 @@ function AddAdminModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-tone-ink/30 px-4" role="dialog">
       <div className="bg-tone-surface rounded-lg w-full max-w-md p-6 border border-grey-20">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-tone-ink">Add brand admin</h2>
+          <h2 className="text-lg font-semibold text-tone-ink">Add group admin</h2>
           <button onClick={onClose} className="text-grey-50 hover:text-tone-ink">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -399,7 +399,7 @@ function AddAdminModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
         </div>
         <p className="text-sm text-grey-60 mb-4">
           The user must already have a branch in this brand and be an{' '}
-          <span className="text-tone-ink">owner or manager</span> of that branch — staff cannot be brand admins. They&apos;ll see the Group sidebar item the next time they sign in.
+          <span className="text-tone-ink">owner or manager</span> of that branch — staff cannot be group admins. They&apos;ll see the Group sidebar item the next time they sign in.
         </p>
         <form onSubmit={submit} className="space-y-4">
           <label className="block">

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from '../dashboard/components/ImpersonationBanner';
-import { BrandViewBanner } from '../dashboard/components/BrandViewBanner';
+import { GroupViewBanner } from '../dashboard/components/GroupViewBanner';
 
 function MenuIcon() {
   return (
@@ -133,7 +133,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         </header>
 
         <ImpersonationBanner />
-        <BrandViewBanner />
+        <GroupViewBanner />
         <main className="flex-1 p-4 lg:p-6 min-w-0">
           {children}
         </main>
