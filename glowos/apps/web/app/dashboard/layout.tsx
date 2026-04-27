@@ -6,12 +6,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { GroupViewBanner } from './components/GroupViewBanner';
+import { PilotBanner } from './components/PilotBanner';
 
 interface Merchant {
   id: string;
   name: string;
   slug: string;
   subscriptionTier: 'starter' | 'multibranch';
+  isPilot?: boolean;
   groupId?: string | null;
 }
 
@@ -181,6 +183,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // the UI matches what the route will allow.
   const [showSuperLink, setShowSuperLink] = useState(false);
   const [isBrandAdmin, setIsBrandAdmin] = useState(false);
+  // Owner-only nav items (e.g. loyalty program config) need this gate. The
+  // backend enforces the same rule; this just keeps the UI honest by not
+  // showing routes the user can't actually use.
+  const [isOwner, setIsOwner] = useState(false);
   const [userName, setUserName] = useState<string>('');
   // The user can hold multiple authorities at once (e.g. Owner of their home
   // branch AND Group Admin across the group). Each maps to its own chip so
@@ -202,6 +208,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const hasGroupRole = Boolean(u.brandAdminGroupId);
       const tierAllowsMultibranch = m.subscriptionTier === 'multibranch';
       setIsBrandAdmin(hasGroupRole && tierAllowsMultibranch);
+      setIsOwner(u.role === 'owner');
       setUserName(u.name ?? u.email ?? '');
 
       const labels: string[] = [];
@@ -233,9 +240,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }
 
+  // Owner-gated routes (e.g. Loyalty program config) are stripped for
+  // non-owners. Backend enforces the same rule on GET /merchant/loyalty/program.
+  const visibleBaseNav = isOwner
+    ? BASE_NAV_ITEMS
+    : BASE_NAV_ITEMS.filter((item) => item.href !== '/dashboard/marketing/loyalty');
   const navItems = isBrandAdmin
-    ? [...BASE_NAV_ITEMS, { href: '/dashboard/group/overview', label: 'Group', icon: BuildingIcon }]
-    : BASE_NAV_ITEMS;
+    ? [...visibleBaseNav, { href: '/dashboard/group/overview', label: 'Group', icon: BuildingIcon }]
+    : visibleBaseNav;
 
   function toggleCollapse() {
     setSidebarCollapsed(prev => {
@@ -464,6 +476,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </header>
 
+        <PilotBanner />
         <ImpersonationBanner />
         <GroupViewBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">

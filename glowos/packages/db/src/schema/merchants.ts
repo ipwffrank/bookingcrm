@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   jsonb,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const merchants = pgTable("merchants", {
@@ -59,6 +60,10 @@ export const merchants = pgTable("merchants", {
   // a circular import: merchants.ts ← groups.ts ← merchants.ts (via staffMerchants).
   // The application layer enforces referential integrity via resolveClientVisibility().
   groupId: uuid("group_id"),
+  // True for merchants in our pilot programme. Drives a "you're on pilot"
+  // banner in the merchant dashboard and is settable from `/super/merchants`.
+  // Independent of subscription_tier — pilot merchants can be on any tier.
+  isPilot: boolean("is_pilot").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
