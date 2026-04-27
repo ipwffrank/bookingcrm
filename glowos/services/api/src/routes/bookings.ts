@@ -92,6 +92,7 @@ const merchantBookingCreateSchema = z.object({
 const rescheduleSchema = z.object({
   start_time: z.string().datetime({ message: "start_time must be an ISO datetime string" }),
   end_time: z.string().datetime({ message: "end_time must be an ISO datetime string" }).optional(),
+  notify_client: z.boolean().optional().default(true),
 });
 
 const patchBookingSchema = z.object({
@@ -1482,10 +1483,15 @@ merchantBookingsRouter.patch(
     // `reschedule_confirmation` template (already registered in
     // notification.worker.ts). Carry the previous start_time so the
     // template can show "moved from X to Y".
-    await addJob("notifications", "reschedule_confirmation", {
-      booking_id: bookingId,
-      previous_start_time: oldStart.toISOString(),
-    });
+    // Schema default is `true`; the explicit check keeps legacy callers
+    // (no `notify_client` field) sending while letting the calendar drag-
+    // drop modal pass `notify_client: false` to suppress the message.
+    if (body.notify_client !== false) {
+      await addJob("notifications", "reschedule_confirmation", {
+        booking_id: bookingId,
+        previous_start_time: oldStart.toISOString(),
+      });
+    }
 
     return c.json({ booking: updated });
   }

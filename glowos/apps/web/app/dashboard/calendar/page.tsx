@@ -109,6 +109,31 @@ function isoToLocalMin(iso: string) {
 function snap(min: number)                        { return Math.round(min / SNAP_MIN) * SNAP_MIN; }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
+// ─── Toast ─────────────────────────────────────────────────────────────────────
+// Dashboard-palette compliant (tone-* / semantic-* only). Auto-dismisses after
+// 4s. Used by the drag-drop reschedule confirmation flow.
+function Toast({
+  message,
+  type,
+  onDismiss,
+}: { message: string; type: 'success' | 'error'; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+  const bg = type === 'success' ? 'bg-tone-ink' : 'bg-semantic-danger';
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-4 py-3 shadow-lg text-sm font-medium ${bg} text-tone-surface-warm max-w-md`}>
+      <span className="flex-1">{message}</span>
+      <button onClick={onDismiss} aria-label="Dismiss" className="opacity-70 hover:opacity-100">
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function CalendarPage() {
   const [date,       setDate]       = useState(() => new Date());
@@ -149,6 +174,20 @@ export default function CalendarPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [clientBookings, setClientBookings] = useState<{ id: string; startTime: string; endTime: string; status: string; serviceName: string; staffName: string }[] | null>(null);
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(null);
+
+  // Drag-drop reschedule confirmation flow. The visual move sticks
+  // optimistically while the modal is open; cancel calls info.revert().
+  const [pendingReschedule, setPendingReschedule] = useState<{
+    info: EventDropArg;
+    booking: Booking;
+    oldStart: Date;
+    oldEnd: Date;
+    newStart: Date;
+    newEnd: Date;
+  } | null>(null);
+  const [notifyClient, setNotifyClient] = useState(true);
+  const [submittingReschedule, setSubmittingReschedule] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -1290,7 +1329,7 @@ export default function CalendarPage() {
           eventStartEditable={true}
           eventDurationEditable={false}
           snapDuration="00:15:00"
-          eventDrop={async (info: EventDropArg) => {
+          eventDrop={(info: EventDropArg) => {
             if (info.event.extendedProps.type !== 'booking') {
               info.revert();
               return;
@@ -1302,24 +1341,17 @@ export default function CalendarPage() {
               return;
             }
             const newEnd: Date = info.event.end ?? new Date(newStart.getTime() + (new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()));
-            try {
-              await apiFetch(`/merchant/bookings/${booking.id}/reschedule`, {
-                method: 'PATCH',
-                body: JSON.stringify({
-                  start_time: newStart.toISOString(),
-                  end_time: newEnd.toISOString(),
-                }),
-              });
-              // Refresh the visible window so the booking is re-fetched and the
-              // calendar re-renders authoritatively (defensive — FullCalendar
-              // already moved the event optimistically).
-              if (fcRange) {
-                void loadRange(fcRange.start, fcRange.end);
-              }
-            } catch (err) {
-              info.revert();
-              alert(err instanceof Error ? err.message : 'Could not reschedule. Try again.');
-            }
+            // Leave the visual move in place; the modal owns the
+            // commit/revert decision.
+            setNotifyClient(true); // reset to default each time
+            setPendingReschedule({
+              info,
+              booking,
+              oldStart: new Date(booking.startTime),
+              oldEnd: new Date(booking.endTime),
+              newStart,
+              newEnd,
+            });
           }}
           height="auto"
           slotMinTime={calendarRange.slotMinTime}
@@ -1730,6 +1762,121 @@ export default function CalendarPage() {
           }}
         />
       )}
+
+      {/* ── Drag-drop reschedule confirmation ── */}
+      {pendingReschedule && (() => {
+        const pr = pendingReschedule;
+        const fmt = (d: Date) => d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        const onCancel = () => {
+          pr.info.revert();
+          setPendingReschedule(null);
+        };
+        const onConfirm = async () => {
+          setSubmittingReschedule(true);
+          try {
+            await apiFetch(`/merchant/bookings/${pr.booking.id}/reschedule`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                start_time: pr.newStart.toISOString(),
+                end_time: pr.newEnd.toISOString(),
+                notify_client: notifyClient,
+              }),
+            });
+            setToast({
+              type: 'success',
+              message: notifyClient
+                ? `Rescheduled. WhatsApp + email queued to ${pr.booking.clientName ?? 'client'}.`
+                : `Rescheduled. Client not notified.`,
+            });
+            void loadRange(fcRange?.start ?? '', fcRange?.end ?? '');
+            setPendingReschedule(null);
+          } catch (err) {
+            pr.info.revert();
+            setToast({
+              type: 'error',
+              message: err instanceof Error ? err.message : 'Could not reschedule. Try again.',
+            });
+            setPendingReschedule(null);
+          } finally {
+            setSubmittingReschedule(false);
+          }
+        };
+        return (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-tone-surface rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-tone-ink">Confirm reschedule</h2>
+                <button
+                  onClick={onCancel}
+                  disabled={submittingReschedule}
+                  className="text-grey-45 hover:text-grey-75 transition-colors disabled:opacity-40"
+                  aria-label="Close"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-grey-60">Client</span>
+                  <span className="text-tone-ink font-medium">{pr.booking.clientName ?? 'Unnamed'}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-grey-60">Service</span>
+                  <span className="text-tone-ink">{pr.booking.serviceName ?? '—'}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-grey-60">Staff</span>
+                  <span className="text-tone-ink">{pr.booking.staffName ?? '—'}</span>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-grey-15 bg-tone-surface-warm p-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-grey-60">From</span>
+                  <span className="line-through text-grey-45">{fmt(pr.oldStart)}</span>
+                </div>
+                <div className="flex justify-between gap-3 mt-1">
+                  <span className="text-grey-60">To</span>
+                  <span className="text-tone-ink font-semibold">{fmt(pr.newStart)}</span>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-grey-20 text-tone-ink focus:ring-tone-ink"
+                  checked={notifyClient}
+                  onChange={(e) => setNotifyClient(e.target.checked)}
+                  disabled={submittingReschedule}
+                />
+                <span className="text-tone-ink">Notify client by WhatsApp + email</span>
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={onCancel}
+                  disabled={submittingReschedule}
+                  className="px-4 py-2 rounded-lg border border-grey-20 text-tone-ink text-sm font-medium hover:bg-grey-5 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={onConfirm}
+                  disabled={submittingReschedule}
+                  className="px-4 py-2 rounded-lg bg-tone-ink text-tone-surface-warm text-sm font-medium hover:opacity-90 disabled:opacity-40"
+                >
+                  {submittingReschedule ? 'Rescheduling…' : 'Confirm reschedule'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
   );
 }
