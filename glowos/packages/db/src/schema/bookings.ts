@@ -30,6 +30,12 @@ export const bookings = pgTable(
     staffId: uuid("staff_id")
       .notNull()
       .references(() => staff.id, { onDelete: "restrict" }),
+    // Optional second staff member who owns the service's pre/post buffer
+    // windows (e.g. therapist prep + cleanup around a doctor's procedure).
+    // When null, the primary staff is blocked for the entire booking span.
+    secondaryStaffId: uuid("secondary_staff_id").references(() => staff.id, {
+      onDelete: "set null",
+    }),
     groupId: uuid("group_id"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),
     endTime: timestamp("end_time", { withTimezone: true }).notNull(),

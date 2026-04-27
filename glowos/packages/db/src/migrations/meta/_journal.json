@@ -113,6 +113,13 @@
       "when": 1777344000000,
       "tag": "0015_add_merchants_is_pilot",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1777948800000,
+      "tag": "0016_add_buffer_split_and_secondary_staff",
+      "breakpoints": true
     }
   ]
 }

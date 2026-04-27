@@ -32,6 +32,12 @@ interface Booking {
   startTime: string; endTime: string; status: string;
   clientName: string | null; serviceName: string | null; staffName: string | null;
   priceSgd: string | null;
+  // Phase-2 split-buffer fields. Sourced from the joined service row in the
+  // /merchant/bookings list response. Null secondary or zero buffers means a
+  // single-event render (legacy behaviour).
+  secondaryStaffId: string | null;
+  preBufferMinutes: number;
+  postBufferMinutes: number;
 }
 
 interface ServiceHistoryItem {
@@ -57,8 +63,8 @@ interface ClientSnippet {
 }
 
 interface RawBookingRow {
-  booking:     { id: string; staffId: string | null; clientId: string; startTime: string; endTime: string; status: string; priceSgd: string };
-  service:     { name: string } | null;
+  booking:     { id: string; staffId: string | null; clientId: string; startTime: string; endTime: string; status: string; priceSgd: string; secondaryStaffId?: string | null };
+  service:     { name: string; preBufferMinutes?: number; postBufferMinutes?: number } | null;
   staffMember: { name: string } | null;
   client:      { id: string; name: string | null } | null;
 }
@@ -237,6 +243,9 @@ export default function CalendarPage() {
           serviceName: r.service?.name ?? null,
           staffName:   r.staffMember?.name ?? null,
           priceSgd:    r.booking.priceSgd ?? null,
+          secondaryStaffId:   r.booking.secondaryStaffId ?? null,
+          preBufferMinutes:   r.service?.preBufferMinutes ?? 0,
+          postBufferMinutes:  r.service?.postBufferMinutes ?? 0,
         }))
       );
     } finally { setLoading(false); }
@@ -265,6 +274,9 @@ export default function CalendarPage() {
           serviceName: r.service?.name ?? null,
           staffName:   r.staffMember?.name ?? null,
           priceSgd:    r.booking.priceSgd ?? null,
+          secondaryStaffId:   r.booking.secondaryStaffId ?? null,
+          preBufferMinutes:   r.service?.preBufferMinutes ?? 0,
+          postBufferMinutes:  r.service?.postBufferMinutes ?? 0,
         }))
       );
       const closureList = (cd as any).closures ?? [];
@@ -671,18 +683,79 @@ export default function CalendarPage() {
   function buildCalendarEvents(): EventInput[] {
     const fcEvents: EventInput[] = [];
 
-    // Bookings — single ink block, identity via title text.
+    // Bookings — render 1-3 stacked phase events per booking when a secondary
+    // staff is assigned and the service has split-buffer windows. Otherwise
+    // a single full-span event matches legacy behaviour.
+    //
+    // Geometry (per design doc): bookings.endTime − bookings.startTime equals
+    // the total slot length, so the windows are:
+    //   pre  = [start,                       start + preBuffer]
+    //   main = [start + preBuffer,           end   − postBuffer]
+    //   post = [end   − postBuffer,          end]
     bookings.forEach(b => {
+      const clientName = b.clientName ?? 'Client';
+      const baseBg = b.staffId ? BOOKING_BG : UNASSIGNED_BG;
+      const startMs = new Date(b.startTime).getTime();
+      const endMs   = new Date(b.endTime).getTime();
+      const splitRender =
+        !!b.secondaryStaffId &&
+        (b.preBufferMinutes > 0 || b.postBufferMinutes > 0) &&
+        Number.isFinite(startMs) &&
+        Number.isFinite(endMs);
+
+      if (!splitRender) {
+        fcEvents.push({
+          id: `booking-${b.id}`,
+          title: `${clientName} — ${b.serviceName ?? ''}`,
+          start: b.startTime,
+          end: b.endTime,
+          backgroundColor: baseBg,
+          borderColor: 'transparent',
+          textColor: '#fff',
+          extendedProps: { type: 'booking', booking: b, phase: 'main' },
+        });
+        return;
+      }
+
+      const preEnd  = new Date(startMs + b.preBufferMinutes * 60_000);
+      const postStart = new Date(endMs - b.postBufferMinutes * 60_000);
+
+      if (b.preBufferMinutes > 0) {
+        fcEvents.push({
+          id: `booking-${b.id}-pre`,
+          title: `Prep · ${clientName}`,
+          start: b.startTime,
+          end: preEnd.toISOString(),
+          backgroundColor: '#456466', // tone-sage hex — secondary windows
+          borderColor: 'transparent',
+          textColor: '#fff',
+          extendedProps: { type: 'booking', booking: b, phase: 'pre' },
+        });
+      }
+
       fcEvents.push({
-        id: `booking-${b.id}`,
-        title: `${b.clientName ?? 'Client'} — ${b.serviceName ?? ''}`,
-        start: b.startTime,
-        end: b.endTime,
-        backgroundColor: b.staffId ? BOOKING_BG : UNASSIGNED_BG,
+        id: `booking-${b.id}-main`,
+        title: `${clientName} — ${b.serviceName ?? ''}`,
+        start: preEnd.toISOString(),
+        end: postStart.toISOString(),
+        backgroundColor: baseBg,
         borderColor: 'transparent',
         textColor: '#fff',
-        extendedProps: { type: 'booking', booking: b },
+        extendedProps: { type: 'booking', booking: b, phase: 'main' },
       });
+
+      if (b.postBufferMinutes > 0) {
+        fcEvents.push({
+          id: `booking-${b.id}-post`,
+          title: `Cleanup · ${clientName}`,
+          start: postStart.toISOString(),
+          end: b.endTime,
+          backgroundColor: '#456466',
+          borderColor: 'transparent',
+          textColor: '#fff',
+          extendedProps: { type: 'booking', booking: b, phase: 'post' },
+        });
+      }
     });
 
     // Duties — sage, distinct from bookings without needing a separate hue.

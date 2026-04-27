@@ -1,4 +1,4 @@
-import { and, eq, inArray, gte, lte } from "drizzle-orm";
+import { and, eq, inArray, gte, lte, or } from "drizzle-orm";
 import {
   db,
   services,
@@ -11,6 +11,7 @@ import {
 } from "@glowos/db";
 import { addMinutes, parseISO, format, startOfDay, endOfDay, getDay } from "date-fns";
 import { getCache, setCache, deleteCache } from "./redis.js";
+import { getStaffBlockedWindows, type StaffWindow } from "./booking-conflicts.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,14 @@ export interface AvailableSlot {
   end_time: string;
   staff_id: string;
   staff_name: string;
+  /**
+   * Auto-assigned secondary staff for services with pre/post buffers. The
+   * widget will pass this back when creating the booking so the secondary
+   * persists. Null for services with no buffers, and slot is dropped
+   * entirely if a secondary couldn't be found for a buffered service.
+   */
+  secondary_staff_id?: string | null;
+  secondary_staff_name?: string | null;
 }
 
 interface TimeRange {
@@ -98,21 +107,6 @@ function generateTimeSlots(
   }
 
   return slots;
-}
-
-/**
- * Returns true if [slotStart, slotStart + durationMinutes) overlaps any booking.
- */
-function overlapsWithBookings(
-  slotStart: Date,
-  slotDurationMinutes: number,
-  existingBookings: Array<{ startTime: Date; endTime: Date }>
-): boolean {
-  const slotEnd = addMinutes(slotStart, slotDurationMinutes);
-  for (const bk of existingBookings) {
-    if (slotStart < bk.endTime && slotEnd > bk.startTime) return true;
-  }
-  return false;
 }
 
 /**
@@ -227,6 +221,8 @@ export async function getAvailability(params: {
       id: services.id,
       durationMinutes: services.durationMinutes,
       bufferMinutes: services.bufferMinutes,
+      preBufferMinutes: services.preBufferMinutes,
+      postBufferMinutes: services.postBufferMinutes,
       isActive: services.isActive,
     })
     .from(services)
@@ -235,7 +231,14 @@ export async function getAvailability(params: {
 
   if (!service || !service.isActive) return [];
 
-  const totalDuration = service.durationMinutes + service.bufferMinutes;
+  // Total slot length on the calendar:
+  //   pre-buffer  + service-duration + legacy-shared-buffer + post-buffer
+  // The legacy `bufferMinutes` is treated as extra time always blocking the
+  // primary (so we lump it into the primary's window via serviceDurationForConflict).
+  const serviceDurationForConflict = service.durationMinutes + service.bufferMinutes;
+  const totalDuration =
+    service.preBufferMinutes + serviceDurationForConflict + service.postBufferMinutes;
+  const hasBuffers = service.preBufferMinutes > 0 || service.postBufferMinutes > 0;
 
   // 4. Load staff list
   let staffList: Array<{ id: string; name: string }> = [];
@@ -290,21 +293,104 @@ export async function getAvailability(params: {
   const dayEnd = combineDateAndTime(date, "23:59", merchant.timezone);
   const staffIds = staffList.map((s) => s.id);
 
-  const existingBookingsRaw = await db
-    .select({ staffId: bookings.staffId, startTime: bookings.startTime, endTime: bookings.endTime })
-    .from(bookings)
-    .where(
-      and(
-        inArray(bookings.staffId, staffIds),
-        inArray(bookings.status, ["confirmed", "in_progress"] as const),
-        gte(bookings.startTime, dayStart),
-        lte(bookings.startTime, dayEnd)
-      )
+  // For buffer-aware conflict detection we also need to load bookings where
+  // a candidate staff is the SECONDARY (e.g. they'd be blocked during pre or
+  // post buffer of someone else's booking). We also need each booking's
+  // service buffers + secondaryStaffId to materialize windows.
+  //
+  // For services with buffers, we additionally need to consider ALL active
+  // staff in the merchant as candidate secondaries — so we widen the load
+  // to bookings touching any of the merchant's staff, scoped by date.
+  const candidateSecondaryPool = hasBuffers
+    ? await db
+        .select({ id: staff.id, name: staff.name })
+        .from(staff)
+        .where(
+          and(
+            eq(staff.merchantId, merchant.id),
+            eq(staff.isActive, true),
+            eq(staff.isPubliclyVisible, true),
+          ),
+        )
+    : [];
+
+  const allInvolvedStaffIds = hasBuffers
+    ? Array.from(new Set([...staffIds, ...candidateSecondaryPool.map((s) => s.id)]))
+    : staffIds;
+
+  const existingBookingsRaw = allInvolvedStaffIds.length === 0
+    ? []
+    : await db
+        .select({
+          id: bookings.id,
+          staffId: bookings.staffId,
+          secondaryStaffId: bookings.secondaryStaffId,
+          startTime: bookings.startTime,
+          endTime: bookings.endTime,
+          durationMinutes: bookings.durationMinutes,
+          preBufferMinutes: services.preBufferMinutes,
+          postBufferMinutes: services.postBufferMinutes,
+        })
+        .from(bookings)
+        .innerJoin(services, eq(bookings.serviceId, services.id))
+        .where(
+          and(
+            or(
+              inArray(bookings.staffId, allInvolvedStaffIds),
+              inArray(bookings.secondaryStaffId, allInvolvedStaffIds),
+            )!,
+            inArray(bookings.status, ["confirmed", "in_progress"] as const),
+            gte(bookings.startTime, dayStart),
+            lte(bookings.startTime, dayEnd)
+          )
+        );
+
+  // Materialize per-staff blocked windows for every existing booking. The
+  // map is keyed by staffId so each candidate slot can do an O(k) overlap
+  // check against just the windows for its assigned staff.
+  const blockedByStaff = new Map<string, StaffWindow[]>();
+  for (const b of existingBookingsRaw) {
+    // bookings.durationMinutes today is set to svc.durationMinutes (pure
+    // service duration). We add the legacy bufferMinutes back from the
+    // service join? No — durationMinutes here represents the primary's
+    // blocked window length. For correctness with the existing data we use
+    // (endTime - startTime) - preBuf - postBuf to derive the "primary
+    // duration" the booking was originally created with (handles legacy
+    // bufferMinutes baked into endTime).
+    const totalSpanMin =
+      Math.round((b.endTime.getTime() - b.startTime.getTime()) / 60000);
+    const primaryDurationMin = Math.max(
+      0,
+      totalSpanMin - b.preBufferMinutes - b.postBufferMinutes,
     );
+    const windows = getStaffBlockedWindows({
+      startTime: b.startTime,
+      staffId: b.staffId,
+      secondaryStaffId: b.secondaryStaffId ?? null,
+      serviceDurationMinutes: primaryDurationMin,
+      preBufferMinutes: b.preBufferMinutes,
+      postBufferMinutes: b.postBufferMinutes,
+    });
+    for (const w of windows) {
+      if (!blockedByStaff.has(w.staffId)) blockedByStaff.set(w.staffId, []);
+      blockedByStaff.get(w.staffId)!.push(w);
+    }
+  }
 
   // Slot leases are not yet implemented (slot_leases table not yet created).
   // Set to empty array so availability falls back to booking-only conflict detection.
   const activeLeasesRaw: Array<{ staffId: string; startTime: Date; endTime: Date }> = [];
+
+  // Helper: does the proposed [start, end) for `staffId` overlap any
+  // existing blocked window for that staff?
+  function staffBusyDuring(staffId: string, start: Date, end: Date): boolean {
+    const wins = blockedByStaff.get(staffId);
+    if (!wins) return false;
+    for (const w of wins) {
+      if (start < w.endTime && end > w.startTime) return true;
+    }
+    return false;
+  }
 
   // 7. For each staff member, compute free slots
   const allSlots: AvailableSlot[] = [];
@@ -328,10 +414,6 @@ export async function getAvailability(params: {
     const workStart = combineDateAndTime(date, hours.startTime, merchant.timezone);
     const workEnd = combineDateAndTime(date, hours.endTime, merchant.timezone);
 
-    const memberBookings = existingBookingsRaw
-      .filter((b) => b.staffId === member.id)
-      .map((b) => ({ startTime: b.startTime, endTime: b.endTime }));
-
     const memberLeases = activeLeasesRaw
       .filter((l) => l.staffId === member.id)
       .map((l) => ({ startTime: l.startTime, endTime: l.endTime }));
@@ -339,24 +421,61 @@ export async function getAvailability(params: {
     const candidates = generateTimeSlots(workStart, workEnd, totalDuration, 30);
 
     for (const slot of candidates) {
-      // Check partial closures
-      const overlapsClosures = closureRanges.some((cl) => {
-        const slotEnd = addMinutes(slot.start, totalDuration);
-        return slot.start < cl.end && slotEnd > cl.start;
-      });
+      const slotEnd = addMinutes(slot.start, totalDuration);
 
-      if (
-        !overlapsClosures &&
-        !overlapsWithBookings(slot.start, totalDuration, memberBookings) &&
-        !overlapsWithLeases(slot.start, totalDuration, memberLeases)
-      ) {
-        allSlots.push({
-          start_time: slot.start.toISOString(),
-          end_time: slot.end.toISOString(),
-          staff_id: member.id,
-          staff_name: member.name,
-        });
+      // Check partial closures
+      const overlapsClosures = closureRanges.some(
+        (cl) => slot.start < cl.end && slotEnd > cl.start,
+      );
+      if (overlapsClosures) continue;
+
+      if (overlapsWithLeases(slot.start, totalDuration, memberLeases)) continue;
+
+      // Compute the candidate windows for this slot. When the service has
+      // buffers we'll auto-assign the first available secondary; when no
+      // secondary fits, the slot is dropped.
+      const primaryStart = addMinutes(slot.start, service.preBufferMinutes);
+      const primaryEnd = addMinutes(primaryStart, serviceDurationForConflict);
+
+      // Primary must be free during the primary window
+      if (staffBusyDuring(member.id, primaryStart, primaryEnd)) continue;
+
+      let chosenSecondaryId: string | null = null;
+      let chosenSecondaryName: string | null = null;
+
+      if (hasBuffers) {
+        // Look for a secondary free during BOTH the pre-buffer window
+        // (if any) and the post-buffer window (if any). The secondary
+        // must not be the primary.
+        for (const sec of candidateSecondaryPool) {
+          if (sec.id === member.id) continue;
+          if (
+            service.preBufferMinutes > 0 &&
+            staffBusyDuring(sec.id, slot.start, primaryStart)
+          ) {
+            continue;
+          }
+          if (
+            service.postBufferMinutes > 0 &&
+            staffBusyDuring(sec.id, primaryEnd, slotEnd)
+          ) {
+            continue;
+          }
+          chosenSecondaryId = sec.id;
+          chosenSecondaryName = sec.name;
+          break;
+        }
+        if (!chosenSecondaryId) continue; // no secondary available -> drop
       }
+
+      allSlots.push({
+        start_time: slot.start.toISOString(),
+        end_time: slot.end.toISOString(),
+        staff_id: member.id,
+        staff_name: member.name,
+        secondary_staff_id: chosenSecondaryId,
+        secondary_staff_name: chosenSecondaryName,
+      });
     }
   }
 

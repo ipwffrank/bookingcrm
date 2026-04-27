@@ -281,6 +281,7 @@ export function BookingForm(props: BookingFormProps) {
             bookingId: sib.booking.id,
             serviceId: sib.booking.serviceId,
             staffId: sib.booking.staffId,
+            secondaryStaffId: sib.booking.secondaryStaffId ?? null,
             startTime: sib.booking.startTime,
             priceSgd: sib.booking.priceSgd,
             priceTouched: false,
@@ -628,6 +629,12 @@ export function BookingForm(props: BookingFormProps) {
             services: rows.map((r) => ({
               service_id: r.serviceId,
               staff_id: r.staffId,
+              // Only send secondary_staff_id when the service actually has
+              // buffer windows; otherwise the backend rejects (400) since a
+              // secondary with no buffer to own makes no sense.
+              secondary_staff_id: serviceHasBuffers(r.serviceId, services)
+                ? r.secondaryStaffId ?? null
+                : undefined,
               start_time: r.startTime,
               price_sgd: r.priceTouched ? Number(r.priceSgd) : undefined,
               use_package: r.usePackage
@@ -655,6 +662,9 @@ export function BookingForm(props: BookingFormProps) {
               booking_id: r.bookingId,
               service_id: r.serviceId,
               staff_id: r.staffId,
+              secondary_staff_id: serviceHasBuffers(r.serviceId, services)
+                ? r.secondaryStaffId ?? null
+                : undefined,
               start_time: r.startTime,
               price_sgd: Number(r.priceSgd),
               use_package: r.usePackage
@@ -671,6 +681,9 @@ export function BookingForm(props: BookingFormProps) {
           body: JSON.stringify({
             service_id: r.serviceId,
             staff_id: r.staffId,
+            secondary_staff_id: serviceHasBuffers(r.serviceId, services)
+              ? r.secondaryStaffId ?? null
+              : undefined,
             start_time: r.startTime,
             price_sgd: Number(r.priceSgd),
             payment_method: paymentMethod,
@@ -1335,6 +1348,16 @@ function fmtTime(ms: number): string {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+// Whether a given service is configured with split buffer windows. The
+// secondary-staff dropdown is only meaningful when at least one window
+// exists, and the backend rejects (400) attempts to set a secondary on a
+// service with no buffers — so we gate the field server-side too.
+function serviceHasBuffers(serviceId: string, list: ServiceOption[]): boolean {
+  const svc = list.find((s) => s.id === serviceId);
+  if (!svc) return false;
+  return (svc.preBufferMinutes ?? 0) > 0 || (svc.postBufferMinutes ?? 0) > 0;
 }
 
 function isoDateOnly(iso: string): string {
