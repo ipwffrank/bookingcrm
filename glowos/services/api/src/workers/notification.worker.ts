@@ -175,6 +175,14 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
 
   const bookingToken = generateBookingToken(booking.id);
   const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
+  // Pending pre-bookings have a confirmation token so the customer can
+  // accept the appointment — that's the primary CTA. The signed
+  // cancel/reschedule link is the secondary path. Walk-ins and already-
+  // confirmed bookings skip the confirm URL entirely.
+  const confirmUrl =
+    booking.status === "pending" && booking.confirmationToken
+      ? `${config.frontendUrl}/confirm/${booking.confirmationToken}`
+      : null;
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
   const gross = parseFloat(String(booking.priceSgd));
@@ -239,9 +247,15 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     `✂️ ${service.name} with ${staffMember.name}`,
     paymentLine,
     ...(loyaltyLine ? [loyaltyLine] : []),
-    booking.status === "pending"
-      ? `Confirm or reschedule → ${cancelUrl}`
-      : `Reschedule or cancel? → ${cancelUrl}`,
+    // Pending pre-bookings: confirm is the primary CTA, cancel/reschedule
+    // is secondary so the customer always has an out.
+    ...(confirmUrl
+      ? [
+          ``,
+          `✓ Tap to confirm → ${confirmUrl}`,
+          `Need to reschedule or cancel? → ${cancelUrl}`,
+        ]
+      : [`Reschedule or cancel? → ${cancelUrl}`]),
   ].join("\n");
 
   const clientSid = await sendWhatsApp(client.phone, clientMessage);
