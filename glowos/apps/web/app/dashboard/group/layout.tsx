@@ -83,6 +83,20 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
     }
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const m = JSON.parse(localStorage.getItem('merchant') ?? '{}');
+      if (m.subscriptionTier !== 'multibranch') {
+        router.replace('/dashboard');
+      }
+    } catch {
+      // If localStorage is corrupt, fall back to /dashboard rather than
+      // letting the user sit on a page they may not be authorized for.
+      router.replace('/dashboard');
+    }
+  }, [pathname, router]);
+
   function handleLogout() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
