@@ -65,13 +65,17 @@ export function JoinWaitlistCard(props: Props) {
   }
 
   if (!open) {
+    // Secondary CTA — the primary action above is "jump to next available date".
+    // Waitlist is the fallback when the customer would rather wait for THIS day.
+    // Outline style + full width + lighter weight makes the hierarchy obvious
+    // and keeps both buttons visually anchored to the same vertical column.
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-4 px-4 py-2 bg-tone-ink text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-colors"
+        className="mt-3 w-full px-4 py-2 bg-tone-surface border border-grey-30 text-tone-ink text-xs font-medium rounded-lg hover:bg-grey-5 transition-colors"
       >
-        Join waitlist instead
+        Or join the waitlist for this day
       </button>
     );
   }
