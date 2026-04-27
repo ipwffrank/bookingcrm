@@ -1119,6 +1119,21 @@ merchantBookingsRouter.post(
       );
     }
 
+    // Pending pre-bookings can't redeem yet — redemption is intentionally
+    // gated to the check-in moment so the balance is fresh and cancellations
+    // don't require unwinding a discount. Frontend hides the apply UI in
+    // this state; this is the server-side enforcement.
+    if (existing.status === "pending") {
+      return c.json(
+        {
+          error: "Conflict",
+          message:
+            "Redemption opens at check-in — confirm or check the booking in first",
+        },
+        409,
+      );
+    }
+
     if (!existing.clientId) {
       return c.json(
         { error: "Conflict", message: "Booking has no client attached" },
