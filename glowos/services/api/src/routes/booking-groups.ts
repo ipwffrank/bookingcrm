@@ -25,6 +25,7 @@ import { normalizePhone } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { scheduleWaitlistMatchJob } from "../lib/waitlist-scheduler.js";
 import { generateConfirmationToken } from "../lib/confirmation-token.js";
+import { addJob } from "../lib/queue.js";
 import type { AppVariables } from "../lib/types.js";
 
 export const bookingGroupsRouter = new Hono<{ Variables: AppVariables }>();
@@ -442,6 +443,15 @@ bookingGroupsRouter.post(
     }
 
     await invalidateAvailabilityCacheByMerchantId(merchantId);
+
+    // Fire WhatsApp/email confirmation per child booking. Done out-of-band via
+    // the notification queue so booking creation never blocks on Twilio. The
+    // worker handles status-aware copy (confirmed vs pending) and includes
+    // payment method + remaining loyalty balance.
+    for (const b of result.bookings) {
+      void addJob("notifications", "booking_confirmation", { booking_id: b.id });
+    }
+
     return c.json(result, 201);
   }
 );
