@@ -87,7 +87,10 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
     if (typeof window === 'undefined') return;
     try {
       const m = JSON.parse(localStorage.getItem('merchant') ?? '{}');
-      if (m.subscriptionTier !== 'multibranch') {
+      // Tier policy: only `starter` blocks multi-branch features. Any other
+      // tier (multibranch, professional, future paid tiers) is allowed.
+      // Treat missing tier as starter-equivalent (default-deny).
+      if (!m.subscriptionTier || m.subscriptionTier === 'starter') {
         router.replace('/dashboard');
       }
     } catch {

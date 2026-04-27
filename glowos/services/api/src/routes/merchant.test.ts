@@ -185,4 +185,22 @@ describe("POST /merchant/upgrade-to-brand — tier gate", () => {
     expect(res.status).toBe(401);
     expect(mockDb.transaction).toHaveBeenCalled();
   });
+
+  it("passes the tier check for any non-starter tier (e.g. 'professional')", async () => {
+    // Production already has 'professional' tier merchants. Gate policy is
+    // "block only starter", so 'professional' must pass — this test pins
+    // that behaviour against accidental tightening to a strict allow-list.
+    _selectQueue.push([{ id: "m1", tier: "professional" }]);
+    _selectQueue.push([]); // user lookup → no row → "user_inactive" (post-gate)
+
+    const app = buildApp();
+    const res = await app.request("/merchant/upgrade-to-brand", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ groupName: "My Group" }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(mockDb.transaction).toHaveBeenCalled();
+  });
 });

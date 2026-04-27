@@ -19,7 +19,10 @@ export function UpgradeToGroupCard() {
       const isOwner = u.role === 'owner';
       const noGroupOnUser = !u.brandAdminGroupId;
       const noGroupOnMerchant = !m.groupId;
-      const tierAllowsMultibranch = m.subscriptionTier === 'multibranch';
+      // Tier policy: only `starter` blocks multi-branch features. Any other
+      // tier passes — keeps `professional` and any future paid tier eligible
+      // for the inline conversion form.
+      const tierAllowsMultibranch = m.subscriptionTier && m.subscriptionTier !== 'starter';
       const notBrandViewing = localStorage.getItem('brandViewing') !== 'true';
       const notImpersonating = localStorage.getItem('impersonating') !== 'true';
       setShow(isOwner && noGroupOnUser && noGroupOnMerchant && tierAllowsMultibranch && notBrandViewing && notImpersonating);
