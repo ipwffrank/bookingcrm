@@ -16,6 +16,7 @@ import type {
 import { ServiceRow } from './ServiceRow';
 import { EditHistoryPanel } from './EditHistoryPanel';
 import { NoShowChip } from '../components/NoShowChip';
+import { PhoneInput } from '../../components/PhoneInput';
 
 export interface BookingFormProps {
   mode: 'create' | 'edit';
@@ -420,27 +421,38 @@ export function BookingForm(props: BookingFormProps) {
     ]);
   }
 
-  async function maybeLookupClient() {
-    if (mode !== 'create' || clientPhone.trim().length < 6) {
+  // Debounced lookup as the staff types/picks a country code. PhoneInput emits
+  // E.164 (e.g. "+6591234567"); the API normalizes both sides via libphonenumber
+  // so SG/MY/ID/etc. all match against existing clients.phone.
+  useEffect(() => {
+    if (mode !== 'create') return;
+    if (clientPhone.trim().length < 8) {
       setClientNoShowCount(0);
       return;
     }
-    const token = localStorage.getItem('access_token');
-    try {
-      const res = (await apiFetch(
-        `/merchant/clients/lookup?phone=${encodeURIComponent(clientPhone)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )) as {
-        client: { id: string; name: string | null; noShowCount?: number } | null;
-        activePackages: ActivePackage[];
-      };
-      if (res.client && !clientName) setClientName(res.client.name ?? '');
-      setClientNoShowCount(res.client?.noShowCount ?? 0);
-      setActivePackages(res.activePackages ?? []);
-    } catch {
-      // silent — lookup is opportunistic
-    }
-  }
+    const handle = setTimeout(() => {
+      void (async () => {
+        const token = localStorage.getItem('access_token');
+        try {
+          const res = (await apiFetch(
+            `/merchant/clients/lookup?phone=${encodeURIComponent(clientPhone)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )) as {
+            client: { id: string; name: string | null; noShowCount?: number } | null;
+            activePackages: ActivePackage[];
+          };
+          if (res.client && !clientName) setClientName(res.client.name ?? '');
+          setClientNoShowCount(res.client?.noShowCount ?? 0);
+          setActivePackages(res.activePackages ?? []);
+        } catch {
+          // silent — lookup is opportunistic
+        }
+      })();
+    }, 300);
+    return () => clearTimeout(handle);
+    // clientName intentionally excluded to avoid re-trigger after auto-fill.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientPhone, mode]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -588,13 +600,9 @@ export function BookingForm(props: BookingFormProps) {
             </div>
             <div>
               <label className="block text-sm font-medium text-grey-75 mb-1">Phone</label>
-              <input
-                type="tel"
+              <PhoneInput
                 value={clientPhone}
-                onChange={(e) => setClientPhone(e.target.value)}
-                onBlur={() => void maybeLookupClient()}
-                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
-                placeholder="+65 9123 4567"
+                onChange={setClientPhone}
                 disabled={mode === 'edit'}
               />
             </div>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { apiFetch } from '../../lib/api';
-import { PhoneInput } from '../components/PhoneInput';
+import { PhoneInput } from '../../components/PhoneInput';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
