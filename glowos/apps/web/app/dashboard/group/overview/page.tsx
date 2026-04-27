@@ -13,7 +13,8 @@ interface OverviewData {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-function fmtCurrency(n: number) {
+function fmtCurrency(n: number | null | undefined) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '$0';
   return `$${n.toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -67,13 +68,23 @@ export default function GroupOverviewPage() {
     fetch(`${API_URL}/group/overview?from=${from}&to=${to}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        // Treat any non-2xx as an error — body is `{ error, message }`, not
+        // OverviewData. Without this, a 403 (e.g. Branch Admin hitting a
+        // group-only route while the layout's redirect is in flight) would
+        // be cast to OverviewData and crash on undefined fields.
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.message ?? `Request failed (${r.status})`);
+        }
+        return r.json();
+      })
       .then((d) => setData(d as OverviewData))
-      .catch(() => setError('Failed to load overview data'))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load overview data'))
       .finally(() => setLoading(false));
   }, [from, to]);
 
-  const maxRevenue = Math.max(...(data?.revenueByBranch.map((b) => b.revenue) ?? [1]), 1);
+  const maxRevenue = Math.max(...(data?.revenueByBranch?.map((b) => b.revenue) ?? [1]), 1);
 
   return (
     <div>
