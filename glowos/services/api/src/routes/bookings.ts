@@ -1477,6 +1477,16 @@ merchantBookingsRouter.patch(
       notified_booking_slot_id: existing.id,
     });
 
+    // Notify the client of the new time. Worker selects email + WhatsApp
+    // channels per client.preferredContactChannel and renders the
+    // `reschedule_confirmation` template (already registered in
+    // notification.worker.ts). Carry the previous start_time so the
+    // template can show "moved from X to Y".
+    await addJob("notifications", "reschedule_confirmation", {
+      booking_id: bookingId,
+      previous_start_time: oldStart.toISOString(),
+    });
+
     return c.json({ booking: updated });
   }
 );

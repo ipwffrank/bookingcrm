@@ -10,7 +10,7 @@ import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import type { EventInput, DatesSetArg, EventClickArg } from '@fullcalendar/core';
+import type { EventInput, DatesSetArg, EventClickArg, EventDropArg } from '@fullcalendar/core';
 
 // ─── Grid constants (static) ───────────────────────────────────────────────────
 // DAY_START_H / DAY_END_H defaults; the actual per-merchant range is derived
@@ -1286,6 +1286,41 @@ export default function CalendarPage() {
           initialDate={date}
           headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
           events={buildCalendarEvents()}
+          editable={viewMode === 'week'}
+          eventStartEditable={true}
+          eventDurationEditable={false}
+          snapDuration="00:15:00"
+          eventDrop={async (info: EventDropArg) => {
+            if (info.event.extendedProps.type !== 'booking') {
+              info.revert();
+              return;
+            }
+            const booking = info.event.extendedProps.booking as Booking;
+            const newStart: Date | null = info.event.start;
+            if (!newStart) {
+              info.revert();
+              return;
+            }
+            const newEnd: Date = info.event.end ?? new Date(newStart.getTime() + (new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()));
+            try {
+              await apiFetch(`/merchant/bookings/${booking.id}/reschedule`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  start_time: newStart.toISOString(),
+                  end_time: newEnd.toISOString(),
+                }),
+              });
+              // Refresh the visible window so the booking is re-fetched and the
+              // calendar re-renders authoritatively (defensive — FullCalendar
+              // already moved the event optimistically).
+              if (fcRange) {
+                void loadRange(fcRange.start, fcRange.end);
+              }
+            } catch (err) {
+              info.revert();
+              alert(err instanceof Error ? err.message : 'Could not reschedule. Try again.');
+            }
+          }}
           height="auto"
           slotMinTime={calendarRange.slotMinTime}
           slotMaxTime={calendarRange.slotMaxTime}
