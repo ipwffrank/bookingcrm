@@ -371,7 +371,11 @@ function ServiceModal({
 export default function ServicesPage() {
   const router = useRouter();
   const [services, setServices] = useState<Service[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
+  // Filter holds the raw category string (DB schema is varchar(100), not a
+  // closed enum) so it works for any value a merchant has used — including
+  // domain-specific labels like "Laser" or "Injectable" that aren't in the
+  // suggested CATEGORIES enum used by the create/edit form's dropdown.
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -425,14 +429,20 @@ export default function ServicesPage() {
     }
   }
 
-  // Per-category counts so empty categories disappear from the filter row
-  // automatically — no point showing a "Massage 0" pill if the merchant has
-  // no massage services configured.
-  const categoryCounts = services.reduce<Record<Category, number>>((acc, s) => {
+  // Per-category counts derived from the actual services. Categories not
+  // present in this merchant's data don't appear in the filter row.
+  const categoryCounts = services.reduce<Record<string, number>>((acc, s) => {
+    if (!s.category) return acc;
     acc[s.category] = (acc[s.category] ?? 0) + 1;
     return acc;
-  }, { hair: 0, nails: 0, face: 0, body: 0, massage: 0, dining: 0, medical: 0, other: 0 });
-  const availableCategories = CATEGORIES.filter((c) => categoryCounts[c.value] > 0);
+  }, {});
+  // Build the filter list from real data, not the hardcoded CATEGORIES enum,
+  // so domain-specific values like "Laser" / "Injectable" / "Cosmetic" still
+  // surface a filter pill. When a category matches the suggested enum we use
+  // its prettier label; unknown values display the raw string.
+  const availableCategories: { value: string; label: string }[] = Object.keys(categoryCounts)
+    .map((value) => CATEGORIES.find((c) => c.value === value) ?? { value, label: value })
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const visibleServices = categoryFilter
     ? services.filter((s) => s.category === categoryFilter)
