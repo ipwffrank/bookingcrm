@@ -150,10 +150,6 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   }>>([]);
   const [showIssueQuote, setShowIssueQuote] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
-  // After Create Booking succeeds, immediately re-open the modal in edit mode
-  // for the new booking. This lets the staff apply loyalty points (which
-  // require an existing booking row to attach the redemption to).
-  const [editAfterCreateId, setEditAfterCreateId] = useState<string | null>(null);
   const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; priceSgd: string; requiresConsultFirst: boolean }>>([]);
   const [quoteServiceId, setQuoteServiceId] = useState('');
   const [quotePrice, setQuotePrice] = useState('');
@@ -2076,26 +2072,13 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
             phone: data.client.phone,
           }}
           onClose={() => setShowNewBooking(false)}
-          onSave={(newBookingId) => {
-            setShowNewBooking(false);
-            // Chain into edit mode so the loyalty section (apply/remove
-            // points) appears against the just-created booking.
-            if (newBookingId) setEditAfterCreateId(newBookingId);
-            // Refresh the client view so the new booking appears in Upcoming.
-            void apiFetch(`/merchant/clients/${profileId}`)
-              .then((d: unknown) => setData(d as ClientDetailData))
-              .catch(() => {});
-          }}
-        />
-      )}
-
-      {editAfterCreateId && (
-        <BookingForm
-          mode="edit"
-          bookingId={editAfterCreateId}
-          onClose={() => setEditAfterCreateId(null)}
           onSave={() => {
-            setEditAfterCreateId(null);
+            // Booking is created in `pending` status. Loyalty redemption is
+            // intentionally NOT applied here — it belongs at check-in, when
+            // the client returns for treatment, so the staff can apply
+            // against the freshest balance and discounts can't outlive a
+            // cancelled appointment.
+            setShowNewBooking(false);
             void apiFetch(`/merchant/clients/${profileId}`)
               .then((d: unknown) => setData(d as ClientDetailData))
               .catch(() => {});

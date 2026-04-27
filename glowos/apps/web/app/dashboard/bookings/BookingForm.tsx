@@ -354,6 +354,15 @@ export function BookingForm(props: BookingFormProps) {
   const loyaltyDiscountReadOnly =
     bookingStatus === 'completed' || bookingStatus === 'cancelled' || bookingStatus === 'no_show';
 
+  // Redemption is only available once the client is here for treatment —
+  // i.e. the booking has been confirmed by the customer or checked in by
+  // staff. For pending pre-bookings we wait, because (a) the balance may
+  // still grow before the visit, (b) cancelled appointments shouldn't
+  // require unwinding a redemption, and (c) the till is the natural moment
+  // to apply discounts.
+  const loyaltyApplyAvailable =
+    bookingStatus === 'confirmed' || bookingStatus === 'in_progress';
+
   async function handleApplyRedemption() {
     if (!props.bookingId || !loyaltyProgram) return;
     setLoyaltyError(null);
@@ -771,6 +780,7 @@ export function BookingForm(props: BookingFormProps) {
               busy={loyaltyBusy}
               error={loyaltyError}
               readOnly={loyaltyDiscountReadOnly}
+              applyAvailable={loyaltyApplyAvailable}
             />
           )}
 
@@ -891,6 +901,8 @@ interface LoyaltySectionProps {
   busy: boolean;
   error: string | null;
   readOnly: boolean;
+  /** Apply UI is hidden when false — used to defer redemption to check-in. */
+  applyAvailable: boolean;
 }
 
 function LoyaltySection(props: LoyaltySectionProps) {
@@ -907,10 +919,12 @@ function LoyaltySection(props: LoyaltySectionProps) {
     busy,
     error,
     readOnly,
+    applyAvailable,
   } = props;
 
   const balanceSgd = (balance / program.pointsPerDollarRedeem).toFixed(2);
   const canApply =
+    applyAvailable &&
     !redemption &&
     balance >= program.minRedeemPoints &&
     maxRedeemable >= program.minRedeemPoints;
@@ -968,9 +982,11 @@ function LoyaltySection(props: LoyaltySectionProps) {
             <p className="text-xs text-grey-60">
               {readOnly
                 ? "Booking is finalised — discount can't be changed."
-                : balance < program.minRedeemPoints
-                  ? `Below minimum of ${program.minRedeemPoints} pts.`
-                  : 'Booking total is too low to redeem points.'}
+                : !applyAvailable
+                  ? "Redemption opens at check-in. Confirm or check the client in to apply points before payment."
+                  : balance < program.minRedeemPoints
+                    ? `Below minimum of ${program.minRedeemPoints} pts.`
+                    : 'Booking total is too low to redeem points.'}
             </p>
           )}
         </>

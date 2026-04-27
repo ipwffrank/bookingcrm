@@ -501,6 +501,24 @@ describe("POST /merchant/bookings/:id/apply-loyalty-redemption", () => {
 
     expect(res.status).toBe(409);
   });
+
+  it("returns 409 when booking is still pending (redemption defers to check-in)", async () => {
+    _selectQueue.push([{ ...cleanBooking, status: "pending" }]);
+
+    const app = makeApp();
+    const res = await app.request(
+      "/merchant/bookings/booking-1/apply-loyalty-redemption",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points: 200 }),
+      },
+    );
+
+    expect(res.status).toBe(409);
+    const body = await jsonBody(res);
+    expect(String(body.message)).toMatch(/check-in/i);
+  });
 });
 
 // ─── remove-loyalty-redemption ────────────────────────────────────────────────
