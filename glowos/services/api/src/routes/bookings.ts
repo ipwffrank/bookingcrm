@@ -31,7 +31,7 @@ import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
 import { processRefund, restoreLoyaltyOnCancel } from "../lib/refunds.js";
-import { findStaffConflict } from "../lib/booking-conflicts.js";
+import { findBookingConflict } from "../lib/booking-conflicts.js";
 import { writeAuditDiff } from "../lib/booking-edits.js";
 import { addJob } from "../lib/queue.js";
 import {
@@ -83,6 +83,7 @@ const confirmSchema = z.object({
 const merchantBookingCreateSchema = z.object({
   service_id: z.string().uuid(),
   staff_id: z.string().uuid(),
+  secondary_staff_id: z.string().uuid().nullable().optional(),
   client_name: z.string().min(1),
   client_phone: z.string().min(1),
   start_time: z.string().datetime(),
@@ -94,11 +95,13 @@ const rescheduleSchema = z.object({
   start_time: z.string().datetime({ message: "start_time must be an ISO datetime string" }),
   end_time: z.string().datetime({ message: "end_time must be an ISO datetime string" }).optional(),
   notify_client: z.boolean().optional().default(true),
+  secondary_staff_id: z.string().uuid().nullable().optional(),
 });
 
 const patchBookingSchema = z.object({
   service_id: z.string().uuid().optional(),
   staff_id: z.string().uuid().optional(),
+  secondary_staff_id: z.string().uuid().nullable().optional(),
   start_time: z.string().datetime().optional(),
   end_time: z.string().datetime().optional(),
   payment_method: z.string().optional(),
@@ -723,7 +726,15 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     : [];
 
   const allServices = await db
-    .select({ id: services.id, name: services.name, priceSgd: services.priceSgd, durationMinutes: services.durationMinutes, bufferMinutes: services.bufferMinutes })
+    .select({
+      id: services.id,
+      name: services.name,
+      priceSgd: services.priceSgd,
+      durationMinutes: services.durationMinutes,
+      bufferMinutes: services.bufferMinutes,
+      preBufferMinutes: services.preBufferMinutes,
+      postBufferMinutes: services.postBufferMinutes,
+    })
     .from(services)
     .where(and(eq(services.merchantId, merchantId), eq(services.isActive, true)));
 
@@ -731,6 +742,12 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     .select({ id: staff.id, name: staff.name })
     .from(staff)
     .where(eq(staff.merchantId, merchantId));
+
+  // Resolve the secondary staff name (if any) for the booking under edit so
+  // the form can render it without a second roundtrip.
+  const secondaryStaffName = row.booking.secondaryStaffId
+    ? allStaff.find((s) => s.id === row.booking.secondaryStaffId)?.name ?? null
+    : null;
 
   // Staff service-eligibility map so the form can filter the per-row staff
   // dropdown to only those who actually perform the selected service.
@@ -796,6 +813,11 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     })),
     services: allServices,
     staff: allStaffWithServices,
+    // Convenience fields derived from the booking under edit so the form
+    // can render the secondary-staff selector and pre/post buffer hints
+    // without joining services itself.
+    secondaryStaffId: row.booking.secondaryStaffId,
+    secondaryStaffName,
     lastEdit: lastEdit ?? null,
   });
 });
@@ -876,6 +898,8 @@ merchantBookingsRouter.post(
         priceSgd: services.priceSgd,
         durationMinutes: services.durationMinutes,
         bufferMinutes: services.bufferMinutes,
+        preBufferMinutes: services.preBufferMinutes,
+        postBufferMinutes: services.postBufferMinutes,
       })
       .from(services)
       .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchantId)))
@@ -885,19 +909,41 @@ merchantBookingsRouter.post(
       return c.json({ error: "Not Found", message: "Service not found" }, 404);
     }
 
-    // Verify staff belongs to merchant
-    const [staffMember] = await db
+    // Verify staff belongs to merchant — primary always; secondary if set.
+    const requiredStaffIds = [body.staff_id];
+    if (body.secondary_staff_id) requiredStaffIds.push(body.secondary_staff_id);
+    const staffRows = await db
       .select({ id: staff.id })
       .from(staff)
-      .where(and(eq(staff.id, body.staff_id), eq(staff.merchantId, merchantId)))
-      .limit(1);
+      .where(and(inArray(staff.id, requiredStaffIds), eq(staff.merchantId, merchantId)));
 
-    if (!staffMember) {
+    if (staffRows.length !== requiredStaffIds.length) {
       return c.json({ error: "Not Found", message: "Staff member not found" }, 404);
     }
 
+    // Reject secondary on services with no buffers — there's no window for
+    // the secondary to own.
+    if (
+      body.secondary_staff_id &&
+      service.preBufferMinutes === 0 &&
+      service.postBufferMinutes === 0
+    ) {
+      return c.json(
+        {
+          error: "Bad Request",
+          message:
+            "Secondary staff requires the service to have pre or post buffer minutes",
+        },
+        400,
+      );
+    }
+
     const startTime = parseISO(body.start_time);
-    const totalDuration = service.durationMinutes + service.bufferMinutes;
+    const totalDuration =
+      service.preBufferMinutes +
+      service.durationMinutes +
+      service.bufferMinutes +
+      service.postBufferMinutes;
     const endTime = addMinutes(startTime, totalDuration);
 
     // Find or create client
@@ -924,6 +970,7 @@ merchantBookingsRouter.post(
         clientId: client.id,
         serviceId: body.service_id,
         staffId: body.staff_id,
+        secondaryStaffId: body.secondary_staff_id ?? null,
         startTime,
         endTime,
         durationMinutes: service.durationMinutes,
@@ -1506,13 +1553,54 @@ merchantBookingsRouter.patch(
       ? parseISO(body.end_time)
       : new Date(newStart.getTime() + (existing.endTime.getTime() - existing.startTime.getTime()));
 
+    // Optionally update the secondary staff assignment. When the field is
+    // omitted, leave the existing value untouched. When explicitly set
+    // (including null), validate ownership + buffer presence.
+    let newSecondaryStaffId: string | null = existing.secondaryStaffId;
+    if (body.secondary_staff_id !== undefined) {
+      newSecondaryStaffId = body.secondary_staff_id;
+      if (newSecondaryStaffId) {
+        const [sec] = await db
+          .select({ id: staff.id })
+          .from(staff)
+          .where(and(eq(staff.id, newSecondaryStaffId), eq(staff.merchantId, merchantId)))
+          .limit(1);
+        if (!sec) {
+          return c.json({ error: "Not Found", message: "Secondary staff not found" }, 404);
+        }
+        const [svc] = await db
+          .select({
+            preBufferMinutes: services.preBufferMinutes,
+            postBufferMinutes: services.postBufferMinutes,
+          })
+          .from(services)
+          .where(eq(services.id, existing.serviceId))
+          .limit(1);
+        if (svc && svc.preBufferMinutes === 0 && svc.postBufferMinutes === 0) {
+          return c.json(
+            {
+              error: "Bad Request",
+              message:
+                "Secondary staff requires the service to have pre or post buffer minutes",
+            },
+            400,
+          );
+        }
+      }
+    }
+
     // Capture pre-update slot times for the waitlist matcher (the freed slot)
     const oldStart = existing.startTime;
     const oldEnd = existing.endTime;
 
     const [updated] = await db
       .update(bookings)
-      .set({ startTime: newStart, endTime: newEnd, updatedAt: new Date() })
+      .set({
+        startTime: newStart,
+        endTime: newEnd,
+        secondaryStaffId: newSecondaryStaffId,
+        updatedAt: new Date(),
+      })
       .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
       .returning();
 
@@ -1587,27 +1675,46 @@ merchantBookingsRouter.patch(
       }
     }
 
-    // Resolve service (for duration) if service_id is changing
+    // Resolve service (for duration + buffers).
     let durationMinutes = existing.durationMinutes;
     let newEndTime = existing.endTime;
     let effectivePrice = existing.priceSgd;
-    if (body.service_id && body.service_id !== existing.serviceId) {
+    let svcPreBuffer = 0;
+    let svcPostBuffer = 0;
+    let svcLegacyBuffer = 0;
+    // Always load buffers for the *effective* service so conflict checks
+    // and validation use the right windows even when service_id is unchanged.
+    {
+      const targetServiceId = body.service_id ?? existing.serviceId;
       const [svc] = await db
         .select({
           priceSgd: services.priceSgd,
           durationMinutes: services.durationMinutes,
           bufferMinutes: services.bufferMinutes,
+          preBufferMinutes: services.preBufferMinutes,
+          postBufferMinutes: services.postBufferMinutes,
         })
         .from(services)
-        .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchantId)))
+        .where(and(eq(services.id, targetServiceId), eq(services.merchantId, merchantId)))
         .limit(1);
       if (!svc) {
         return c.json({ error: "Not Found", message: "Service not found" }, 404);
       }
-      durationMinutes = svc.durationMinutes;
-      const baseStart = body.start_time ? parseISO(body.start_time) : existing.startTime;
-      newEndTime = addMinutes(baseStart, svc.durationMinutes + svc.bufferMinutes);
-      effectivePrice = svc.priceSgd;
+      svcPreBuffer = svc.preBufferMinutes;
+      svcPostBuffer = svc.postBufferMinutes;
+      svcLegacyBuffer = svc.bufferMinutes;
+      if (body.service_id && body.service_id !== existing.serviceId) {
+        durationMinutes = svc.durationMinutes;
+        const baseStart = body.start_time ? parseISO(body.start_time) : existing.startTime;
+        newEndTime = addMinutes(
+          baseStart,
+          svc.preBufferMinutes +
+            svc.durationMinutes +
+            svc.bufferMinutes +
+            svc.postBufferMinutes,
+        );
+        effectivePrice = svc.priceSgd;
+      }
     }
     if (body.price_sgd !== undefined) effectivePrice = body.price_sgd.toFixed(2);
 
@@ -1615,16 +1722,51 @@ merchantBookingsRouter.patch(
     if (body.end_time) newEndTime = parseISO(body.end_time);
     const newStaffId = body.staff_id ?? existing.staffId;
 
+    // Resolve secondary staff assignment. Optional + nullable: omitted = keep
+    // existing; explicit null = clear; explicit uuid = set + validate.
+    let newSecondaryStaffId: string | null = existing.secondaryStaffId;
+    if (body.secondary_staff_id !== undefined) {
+      newSecondaryStaffId = body.secondary_staff_id;
+      if (newSecondaryStaffId) {
+        const [sec] = await db
+          .select({ id: staff.id })
+          .from(staff)
+          .where(and(eq(staff.id, newSecondaryStaffId), eq(staff.merchantId, merchantId)))
+          .limit(1);
+        if (!sec) {
+          return c.json({ error: "Not Found", message: "Secondary staff not found" }, 404);
+        }
+        if (svcPreBuffer === 0 && svcPostBuffer === 0) {
+          return c.json(
+            {
+              error: "Bad Request",
+              message:
+                "Secondary staff requires the service to have pre or post buffer minutes",
+            },
+            400,
+          );
+        }
+      }
+    }
+
     const staffOrTimeChanged =
       newStaffId !== existing.staffId ||
+      newSecondaryStaffId !== existing.secondaryStaffId ||
       newStart.getTime() !== existing.startTime.getTime() ||
       newEndTime.getTime() !== existing.endTime.getTime();
     if (staffOrTimeChanged) {
-      const conflict = await findStaffConflict({
+      const conflict = await findBookingConflict({
         merchantId,
-        staffId: newStaffId,
-        startTime: newStart,
-        endTime: newEndTime,
+        candidate: {
+          staffId: newStaffId,
+          secondaryStaffId: newSecondaryStaffId,
+          startTime: newStart,
+          // Legacy bufferMinutes is shared/extra time blocking the primary;
+          // lump it into the primary window.
+          serviceDurationMinutes: durationMinutes + svcLegacyBuffer,
+          preBufferMinutes: svcPreBuffer,
+          postBufferMinutes: svcPostBuffer,
+        },
         excludeBookingIds: [bookingId],
       });
       if (conflict) {
@@ -1642,6 +1784,7 @@ merchantBookingsRouter.patch(
       const newValues = {
         serviceId: body.service_id ?? existing.serviceId,
         staffId: newStaffId,
+        secondaryStaffId: newSecondaryStaffId,
         startTime: newStart,
         endTime: newEndTime,
         durationMinutes,
@@ -1655,6 +1798,7 @@ merchantBookingsRouter.patch(
         {
           serviceId: existing.serviceId,
           staffId: existing.staffId,
+          secondaryStaffId: existing.secondaryStaffId,
           startTime: existing.startTime,
           endTime: existing.endTime,
           priceSgd: existing.priceSgd,
@@ -1951,6 +2095,8 @@ bookingsRouter.post("/:slug/lease", zValidator(leaseSchema), async (c) => {
       id: services.id,
       durationMinutes: services.durationMinutes,
       bufferMinutes: services.bufferMinutes,
+      preBufferMinutes: services.preBufferMinutes,
+      postBufferMinutes: services.postBufferMinutes,
     })
     .from(services)
     .where(and(eq(services.id, body.service_id), eq(services.merchantId, merchant.id)))
@@ -1961,7 +2107,11 @@ bookingsRouter.post("/:slug/lease", zValidator(leaseSchema), async (c) => {
   }
 
   const startTime = parseISO(body.start_time);
-  const totalDuration = service.durationMinutes + service.bufferMinutes;
+  const totalDuration =
+    service.preBufferMinutes +
+    service.durationMinutes +
+    service.bufferMinutes +
+    service.postBufferMinutes;
   const endTime = addMinutes(startTime, totalDuration);
   const dateStr = body.start_time.slice(0, 10); // YYYY-MM-DD
 
@@ -2207,6 +2357,44 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
 
   const priceSgdFinal = computedPrice.toFixed(2);
 
+  // For services with pre/post buffers, re-derive the auto-assigned secondary
+  // by re-running availability for the lease date. The slot search returns
+  // the secondary it picked; we persist that on the booking so the calendar
+  // shows the right staff for prep/cleanup.
+  let secondaryStaffId: string | null = null;
+  const [serviceBuffers] = await db
+    .select({
+      preBufferMinutes: services.preBufferMinutes,
+      postBufferMinutes: services.postBufferMinutes,
+    })
+    .from(services)
+    .where(eq(services.id, lease.serviceId))
+    .limit(1);
+  if (
+    serviceBuffers &&
+    (serviceBuffers.preBufferMinutes > 0 || serviceBuffers.postBufferMinutes > 0)
+  ) {
+    try {
+      const dateStr = lease.startTime.toISOString().slice(0, 10);
+      const slots = await getAvailability({
+        merchantSlug: slug,
+        serviceId: lease.serviceId,
+        staffId: lease.staffId,
+        date: dateStr,
+      });
+      const matched = slots.find(
+        (s) =>
+          s.start_time === lease.startTime.toISOString() &&
+          s.staff_id === lease.staffId,
+      );
+      secondaryStaffId = matched?.secondary_staff_id ?? null;
+    } catch (err) {
+      // Non-fatal — proceed without secondary assignment if availability
+      // recompute fails. Merchant can still set it manually later.
+      console.error("[booking-confirm] failed to resolve secondary staff", err);
+    }
+  }
+
   // Create booking. Public widget bookings start as 'pending' — the T-24h
   // reminder asks the customer to click confirm, which flips status to
   // 'confirmed'. confirmation_token is the unguessable handle for that flow.
@@ -2217,6 +2405,7 @@ bookingsRouter.post("/:slug/confirm", zValidator(confirmSchema), async (c) => {
       clientId: client.id,
       serviceId: lease.serviceId,
       staffId: lease.staffId,
+      secondaryStaffId,
       startTime: lease.startTime,
       endTime: lease.endTime,
       durationMinutes: service.durationMinutes,

@@ -24,6 +24,14 @@ export const services = pgTable(
     category: varchar("category", { length: 100 }),
     durationMinutes: integer("duration_minutes").notNull(),
     bufferMinutes: integer("buffer_minutes").notNull().default(0),
+    // Pre/post buffers split out of the legacy `bufferMinutes`. When a
+    // booking has a `secondary_staff_id`, the secondary owns these windows
+    // (so the primary is free during them). When secondary is null, the
+    // primary is blocked for the entire pre+service+post span — matching
+    // the legacy `bufferMinutes` behavior. The legacy column is kept as a
+    // "shared/extra" buffer that always blocks the primary.
+    preBufferMinutes: integer("pre_buffer_minutes").notNull().default(0),
+    postBufferMinutes: integer("post_buffer_minutes").notNull().default(0),
     priceSgd: numeric("price_sgd", { precision: 10, scale: 2 }).notNull(),
     isActive: boolean("is_active").notNull().default(true),
     slotType: varchar("slot_type", { length: 20 })

@@ -18,7 +18,7 @@ import {
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { invalidateAvailabilityCacheByMerchantId } from "../lib/availability.js";
-import { findStaffConflict } from "../lib/booking-conflicts.js";
+import { findBookingConflict } from "../lib/booking-conflicts.js";
 import { writeAuditDiff } from "../lib/booking-edits.js";
 import { incrementPackageSessionsUsed, decrementPackageSessionsUsed } from "../lib/package-helpers.js";
 import { normalizePhone } from "../lib/normalize.js";
@@ -35,6 +35,7 @@ const serviceItemSchema = z
     booking_id: z.string().uuid().optional(),
     service_id: z.string().uuid(),
     staff_id: z.string().uuid(),
+    secondary_staff_id: z.string().uuid().nullable().optional(),
     start_time: z.string().datetime().optional(),
     price_sgd: z.number().nonnegative().optional(),
     use_package: z
@@ -100,6 +101,8 @@ bookingGroupsRouter.post(
         priceSgd: services.priceSgd,
         durationMinutes: services.durationMinutes,
         bufferMinutes: services.bufferMinutes,
+        preBufferMinutes: services.preBufferMinutes,
+        postBufferMinutes: services.postBufferMinutes,
       })
       .from(services)
       .where(and(inArray(services.id, serviceIds), eq(services.merchantId, merchantId)));
@@ -108,14 +111,38 @@ bookingGroupsRouter.post(
     }
     const svcMap = new Map(serviceRows.map((s) => [s.id, s]));
 
-    // Verify staff ownership
-    const staffIds = Array.from(new Set(body.services.map((s) => s.staff_id)));
+    // Verify staff ownership — primary staff plus any secondary staff supplied.
+    const staffIds = Array.from(
+      new Set([
+        ...body.services.map((s) => s.staff_id),
+        ...body.services
+          .map((s) => s.secondary_staff_id)
+          .filter((v): v is string => Boolean(v)),
+      ]),
+    );
     const staffRows = await db
       .select({ id: staff.id })
       .from(staff)
       .where(and(inArray(staff.id, staffIds), eq(staff.merchantId, merchantId)));
     if (staffRows.length !== staffIds.length) {
       return c.json({ error: "Not Found", message: "One or more staff not found" }, 404);
+    }
+
+    // Reject secondary on services without pre/post buffers — there's no
+    // window for the secondary to own.
+    for (const s of body.services) {
+      if (!s.secondary_staff_id) continue;
+      const svc = svcMap.get(s.service_id)!;
+      if (svc.preBufferMinutes === 0 && svc.postBufferMinutes === 0) {
+        return c.json(
+          {
+            error: "Bad Request",
+            message:
+              "Secondary staff requires the service to have pre or post buffer minutes",
+          },
+          400,
+        );
+      }
     }
 
     // Compute back-to-back start times when not supplied
@@ -129,13 +156,19 @@ bookingGroupsRouter.post(
       usePackage?: { clientPackageId: string; sessionId: string };
       serviceId: string;
       staffId: string;
+      secondaryStaffId: string | null;
     };
     const plan: Plan[] = [];
     for (let i = 0; i < body.services.length; i++) {
       const row = body.services[i];
       const svc = svcMap.get(row.service_id)!;
       const start = row.start_time ? parseISO(row.start_time) : cursor;
-      const totalDuration = svc.durationMinutes + svc.bufferMinutes;
+      // Total slot length includes pre + service + legacy + post buffers.
+      const totalDuration =
+        svc.preBufferMinutes +
+        svc.durationMinutes +
+        svc.bufferMinutes +
+        svc.postBufferMinutes;
       const end = addMinutes(start, totalDuration);
       cursor = end;
       const listPrice = row.price_sgd !== undefined ? row.price_sgd.toFixed(2) : svc.priceSgd;
@@ -150,6 +183,7 @@ bookingGroupsRouter.post(
           : undefined,
         serviceId: row.service_id,
         staffId: row.staff_id,
+        secondaryStaffId: row.secondary_staff_id ?? null,
       });
     }
 
@@ -365,6 +399,7 @@ bookingGroupsRouter.post(
               clientId: client.id,
               serviceId: p.serviceId,
               staffId: p.staffId,
+              secondaryStaffId: p.secondaryStaffId,
               startTime: p.startTime,
               endTime: p.endTime,
               durationMinutes: p.durationMinutes,
@@ -499,6 +534,8 @@ bookingGroupsRouter.patch(
         priceSgd: services.priceSgd,
         durationMinutes: services.durationMinutes,
         bufferMinutes: services.bufferMinutes,
+        preBufferMinutes: services.preBufferMinutes,
+        postBufferMinutes: services.postBufferMinutes,
       })
       .from(services)
       .where(and(inArray(services.id, serviceIds), eq(services.merchantId, merchantId)));
@@ -508,13 +545,37 @@ bookingGroupsRouter.patch(
     }
 
     // Verify every staff in the submitted services belongs to this merchant
-    const staffIds = Array.from(new Set(body.services.map((s) => s.staff_id)));
+    // (primary + secondary).
+    const staffIds = Array.from(
+      new Set([
+        ...body.services.map((s) => s.staff_id),
+        ...body.services
+          .map((s) => s.secondary_staff_id)
+          .filter((v): v is string => Boolean(v)),
+      ]),
+    );
     const staffRows = await db
       .select({ id: staff.id })
       .from(staff)
       .where(and(inArray(staff.id, staffIds), eq(staff.merchantId, merchantId)));
     if (staffRows.length !== staffIds.length) {
       return c.json({ error: "Not Found", message: "One or more staff not found" }, 404);
+    }
+
+    // Reject secondary on services without buffers
+    for (const s of body.services) {
+      if (!s.secondary_staff_id) continue;
+      const svc = svcMap.get(s.service_id)!;
+      if (svc.preBufferMinutes === 0 && svc.postBufferMinutes === 0) {
+        return c.json(
+          {
+            error: "Bad Request",
+            message:
+              "Secondary staff requires the service to have pre or post buffer minutes",
+          },
+          400,
+        );
+      }
     }
 
     // Classify submitted rows
@@ -526,17 +587,25 @@ bookingGroupsRouter.patch(
     const toKeep = body.services.filter((s) => s.booking_id && currentMap.has(s.booking_id));
     const toInsert = body.services.filter((s) => !s.booking_id);
 
-    // Conflict checks for kept + new
+    // Conflict checks for kept + new — buffer-aware: when the service has
+    // pre/post buffers and a secondary is set, only the primary's window
+    // blocks the primary; the secondary owns the buffer windows.
     const excludeIds = currentBookings.map((b) => b.id);
     for (const s of [...toKeep, ...toInsert]) {
       const svc = svcMap.get(s.service_id)!;
       const start = s.start_time ? parseISO(s.start_time) : new Date();
-      const end = addMinutes(start, svc.durationMinutes + svc.bufferMinutes);
-      const conflict = await findStaffConflict({
+      const conflict = await findBookingConflict({
         merchantId,
-        staffId: s.staff_id,
-        startTime: start,
-        endTime: end,
+        candidate: {
+          staffId: s.staff_id,
+          secondaryStaffId: s.secondary_staff_id ?? null,
+          startTime: start,
+          // Legacy bufferMinutes is shared/extra time that always blocks
+          // the primary; lump it into the primary window.
+          serviceDurationMinutes: svc.durationMinutes + svc.bufferMinutes,
+          preBufferMinutes: svc.preBufferMinutes,
+          postBufferMinutes: svc.postBufferMinutes,
+        },
         excludeBookingIds: excludeIds,
       });
       if (conflict) {
@@ -641,13 +710,20 @@ bookingGroupsRouter.patch(
         const existing = currentMap.get(s.booking_id!)!;
         const svc = svcMap.get(s.service_id)!;
         const start = s.start_time ? parseISO(s.start_time) : existing.startTime;
-        const end = addMinutes(start, svc.durationMinutes + svc.bufferMinutes);
+        const end = addMinutes(
+          start,
+          svc.preBufferMinutes +
+            svc.durationMinutes +
+            svc.bufferMinutes +
+            svc.postBufferMinutes,
+        );
         const listPrice = s.price_sgd !== undefined ? s.price_sgd.toFixed(2) : svc.priceSgd;
         const effectivePrice = s.use_package ? "0.00" : listPrice;
 
         const newValues = {
           serviceId: s.service_id,
           staffId: s.staff_id,
+          secondaryStaffId: s.secondary_staff_id ?? null,
           startTime: start,
           endTime: end,
           durationMinutes: svc.durationMinutes,
@@ -659,6 +735,7 @@ bookingGroupsRouter.patch(
           {
             serviceId: existing.serviceId,
             staffId: existing.staffId,
+            secondaryStaffId: existing.secondaryStaffId,
             startTime: existing.startTime,
             endTime: existing.endTime,
             priceSgd: existing.priceSgd,
@@ -721,7 +798,13 @@ bookingGroupsRouter.patch(
       for (const s of toInsert) {
         const svc = svcMap.get(s.service_id)!;
         const start = s.start_time ? parseISO(s.start_time) : new Date();
-        const end = addMinutes(start, svc.durationMinutes + svc.bufferMinutes);
+        const end = addMinutes(
+          start,
+          svc.preBufferMinutes +
+            svc.durationMinutes +
+            svc.bufferMinutes +
+            svc.postBufferMinutes,
+        );
         const listPrice = s.price_sgd !== undefined ? s.price_sgd.toFixed(2) : svc.priceSgd;
         const effectivePrice = s.use_package ? "0.00" : listPrice;
         const [b] = await tx
@@ -731,6 +814,7 @@ bookingGroupsRouter.patch(
             clientId: group.clientId,
             serviceId: s.service_id,
             staffId: s.staff_id,
+            secondaryStaffId: s.secondary_staff_id ?? null,
             startTime: start,
             endTime: end,
             durationMinutes: svc.durationMinutes,

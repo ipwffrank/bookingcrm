@@ -26,6 +26,8 @@ const createServiceSchema = z.object({
     .int("Duration must be a whole number")
     .positive("Duration must be positive"),
   buffer_minutes: z.number().int().min(0).optional().default(0),
+  pre_buffer_minutes: z.number().int().min(0).max(120).optional().default(0),
+  post_buffer_minutes: z.number().int().min(0).max(120).optional().default(0),
   price_sgd: z.number().positive("Price must be positive"),
   display_order: z.number().int().min(0).optional().default(0),
   slot_type: z.enum(["standard", "consult", "treatment"]).optional().default("standard"),
@@ -114,6 +116,8 @@ servicesRouter.post("/", requireMerchant, zValidator(createServiceSchema), async
       category: body.category,
       durationMinutes: body.duration_minutes,
       bufferMinutes: body.buffer_minutes,
+      preBufferMinutes: body.pre_buffer_minutes,
+      postBufferMinutes: body.post_buffer_minutes,
       priceSgd: String(body.price_sgd),
       displayOrder: body.display_order,
       slotType: body.slot_type,
@@ -158,6 +162,8 @@ servicesRouter.put("/:id", requireMerchant, zValidator(updateServiceSchema), asy
   if (body.category !== undefined) updateData.category = body.category;
   if (body.duration_minutes !== undefined) updateData.durationMinutes = body.duration_minutes;
   if (body.buffer_minutes !== undefined) updateData.bufferMinutes = body.buffer_minutes;
+  if (body.pre_buffer_minutes !== undefined) updateData.preBufferMinutes = body.pre_buffer_minutes;
+  if (body.post_buffer_minutes !== undefined) updateData.postBufferMinutes = body.post_buffer_minutes;
   if (body.price_sgd !== undefined) updateData.priceSgd = String(body.price_sgd);
   if (body.display_order !== undefined) updateData.displayOrder = body.display_order;
   if (body.slot_type !== undefined) updateData.slotType = body.slot_type;
