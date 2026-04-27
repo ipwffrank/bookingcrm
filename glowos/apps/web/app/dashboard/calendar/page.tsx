@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 import { BookingForm } from '../bookings/BookingForm';
+import { CheckoutModal } from '../components/CheckoutModal';
 import { computeCalendarRange } from '../../lib/operating-hours';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -125,6 +126,10 @@ export default function CalendarPage() {
 
   // Modals
   const [selBooking,    setSelBooking]    = useState<Booking | null>(null);
+  // Checkout modal — opened by Complete (in_progress) or Checkout Now (confirmed).
+  // Same component as the dashboard, so loyalty redemption + payment method
+  // flow is consistent everywhere completion happens.
+  const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
   const [clientSnippet, setClientSnippet] = useState<ClientSnippet | null>(null);
   const [snippetLoading, setSnippetLoading] = useState(false);
   const [showReschedule,   setShowReschedule]   = useState(false);
@@ -457,7 +462,7 @@ export default function CalendarPage() {
   }
 
   // ── Booking actions ───────────────────────────────────────────────────────────
-  async function bookingAction(id: string, action: 'check-in' | 'complete' | 'no-show') {
+  async function bookingAction(id: string, action: 'check-in' | 'no-show') {
     try {
       await apiFetch(`/merchant/bookings/${id}/${action}`, { method: 'PUT' });
       await load();
@@ -1075,9 +1080,10 @@ export default function CalendarPage() {
                     if (visE <= visS) return null;
                     const h    = heightPx(visS, visE);
                     const meta = STATUS_META[b.status];
-                    const canCheckIn  = b.status === 'confirmed';
-                    const canComplete = b.status === 'in_progress';
-                    const canNoShow   = b.status === 'confirmed' || b.status === 'in_progress';
+                    const canCheckIn      = b.status === 'confirmed';
+                    const canCheckoutNow  = b.status === 'confirmed';
+                    const canComplete     = b.status === 'in_progress';
+                    const canNoShow       = b.status === 'confirmed' || b.status === 'in_progress';
                     const isDraggable = b.status === 'confirmed' || b.status === 'in_progress';
 
                     return (
@@ -1110,11 +1116,20 @@ export default function CalendarPage() {
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" /></svg>
                             </button>
                           )}
+                          {canCheckoutNow && (
+                            <button
+                              title="Checkout Now (take payment, optionally redeem points, mark complete)"
+                              className="w-5 h-5 rounded flex items-center justify-center bg-tone-sage/30 hover:bg-tone-sage/50 text-tone-ink border border-tone-sage/50 transition-colors"
+                              onClick={e => { e.stopPropagation(); setCheckoutBookingId(b.id); }}
+                            >
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" /></svg>
+                            </button>
+                          )}
                           {canComplete && (
                             <button
-                              title="Mark Complete"
+                              title="Complete (take payment, optionally redeem points, mark complete)"
                               className="w-5 h-5 rounded flex items-center justify-center bg-tone-sage hover:bg-tone-sage text-white transition-colors"
-                              onClick={e => { e.stopPropagation(); bookingAction(b.id, 'complete'); }}
+                              onClick={e => { e.stopPropagation(); setCheckoutBookingId(b.id); }}
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                             </button>
@@ -1594,21 +1609,29 @@ export default function CalendarPage() {
               )}
 
               {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showReschedule && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {selBooking.status === 'confirmed' && (
-                    <button
-                      onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); setClientSnippet(null); }}
-                      className="flex-1 py-2 bg-grey-75 text-white text-xs font-semibold rounded-lg hover:bg-tone-ink transition-colors"
-                    >
-                      Check In
-                    </button>
+                    <>
+                      <button
+                        onClick={() => { bookingAction(selBooking.id, 'check-in'); setSelBooking(null); setClientSnippet(null); }}
+                        className="flex-1 py-2 bg-grey-75 text-white text-xs font-semibold rounded-lg hover:bg-tone-ink transition-colors"
+                      >
+                        Check In
+                      </button>
+                      <button
+                        onClick={() => { setCheckoutBookingId(selBooking.id); setSelBooking(null); setClientSnippet(null); }}
+                        className="flex-1 py-2 text-tone-ink text-xs font-semibold rounded-lg bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 transition-colors"
+                      >
+                        Checkout Now
+                      </button>
+                    </>
                   )}
                   {selBooking.status === 'in_progress' && (
                     <button
-                      onClick={() => { bookingAction(selBooking.id, 'complete'); setSelBooking(null); setClientSnippet(null); }}
+                      onClick={() => { setCheckoutBookingId(selBooking.id); setSelBooking(null); setClientSnippet(null); }}
                       className="flex-1 py-2 bg-tone-sage text-white text-xs font-semibold rounded-lg hover:bg-tone-sage transition-colors"
                     >
-                      Mark Complete
+                      Complete
                     </button>
                   )}
                   <button
@@ -1657,6 +1680,17 @@ export default function CalendarPage() {
           onClose={() => setEditBookingId(null)}
           onSave={() => {
             setEditBookingId(null);
+            void load();
+          }}
+        />
+      )}
+
+      {checkoutBookingId && (
+        <CheckoutModal
+          bookingId={checkoutBookingId}
+          onClose={() => setCheckoutBookingId(null)}
+          onComplete={() => {
+            setCheckoutBookingId(null);
             void load();
           }}
         />
