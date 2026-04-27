@@ -37,7 +37,13 @@ export interface BookingFormProps {
    */
   prefilledClient?: { name: string; phone: string };
   onClose: () => void;
-  onSave: () => void;
+  /**
+   * Called after a successful save. In create mode, receives the id of the
+   * first booking created — surfaces enough info for the parent to chain
+   * into edit mode (e.g. so the staff can immediately apply loyalty points,
+   * which is only possible against an existing booking row).
+   */
+  onSave: (createdBookingId?: string) => void;
 }
 
 export function BookingForm(props: BookingFormProps) {
@@ -492,7 +498,7 @@ export function BookingForm(props: BookingFormProps) {
     setSaving(true);
     try {
       if (mode === 'create') {
-        await apiFetch('/merchant/bookings/group', {
+        const resp = (await apiFetch('/merchant/bookings/group', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -518,7 +524,11 @@ export function BookingForm(props: BookingFormProps) {
               ? { package_id: sellPackageId, sold_by_staff_id: soldByStaffId }
               : undefined,
           }),
-        });
+        })) as { bookings?: Array<{ id: string }> };
+        // First booking is the canonical anchor for chained UX (e.g. apply
+        // loyalty points immediately after creating a future appointment).
+        onSave(resp.bookings?.[0]?.id);
+        return;
       } else if (resolvedGroupId) {
         await apiFetch(`/merchant/bookings/group/${resolvedGroupId}`, {
           method: 'PATCH',
