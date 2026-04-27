@@ -247,6 +247,62 @@ superRouter.get("/merchants", async (c) => {
   return c.json({ merchants: rows, total, limit, offset });
 });
 
+// ─── PATCH /super/merchants/:id/tier ──────────────────────────────────────────
+// Host-admin tier flip. Soft gate — does not touch existing groupId or
+// brandAdminGroupId rows. Logged via the existing logAudit helper using
+// action: 'write' (the action enum is closed); the discriminator lives in
+// metadata.event so audit consumers can filter on it.
+
+const setTierSchema = z.object({
+  tier: z.enum(["starter", "multibranch"]),
+});
+
+superRouter.patch("/merchants/:id/tier", zValidator(setTierSchema), async (c) => {
+  const merchantId = c.req.param("id")!;
+  const body = c.get("body") as z.infer<typeof setTierSchema>;
+  const actorUserId = c.get("userId");
+
+  const [previous] = await db
+    .select({ id: merchants.id, subscriptionTier: merchants.subscriptionTier })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  if (!previous) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  const [updated] = await db
+    .update(merchants)
+    .set({ subscriptionTier: body.tier, updatedAt: new Date() })
+    .where(eq(merchants.id, merchantId))
+    .returning();
+
+  // Resolve actor email from DB (not JWT) — keeps the audit log honest even
+  // if claims drift between sessions. Mirrors the impersonate handler.
+  const [actor] = await db
+    .select({ email: merchantUsers.email })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, actorUserId))
+    .limit(1);
+
+  await logAudit({
+    actorUserId,
+    actorEmail: actor?.email ?? "unknown",
+    action: "write",
+    targetMerchantId: merchantId,
+    method: "PATCH",
+    path: `/super/merchants/${merchantId}/tier`,
+    metadata: {
+      event: "set_tier",
+      previous_tier: previous.subscriptionTier,
+      new_tier: body.tier,
+    },
+  });
+
+  return c.json(updated);
+});
+
 // ─── GET /super/analytics/overview ────────────────────────────────────────────
 // Cross-tenant aggregates.
 
