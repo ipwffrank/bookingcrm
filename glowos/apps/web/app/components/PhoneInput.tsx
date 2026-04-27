@@ -8,30 +8,29 @@ export interface Country {
   iso: string;
   name: string;
   dial: string;
-  flag: string;
 }
 
 export const COUNTRIES: Country[] = [
-  { iso: 'SG', name: 'Singapore',       dial: '65',  flag: '🇸🇬' },
-  { iso: 'MY', name: 'Malaysia',        dial: '60',  flag: '🇲🇾' },
-  { iso: 'ID', name: 'Indonesia',       dial: '62',  flag: '🇮🇩' },
-  { iso: 'TH', name: 'Thailand',        dial: '66',  flag: '🇹🇭' },
-  { iso: 'PH', name: 'Philippines',     dial: '63',  flag: '🇵🇭' },
-  { iso: 'VN', name: 'Vietnam',         dial: '84',  flag: '🇻🇳' },
-  { iso: 'HK', name: 'Hong Kong',       dial: '852', flag: '🇭🇰' },
-  { iso: 'TW', name: 'Taiwan',          dial: '886', flag: '🇹🇼' },
-  { iso: 'AU', name: 'Australia',       dial: '61',  flag: '🇦🇺' },
-  { iso: 'NZ', name: 'New Zealand',     dial: '64',  flag: '🇳🇿' },
-  { iso: 'JP', name: 'Japan',           dial: '81',  flag: '🇯🇵' },
-  { iso: 'KR', name: 'South Korea',     dial: '82',  flag: '🇰🇷' },
-  { iso: 'CN', name: 'China',           dial: '86',  flag: '🇨🇳' },
-  { iso: 'IN', name: 'India',           dial: '91',  flag: '🇮🇳' },
-  { iso: 'US', name: 'United States',   dial: '1',   flag: '🇺🇸' },
-  { iso: 'CA', name: 'Canada',          dial: '1',   flag: '🇨🇦' },
-  { iso: 'GB', name: 'United Kingdom',  dial: '44',  flag: '🇬🇧' },
-  { iso: 'DE', name: 'Germany',         dial: '49',  flag: '🇩🇪' },
-  { iso: 'FR', name: 'France',          dial: '33',  flag: '🇫🇷' },
-  { iso: 'AE', name: 'UAE',             dial: '971', flag: '🇦🇪' },
+  { iso: 'SG', name: 'Singapore',       dial: '65'  },
+  { iso: 'MY', name: 'Malaysia',        dial: '60'  },
+  { iso: 'ID', name: 'Indonesia',       dial: '62'  },
+  { iso: 'TH', name: 'Thailand',        dial: '66'  },
+  { iso: 'PH', name: 'Philippines',     dial: '63'  },
+  { iso: 'VN', name: 'Vietnam',         dial: '84'  },
+  { iso: 'HK', name: 'Hong Kong',       dial: '852' },
+  { iso: 'TW', name: 'Taiwan',          dial: '886' },
+  { iso: 'AU', name: 'Australia',       dial: '61'  },
+  { iso: 'NZ', name: 'New Zealand',     dial: '64'  },
+  { iso: 'JP', name: 'Japan',           dial: '81'  },
+  { iso: 'KR', name: 'South Korea',     dial: '82'  },
+  { iso: 'CN', name: 'China',           dial: '86'  },
+  { iso: 'IN', name: 'India',           dial: '91'  },
+  { iso: 'US', name: 'United States',   dial: '1'   },
+  { iso: 'CA', name: 'Canada',          dial: '1'   },
+  { iso: 'GB', name: 'United Kingdom',  dial: '44'  },
+  { iso: 'DE', name: 'Germany',         dial: '49'  },
+  { iso: 'FR', name: 'France',          dial: '33'  },
+  { iso: 'AE', name: 'UAE',             dial: '971' },
 ];
 
 interface Parsed {
@@ -119,7 +118,7 @@ export function PhoneInput({
       >
         {COUNTRIES.map((c) => (
           <option key={c.iso} value={c.iso}>
-            {c.flag} +{c.dial}
+            {c.iso} +{c.dial}
           </option>
         ))}
       </select>
