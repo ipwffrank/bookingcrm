@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
+import { CheckoutModal } from './components/CheckoutModal';
 import { DayTimelineStrip } from './components/DayTimelineStrip';
 import { WaitlistCard, type WaitlistEntry } from './components/WaitlistCard';
 import { StaffContributionCard } from './components/StaffContributionCard';
@@ -101,15 +102,17 @@ function BookingCard({
   row,
   onAction,
   onEdit,
+  onCheckout,
 }: {
   row: BookingRow;
-  onAction: (bookingId: string, action: 'check-in' | 'complete' | 'no-show' | 'confirm') => Promise<void>;
+  onAction: (bookingId: string, action: 'check-in' | 'no-show' | 'confirm') => Promise<void>;
   onEdit: (bookingId: string) => void;
+  onCheckout: (bookingId: string) => void;
 }) {
   const { booking, service, staffMember, client } = row;
   const [acting, setActing] = useState<string | null>(null);
 
-  async function handleAction(action: 'check-in' | 'complete' | 'no-show' | 'confirm') {
+  async function handleAction(action: 'check-in' | 'no-show' | 'confirm') {
     setActing(action);
     try {
       await onAction(booking.id, action);
@@ -122,7 +125,13 @@ function BookingCard({
   // Check-in is allowed from both 'confirmed' and 'pending' — checking a
   // pending client in implicitly confirms them at the counter.
   const canCheckIn = booking.status === 'confirmed' || booking.status === 'pending';
+  // Complete (when in_progress) opens the checkout modal — no longer a
+  // direct status flip, so the staff can apply loyalty + confirm payment
+  // before the booking is marked done.
   const canComplete = booking.status === 'in_progress';
+  // Checkout NOW — for merchants who collect payment before the service.
+  // Available from 'confirmed' (skips check-in step internally).
+  const canCheckoutNow = booking.status === 'confirmed';
   const canNoShow = booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'in_progress';
 
   return (
@@ -186,11 +195,22 @@ function BookingCard({
             )}
             {canComplete && (
               <button
-                onClick={() => handleAction('complete')}
+                onClick={() => onCheckout(booking.id)}
                 disabled={acting !== null}
+                title="Take payment, optionally apply loyalty redemption, and mark complete."
                 className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-surface bg-tone-ink hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {acting === 'complete' ? '...' : 'Complete'}
+                Complete
+              </button>
+            )}
+            {canCheckoutNow && (
+              <button
+                onClick={() => onCheckout(booking.id)}
+                disabled={acting !== null}
+                title="Take payment now (before the service). Applies loyalty redemption and marks complete in one step."
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-tone-ink bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 disabled:opacity-50 transition-colors"
+              >
+                Checkout Now
               </button>
             )}
             {canNoShow && (
@@ -232,6 +252,7 @@ function DashboardPageInner() {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [showPreBook, setShowPreBook] = useState(false);
   const [editTarget, setEditTarget] = useState<{ bookingId: string } | null>(null);
+  const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
   const [date] = useState(todayDateString());
   const [revenue, setRevenue] = useState<{
     completedRevenue: string;
@@ -408,7 +429,7 @@ function DashboardPageInner() {
     return () => clearInterval(interval);
   }, [fetchBookings]);
 
-  async function handleAction(bookingId: string, action: 'check-in' | 'complete' | 'no-show' | 'confirm') {
+  async function handleAction(bookingId: string, action: 'check-in' | 'no-show' | 'confirm') {
     const token = localStorage.getItem('access_token');
     if (!token) { router.push('/login'); return; }
     try {
@@ -666,7 +687,12 @@ function DashboardPageInner() {
               ref={(el) => { bookingRefs.current[row.booking.id] = el; }}
               className={`rounded-xl transition-shadow ${flashBookingId === row.booking.id ? 'ring-2 ring-tone-sage shadow-md' : ''}`}
             >
-              <BookingCard row={row} onAction={handleAction} onEdit={(bookingId) => setEditTarget({ bookingId })} />
+              <BookingCard
+                row={row}
+                onAction={handleAction}
+                onEdit={(bookingId) => setEditTarget({ bookingId })}
+                onCheckout={(bookingId) => setCheckoutBookingId(bookingId)}
+              />
             </div>
           ))}
         </div>
@@ -708,6 +734,17 @@ function DashboardPageInner() {
           onClose={() => setEditTarget(null)}
           onSave={() => {
             setEditTarget(null);
+            void fetchBookings();
+          }}
+        />
+      )}
+
+      {checkoutBookingId && (
+        <CheckoutModal
+          bookingId={checkoutBookingId}
+          onClose={() => setCheckoutBookingId(null)}
+          onComplete={() => {
+            setCheckoutBookingId(null);
             void fetchBookings();
           }}
         />
