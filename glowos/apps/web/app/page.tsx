@@ -228,6 +228,10 @@ export default function LandingPage() {
                 <ul className="space-y-6 mb-10 md:mb-16 flex-grow font-sans">
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
+                    <span>Single location (upgrade for multi-branch)</span>
+                  </li>
+                  <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
+                    <span className="material-symbols-outlined text-secondary text-sm">check</span>
                     <span>Live Dashboard &amp; Analytics</span>
                   </li>
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
@@ -257,6 +261,10 @@ export default function LandingPage() {
                   $1,299<span className="text-lg text-on-surface-variant font-sans font-normal">/mo</span>
                 </div>
                 <ul className="space-y-6 mb-10 md:mb-16 flex-grow font-sans">
+                  <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
+                    <span className="material-symbols-outlined text-secondary text-sm">check</span>
+                    <span>Multi-branch (add unlimited locations)</span>
+                  </li>
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
                     <span>AI Concierge &amp; Auto Follow-Up</span>
@@ -296,7 +304,7 @@ export default function LandingPage() {
                   </li>
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
-                    <span>Multi-location Sync</span>
+                    <span>Custom Infrastructure &amp; Integrations</span>
                   </li>
                   <li className="text-fluid-body flex items-center gap-4 text-on-surface-variant">
                     <span className="material-symbols-outlined text-secondary text-sm">check</span>
