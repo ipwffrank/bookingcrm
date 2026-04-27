@@ -54,10 +54,12 @@ describe("apiFetch", () => {
     vi.mocked(global.fetch).mockResolvedValueOnce(
       makeJsonResponse({ message: "Not found" }, 404)
     );
-    await expect(apiFetch("/merchant/missing")).rejects.toThrow(ApiError);
-    await expect(apiFetch("/merchant/missing")).rejects.toMatchObject({
-      status: 404,
-    });
+    // Single call → assert both shape AND status on the same caught error.
+    // Two awaited expects would consume two mocked responses; the second falls
+    // through to real fetch and ECONNREFUSEDs in CI.
+    const err = await apiFetch("/merchant/missing").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 404 });
   });
 
   it("retries once after 401 with refreshed token", async () => {
