@@ -210,6 +210,24 @@ merchantRouter.post(
       );
     }
 
+    // Plan gate — multi-branch must be enabled on the merchant's subscription.
+    // Read the tier outside the transaction so we can short-circuit cheaply.
+    const [tierRow] = await db
+      .select({ tier: merchants.subscriptionTier })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+      .limit(1);
+
+    if (!tierRow || tierRow.tier !== "multibranch") {
+      return c.json(
+        {
+          error: "PlanGate",
+          message: "Contact support to enable multi-branch on your plan",
+        },
+        403,
+      );
+    }
+
     const result = await db.transaction(async (tx) => {
       const [user] = await tx
         .select({
