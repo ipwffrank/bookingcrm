@@ -55,6 +55,16 @@ export const bookings = pgTable(
     firstTimerDiscountApplied: boolean("first_timer_discount_applied")
       .notNull()
       .default(false),
+    // Phase 2 loyalty redemption — see services/api/src/routes/bookings.ts
+    // (apply-loyalty-redemption / remove-loyalty-redemption). On cancel the
+    // pointer is left as-is so we keep an audit trail of what was redeemed;
+    // the offsetting `adjust` row in loyalty_transactions is the source of
+    // truth for the current balance.
+    discountSgd: numeric("discount_sgd", { precision: 10, scale: 2 })
+      .notNull()
+      .default("0"),
+    loyaltyPointsRedeemed: integer("loyalty_points_redeemed").notNull().default(0),
+    loyaltyRedemptionTxId: uuid("loyalty_redemption_tx_id"),
     commissionRate: numeric("commission_rate", { precision: 5, scale: 4 }).notNull().default("0"),
     commissionSgd: numeric("commission_sgd", { precision: 10, scale: 2 }).notNull().default("0"),
     merchantPayoutSgd: numeric("merchant_payout_sgd", { precision: 10, scale: 2 }),

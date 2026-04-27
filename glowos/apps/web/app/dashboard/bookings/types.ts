@@ -70,6 +70,9 @@ export interface EditContextResponse {
     priceSgd: string;
     clientNotes: string | null;
     paymentMethod: string | null;
+    discountSgd: string;
+    loyaltyPointsRedeemed: number;
+    loyaltyRedemptionTxId: string | null;
   };
   group: {
     id: string;
@@ -77,7 +80,7 @@ export interface EditContextResponse {
     notes: string | null;
     totalPriceSgd: string;
   } | null;
-  client: { id: string; name: string | null; phone: string };
+  client: { id: string; name: string | null; phone: string; profileId: string | null };
   siblingBookings: Array<{
     booking: EditContextResponse["booking"];
     service?: { id: string; name: string };
