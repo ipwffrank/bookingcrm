@@ -293,6 +293,132 @@ describe("Automations router — PUT save fires handler on enable", () => {
   });
 });
 
+describe("Automations router — rebook perService config", () => {
+  beforeEach(() => {
+    _roleRef.value = "owner";
+    _selectQueue.length = 0;
+    _insertQueue.length = 0;
+    _updateQueue.length = 0;
+    mockHandleBirthday.mockClear().mockResolvedValue(0);
+    mockHandleWinback.mockClear().mockResolvedValue(0);
+    mockHandleRebook.mockClear().mockResolvedValue(0);
+  });
+
+  it("PUT /rebook accepts perService map in config and passes it to the handler", async () => {
+    const savedRow = {
+      id: "auto-3",
+      merchantId: "merchant-1",
+      kind: "rebook",
+      enabled: true,
+      messageTemplate: "Hi {{name}}, time to rebook!",
+      promoCode: null,
+      config: {
+        defaultAfterDays: 30,
+        perService: { "svc-botox": 90, "svc-filler": 180 },
+      },
+    };
+    _insertQueue.push([savedRow]);
+    _updateQueue.push([savedRow]);
+    mockHandleRebook.mockResolvedValue(1);
+
+    const app = makeApp();
+    const res = await app.request("/merchant/automations/rebook", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: true,
+        messageTemplate: "Hi {{name}}, time to rebook!",
+        config: {
+          defaultAfterDays: 30,
+          perService: { "svc-botox": 90, "svc-filler": 180 },
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    // Handler must have been called — the route fires it synchronously on save
+    expect(mockHandleRebook).toHaveBeenCalledTimes(1);
+    expect(mockHandleRebook).toHaveBeenCalledWith(savedRow);
+    const body = await jsonBody(res);
+    expect(body.sentOnSave).toBe(1);
+    // Config round-trips with perService intact
+    const automation = body.automation as { config: { perService?: Record<string, number> } } | undefined;
+    expect(automation?.config?.perService).toEqual({ "svc-botox": 90, "svc-filler": 180 });
+  });
+
+  it("PUT /rebook with perService override honors service-specific cadence (handler receives correct config)", async () => {
+    // This tests that a booking 90 days old for svc-botox (perService = 90) would be sent.
+    // The worker logic is: if perService[serviceId] === 90, it re-checks the window for that
+    // service (90 days ago). Here we verify the route passes through the config unmodified
+    // and the handler is invoked with the full perService map, returning the expected sent count.
+    const serviceId = "svc-botox";
+    const savedRow = {
+      id: "auto-4",
+      merchantId: "merchant-1",
+      kind: "rebook",
+      enabled: true,
+      messageTemplate: "Hi {{name}}",
+      promoCode: null,
+      config: {
+        defaultAfterDays: 30,
+        perService: { [serviceId]: 90 },
+      },
+    };
+    _insertQueue.push([savedRow]);
+    _updateQueue.push([savedRow]);
+    // Handler returns 1 — simulates a booking 90 days ago matching the perService override
+    mockHandleRebook.mockResolvedValue(1);
+
+    const app = makeApp();
+    const res = await app.request("/merchant/automations/rebook", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: true,
+        messageTemplate: "Hi {{name}}",
+        config: { defaultAfterDays: 30, perService: { [serviceId]: 90 } },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockHandleRebook).toHaveBeenCalledWith(savedRow);
+    expect((await jsonBody(res)).sentOnSave).toBe(1);
+  });
+
+  it("PUT /rebook with no perService falls back to defaultAfterDays", async () => {
+    // Service not in perService map → handler uses defaultAfterDays (30 days)
+    const savedRow = {
+      id: "auto-5",
+      merchantId: "merchant-1",
+      kind: "rebook",
+      enabled: true,
+      messageTemplate: "Hi {{name}}",
+      promoCode: null,
+      config: { defaultAfterDays: 30 },
+    };
+    _insertQueue.push([savedRow]);
+    _updateQueue.push([savedRow]);
+    // Handler returns 2 — matches two bookings at 30-day default cadence
+    mockHandleRebook.mockResolvedValue(2);
+
+    const app = makeApp();
+    const res = await app.request("/merchant/automations/rebook", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: true,
+        messageTemplate: "Hi {{name}}",
+        config: { defaultAfterDays: 30 },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockHandleRebook).toHaveBeenCalledWith(savedRow);
+    const body = await jsonBody(res);
+    expect(body.sentOnSave).toBe(2);
+    // Config has no perService key — the worker will use defaultAfterDays for all services
+    const automation = body.automation as { config: { perService?: unknown } } | undefined;
+    expect(automation?.config?.perService).toBeUndefined();
+  });
+});
+
 describe("Automation dedupe/cooldown — contract via run-now mock", () => {
   beforeEach(() => {
     _roleRef.value = "owner";

@@ -17,6 +17,7 @@ interface WinbackConfig {
 
 interface RebookConfig {
   defaultAfterDays?: number;
+  perService?: Record<string, number>;
 }
 
 type AutomationConfig = BirthdayConfig | WinbackConfig | RebookConfig;
@@ -32,6 +33,12 @@ interface Automation {
   lastRunAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+}
+
+interface ServiceLite {
+  id: string;
+  name: string;
+  durationMinutes?: number;
 }
 
 // ─── Metadata per kind ─────────────────────────────────────────────────────────
@@ -67,22 +74,27 @@ interface CardState {
   promoCode: string;
   afterDays: string;       // winback
   defaultAfterDays: string; // rebook
+  perService: Record<string, number>; // rebook per-service overrides
 }
 
 function AutomationCard({
   automation,
+  services,
   onSave,
 }: {
   automation: Automation;
+  services?: ServiceLite[];
   onSave: (kind: AutomationKind, patch: CardState) => Promise<void>;
 }) {
   const meta = KIND_META[automation.kind];
+  const initialPerService = (automation.config as RebookConfig).perService ?? {};
   const [state, setState] = useState<CardState>({
     enabled: automation.enabled,
     messageTemplate: automation.messageTemplate,
     promoCode: automation.promoCode ?? '',
     afterDays: String((automation.config as WinbackConfig).afterDays ?? 90),
     defaultAfterDays: String((automation.config as RebookConfig).defaultAfterDays ?? 30),
+    perService: initialPerService,
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -193,19 +205,57 @@ function AutomationCard({
       )}
 
       {automation.kind === 'rebook' && (
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-grey-70 flex-shrink-0 w-56">
-            Default reminder after last visit
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={state.defaultAfterDays}
-            onChange={(e) => setState((s) => ({ ...s, defaultAfterDays: e.target.value }))}
-            className="w-24 px-3 py-1.5 border border-grey-20 rounded-lg text-sm text-tone-ink bg-tone-surface focus:outline-none focus:border-tone-ink"
-          />
-          <span className="text-sm text-grey-50">days</span>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-grey-70 flex-shrink-0 w-56">
+              Default reminder after last visit
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={state.defaultAfterDays}
+              onChange={(e) => setState((s) => ({ ...s, defaultAfterDays: e.target.value }))}
+              className="w-24 px-3 py-1.5 border border-grey-20 rounded-lg text-sm text-tone-ink bg-tone-surface focus:outline-none focus:border-tone-ink"
+            />
+            <span className="text-sm text-grey-50">days</span>
+          </div>
+
+          {services && services.length > 0 && (
+            <div className="space-y-1.5 mt-3 pt-3 border-t border-grey-10">
+              <label className="block text-sm font-medium text-grey-75">
+                Per-service overrides <span className="font-normal text-grey-45">(blank = use default)</span>
+              </label>
+              <p className="text-xs text-grey-45">
+                Different services have natural cadences. Botox typically 90 days, fillers 180+, facials 30. Set the days for each.
+              </p>
+              <div className="space-y-1">
+                {services.map(svc => (
+                  <div key={svc.id} className="flex items-center gap-3">
+                    <span className="flex-1 text-sm text-grey-75 truncate">{svc.name}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={730}
+                      placeholder={String(state.defaultAfterDays || 30)}
+                      value={state.perService[svc.id] ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setState((s) => {
+                          const next = { ...s.perService };
+                          if (v === '') delete next[svc.id];
+                          else next[svc.id] = Math.max(1, Math.min(730, parseInt(v, 10) || 0));
+                          return { ...s, perService: next };
+                        });
+                      }}
+                      className="w-20 px-2 py-1 border border-grey-20 rounded text-sm text-tone-ink bg-tone-surface focus:outline-none focus:border-tone-ink"
+                    />
+                    <span className="text-xs text-grey-50 w-8">days</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -376,6 +426,7 @@ export default function MarketingAutomationPage() {
   const [automationList, setAutomationList] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [services, setServices] = useState<ServiceLite[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
@@ -391,6 +442,12 @@ export default function MarketingAutomationPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    apiFetch('/merchant/services')
+      .then((data: { services: ServiceLite[] }) => setServices(data.services ?? []))
+      .catch(() => { /* swallow — perService UI just won't show options */ });
+  }, []);
+
   const handleSave = useCallback(
     async (kind: AutomationKind, patch: CardState) => {
       const token = localStorage.getItem('access_token');
@@ -400,7 +457,10 @@ export default function MarketingAutomationPage() {
       if (kind === 'winback') {
         config = { afterDays: parseInt(patch.afterDays, 10) || 90 };
       } else if (kind === 'rebook') {
-        config = { defaultAfterDays: parseInt(patch.defaultAfterDays, 10) || 30 };
+        config = {
+          defaultAfterDays: parseInt(patch.defaultAfterDays, 10) || 30,
+          perService: patch.perService,
+        };
       } else {
         config = { sendDaysBefore: 0 };
       }
@@ -451,6 +511,7 @@ export default function MarketingAutomationPage() {
         <AutomationCard
           key={automation.kind}
           automation={automation}
+          services={automation.kind === 'rebook' ? services : undefined}
           onSave={handleSave}
         />
       ))}
