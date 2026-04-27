@@ -90,13 +90,20 @@ bookingGroupsRouter.post(
       | "clinician"
       | "staff"
       | undefined;
+    // Brand admins viewing another branch get a synthetic userRole='owner'
+    // from the auth middleware (they hold owner-equivalent authority within
+    // their group), but they're not the *local* signup owner of the viewed
+    // branch. For the operating-hours override specifically, only the local
+    // owner gets that authority — other branches' owners are bound to the
+    // viewed branch's stated hours just like a manager would be.
+    const viewingMerchantId = c.get("viewingMerchantId");
+    const isLocalOwner = userRole === "owner" && !viewingMerchantId;
     const body = c.get("body") as z.infer<typeof createGroupSchema>;
 
-    // Operating-hours gate. Non-owners (manager / clinician / staff) can't
-    // schedule bookings outside the merchant's stated open hours or on a
-    // closed day. Owner can override — there are legitimate after-hours
-    // appointments and only the boss should authorise them.
-    if (userRole !== "owner") {
+    // Operating-hours gate. Only the local owner can override; managers,
+    // clinicians, staff, and brand admins viewing this branch are all bound
+    // to the merchant's stated hours.
+    if (!isLocalOwner) {
       const [merchantRow] = await db
         .select({ operatingHours: merchants.operatingHours })
         .from(merchants)
