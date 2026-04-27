@@ -11,6 +11,8 @@ interface Merchant {
   id: string;
   name: string;
   slug: string;
+  subscriptionTier: 'starter' | 'multibranch';
+  groupId?: string | null;
 }
 
 const BASE_NAV_ITEMS = [
