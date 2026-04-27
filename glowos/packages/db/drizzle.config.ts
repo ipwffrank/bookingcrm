@@ -32,6 +32,7 @@ export default {
     "./src/schema/brand-invites.ts",
     "./src/schema/clinical-records.ts",
     "./src/schema/automations.ts",
+    "./src/schema/loyalty.ts",
   ],
   out: "./src/migrations",
   dialect: "postgresql",

@@ -16,6 +16,8 @@ import {
   bookingEdits,
   clientPackages,
   packageSessions,
+  loyaltyPrograms,
+  loyaltyTransactions,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -979,6 +981,50 @@ merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
       merchant_id: merchantId,
       client_id: updated.clientId,
     });
+  }
+
+  // ── Loyalty auto-earn ─────────────────────────────────────────────────────
+  // Fire-and-forget: earning failures must never block booking completion.
+  if (updated?.clientId && updated.priceSgd) {
+    (async () => {
+      try {
+        const [program] = await db
+          .select()
+          .from(loyaltyPrograms)
+          .where(eq(loyaltyPrograms.merchantId, merchantId))
+          .limit(1);
+
+        if (program?.enabled) {
+          const priceSgd = parseFloat(updated.priceSgd);
+          if (priceSgd > 0) {
+            const earned =
+              Math.floor(priceSgd * program.pointsPerDollar) + program.pointsPerVisit;
+            if (earned > 0) {
+              const expiresAt =
+                program.earnExpiryMonths > 0
+                  ? new Date(
+                      Date.now() +
+                        program.earnExpiryMonths * 30 * 24 * 60 * 60 * 1000,
+                    )
+                  : null;
+              await db.insert(loyaltyTransactions).values({
+                merchantId,
+                clientId: updated.clientId,
+                kind: "earn",
+                amount: earned,
+                earnedFromSgd: updated.priceSgd,
+                bookingId,
+                reason: "Earned from booking",
+                expiresAt: expiresAt ?? undefined,
+                createdAt: new Date(),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[loyalty] auto-earn failed for booking", bookingId, err);
+      }
+    })();
   }
 
   return c.json({ booking: updated });
