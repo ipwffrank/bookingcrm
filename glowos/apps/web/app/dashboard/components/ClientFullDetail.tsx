@@ -897,10 +897,26 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
               const discount = parseFloat(e.booking.discountSgd ?? '0');
               const ptsRedeemed = e.booking.loyaltyPointsRedeemed ?? 0;
               const net = Math.max(0, gross - discount);
+              const statusLabel = (() => {
+                switch (e.booking.status) {
+                  case 'pending': return 'Pending confirmation';
+                  case 'confirmed': return 'Confirmed';
+                  case 'in_progress': return 'In progress';
+                  default: return null;
+                }
+              })();
+              const statusClass = e.booking.status === 'pending' ? 'state-notified' : 'state-default';
               return (
                 <div key={e.booking.id} className="flex items-center justify-between bg-tone-sage/5 rounded-lg px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
+                      {statusLabel && (
+                        <span className={`text-[10px] uppercase tracking-wider ${statusClass}`}>
+                          {statusLabel}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-grey-60 mt-0.5">{e.staffMember.name} · {fmt(e.booking.startTime)} · {new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-grey-60">
                       {e.booking.paymentMethod && (
