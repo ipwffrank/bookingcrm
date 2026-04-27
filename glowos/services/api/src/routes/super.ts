@@ -251,7 +251,7 @@ superRouter.get("/merchants", async (c) => {
 // Host-admin tier flip. Soft gate — does not touch existing groupId or
 // brandAdminGroupId rows. Logged via the existing logAudit helper using
 // action: 'write' (the action enum is closed); the discriminator lives in
-// metadata.event so audit consumers can filter on it.
+// metadata.subAction so audit consumers can filter on it.
 
 const setTierSchema = z.object({
   tier: z.enum(["starter", "multibranch"]),
@@ -260,7 +260,7 @@ const setTierSchema = z.object({
 superRouter.patch("/merchants/:id/tier", zValidator(setTierSchema), async (c) => {
   const merchantId = c.req.param("id")!;
   const body = c.get("body") as z.infer<typeof setTierSchema>;
-  const actorUserId = c.get("userId");
+  const actorUserId = c.get("userId")!;
 
   const [previous] = await db
     .select({ id: merchants.id, subscriptionTier: merchants.subscriptionTier })
@@ -294,9 +294,9 @@ superRouter.patch("/merchants/:id/tier", zValidator(setTierSchema), async (c) =>
     method: "PATCH",
     path: `/super/merchants/${merchantId}/tier`,
     metadata: {
-      event: "set_tier",
-      previous_tier: previous.subscriptionTier,
-      new_tier: body.tier,
+      subAction: "set_tier",
+      previousTier: previous.subscriptionTier,
+      newTier: body.tier,
     },
   });
 

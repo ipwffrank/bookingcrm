@@ -5,7 +5,7 @@
  *   - PATCH /super/merchants/:id/tier rejects an invalid tier value (400)
  *   - PATCH /super/merchants/:id/tier writes the new tier, returns the updated
  *     merchant, and writes a row to super_admin_audit_log with
- *     action='write' and metadata.event='set_tier'
+ *     action='write' and metadata.subAction='set_tier'
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
@@ -158,7 +158,7 @@ describe("PATCH /super/merchants/:id/tier", () => {
     expect(body.id).toBe("m1");
 
     // Verify the audit insert landed in super_admin_audit_log with the
-    // expected event discriminator + tier transition payload.
+    // expected subAction discriminator + tier transition payload.
     const auditCall = _insertCalls.find(
       (call) =>
         (call.table as { __name?: string }).__name === "super_admin_audit_log",
@@ -167,12 +167,12 @@ describe("PATCH /super/merchants/:id/tier", () => {
     const values = auditCall!.values as {
       action: string;
       targetMerchantId: string;
-      metadata: { event: string; previous_tier: string; new_tier: string };
+      metadata: { subAction: string; previousTier: string; newTier: string };
     };
     expect(values.action).toBe("write");
     expect(values.targetMerchantId).toBe("m1");
-    expect(values.metadata.event).toBe("set_tier");
-    expect(values.metadata.previous_tier).toBe("starter");
-    expect(values.metadata.new_tier).toBe("multibranch");
+    expect(values.metadata.subAction).toBe("set_tier");
+    expect(values.metadata.previousTier).toBe("starter");
+    expect(values.metadata.newTier).toBe("multibranch");
   });
 });
