@@ -69,8 +69,12 @@ async function getBalance(merchantId: string, clientId: string): Promise<number>
 
 loyaltyProgramRouter.get("/program", requireMerchant, async (c) => {
   const role = c.get("userRole");
-  if (!role || !["owner", "manager", "clinician"].includes(role)) {
-    return c.json({ error: "Forbidden", message: "Owner or manager only" }, 403);
+  // Loyalty program configuration (rates, min redeem, expiry) is owner-only
+  // to match the PUT — manager/clinician/staff have no reason to see the
+  // config page since they can't change it. Per-client balance and ledger
+  // live on a different endpoint and remain accessible to the relevant roles.
+  if (role !== "owner") {
+    return c.json({ error: "Forbidden", message: "Owner only" }, 403);
   }
 
   const merchantId = c.get("merchantId")!;

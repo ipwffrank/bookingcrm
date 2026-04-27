@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -241,6 +242,29 @@ function LoyaltyProgramCard() {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LoyaltyPage() {
+  const router = useRouter();
+  // Owner-only client-side guard. Backend enforces the same rule on
+  // GET /merchant/loyalty/program; this just avoids a flash of the form
+  // for non-owners who could otherwise reach the route by direct URL.
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
+      if (u.role === 'owner') {
+        setAllowed(true);
+      } else {
+        setAllowed(false);
+        router.replace('/dashboard');
+      }
+    } catch {
+      setAllowed(false);
+      router.replace('/dashboard');
+    }
+  }, [router]);
+
+  if (allowed !== true) return null;
+
   return (
     <div className="max-w-2xl space-y-6">
       <div>
