@@ -210,6 +210,28 @@ merchantRouter.post(
       );
     }
 
+    // Plan gate — `starter` is the only tier that blocks multi-branch
+    // features. Any non-starter tier (multibranch, professional, future paid
+    // tiers) passes. Read the tier outside the transaction so we can
+    // short-circuit cheaply. Treat a missing merchant as starter-equivalent
+    // (default-deny) — the in-tx merchant lookup will surface a clearer
+    // 4xx if needed.
+    const [tierRow] = await db
+      .select({ tier: merchants.subscriptionTier })
+      .from(merchants)
+      .where(eq(merchants.id, merchantId))
+      .limit(1);
+
+    if (!tierRow || tierRow.tier === "starter") {
+      return c.json(
+        {
+          error: "Forbidden",
+          message: "Contact support to enable multi-branch on your plan",
+        },
+        403,
+      );
+    }
+
     const result = await db.transaction(async (tx) => {
       const [user] = await tx
         .select({

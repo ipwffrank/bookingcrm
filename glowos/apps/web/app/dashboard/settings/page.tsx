@@ -30,6 +30,7 @@ interface Merchant {
     no_show_charge: NoShowCharge;
   } | null;
   gbpBookingLinkConnectedAt: string | null;
+  subscriptionTier?: 'starter' | 'multibranch';
 }
 
 interface ConnectStatus {
@@ -2080,6 +2081,25 @@ function SettingsContent() {
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your business profile, policies, and integrations</p>
       </div>
+
+      {merchant?.subscriptionTier === 'starter' && (
+        <div className="mb-6 rounded-xl border border-tone-sage/30 bg-tone-surface-warm p-5 shadow-sm">
+          <h2 className="font-newsreader text-lg font-semibold text-tone-ink">
+            Manage multiple locations
+          </h2>
+          <p className="mt-1 text-sm text-grey-70">
+            You're on the Starter plan. Upgrade to Multi-Branch to open additional
+            branches and roll up reporting across all of them.
+          </p>
+          <a
+            href={`mailto:test@test.com?subject=${encodeURIComponent('GlowOS multi-branch upgrade')}&body=${encodeURIComponent(`Hi, I'd like to upgrade ${merchant.name} to the Multi-Branch plan.`)}`}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-tone-ink px-4 py-2 text-sm font-medium text-tone-surface-warm transition-colors hover:bg-tone-sage"
+          >
+            Contact us
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      )}
 
       <UpgradeToGroupCard />
 

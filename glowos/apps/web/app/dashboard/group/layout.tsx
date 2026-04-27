@@ -83,6 +83,23 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
     }
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const m = JSON.parse(localStorage.getItem('merchant') ?? '{}');
+      // Tier policy: only `starter` blocks multi-branch features. Any other
+      // tier (multibranch, professional, future paid tiers) is allowed.
+      // Treat missing tier as starter-equivalent (default-deny).
+      if (!m.subscriptionTier || m.subscriptionTier === 'starter') {
+        router.replace('/dashboard');
+      }
+    } catch {
+      // If localStorage is corrupt, fall back to /dashboard rather than
+      // letting the user sit on a page they may not be authorized for.
+      router.replace('/dashboard');
+    }
+  }, [pathname, router]);
+
   function handleLogout() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('user');
