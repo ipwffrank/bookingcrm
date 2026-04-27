@@ -81,6 +81,11 @@ export function ServiceRow({
   );
 
   const svc = services.find((s) => s.id === row.serviceId);
+  // Split-buffer services need a secondary staff selector. Hidden entirely
+  // when the service has no pre/post buffer windows since a secondary with
+  // nothing to own is rejected by the backend.
+  const hasBuffers =
+    !!svc && ((svc.preBufferMinutes ?? 0) > 0 || (svc.postBufferMinutes ?? 0) > 0);
 
   const soldQuantityForService = sellPackageTemplate
     ? sellPackageTemplate.includedServices
@@ -202,6 +207,40 @@ export function ServiceRow({
             })}
         </select>
       </div>
+      {hasBuffers && svc && (
+        <div>
+          <label className="block text-xs font-medium text-grey-75 mb-1">
+            Secondary staff (handles {svc.preBufferMinutes ?? 0}min prep + {svc.postBufferMinutes ?? 0}min cleanup)
+          </label>
+          <select
+            value={row.secondaryStaffId ?? ''}
+            onChange={(e) =>
+              onChange({ secondaryStaffId: e.target.value ? e.target.value : null })
+            }
+            className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tone-sage"
+          >
+            <option value="">(none — primary staff handles full duration)</option>
+            {staff
+              // Exclude the primary (can't be both) and the "Any Available"
+              // bucket placeholder. Inactive staff are also dropped — but
+              // because edit-context returns staff without an isActive flag,
+              // we treat undefined as active so we don't accidentally hide
+              // everyone.
+              .filter((s) => {
+                if (s.id === row.staffId) return false;
+                if (isAnyAvailablePlaceholder(s.name)) return false;
+                if (s.isActive === false) return false;
+                return true;
+              })
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.title ? ` · ${s.title}` : ''}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input
           type="datetime-local"

@@ -14,6 +14,10 @@ export interface ServiceOption {
   priceSgd: string;
   durationMinutes: number;
   bufferMinutes: number;
+  /** Pre-treatment minutes owned by the secondary staff (prep). 0 = no split. */
+  preBufferMinutes?: number;
+  /** Post-treatment minutes owned by the secondary staff (cleanup). 0 = no split. */
+  postBufferMinutes?: number;
 }
 
 export interface StaffOption {
@@ -21,6 +25,10 @@ export interface StaffOption {
   name: string;
   /** Service IDs this staff member is credentialed to perform. Empty = none. */
   serviceIds: string[];
+  /** Display title (e.g. "Senior Therapist"). Optional — not all endpoints return it. */
+  title?: string | null;
+  /** True when the staff member is currently active. Defaults to true if absent. */
+  isActive?: boolean;
 }
 
 export interface PendingPackageSession {
@@ -52,6 +60,12 @@ export interface ServiceRowState {
   bookingId?: string;
   serviceId: string;
   staffId: string;
+  /**
+   * Optional secondary staff that owns the pre/post buffer windows for this
+   * row. Null means the primary covers the whole slot (legacy behaviour).
+   * Only meaningful when the row's service has pre/post buffers configured.
+   */
+  secondaryStaffId?: string | null;
   startTime: string; // ISO
   priceSgd: string;
   priceTouched: boolean; // true if user edited the price directly
@@ -67,6 +81,7 @@ export interface EditContextResponse {
     clientId: string;
     serviceId: string;
     staffId: string;
+    secondaryStaffId: string | null;
     startTime: string;
     endTime: string;
     priceSgd: string;
