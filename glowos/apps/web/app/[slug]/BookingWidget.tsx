@@ -7,7 +7,7 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { OTPVerificationCard } from './components/OTPVerificationCard';
 import { ReturningCustomerCard } from './components/ReturningCustomerCard';
-import { PhoneInput } from './components/PhoneInput';
+import { PhoneInput } from '../components/PhoneInput';
 import { JoinWaitlistCard } from './components/JoinWaitlistCard';
 
 declare global {
