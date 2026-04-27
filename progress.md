@@ -1,5 +1,80 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 21 April 2026 (Session 18)**
+**Last updated: 27 April 2026 (Session 20)**
+
+---
+
+## What's Completed (Session 20 — 27 April 2026)
+
+A multi-phase day pivoting GlowOS toward the aesthetic-clinic ICP. Twelve coherent feature drops, six PRs to main, five additive Neon migrations (0008–0012), all shipped end-to-end (Vercel + Railway).
+
+### Multi-branch / brand admin — Phase 1 ✅
+Self-serve owner upgrade → brand-admin role + group + first branch. New `/dashboard/group/*` UI: Overview / Branches / Clients / Admins. Branch CRUD with modals (`POST /group/branches`, `PATCH /group/branches/:id`). Branch picker + view-as-branch flow that re-issues JWTs with `viewingMerchantId` claim and mounts a sage `<BrandViewBanner>` in `/dashboard` and `/staff` layouts. Mutually-exclusive guards with super-admin impersonation. Palette migration of all four `/group` files from indigo → 3-tone (`tone-ink` / `tone-sage` / `grey-*`). API: `POST /merchant/upgrade-to-brand`, `POST /group/view-as-branch`, `POST /auth/end-brand-view`. `requireMerchant` honors `viewingMerchantId` and synthesizes `userRole = "owner"` against group-membership check on every request.
+
+### Multi-branch / brand admin — Phase 1 follow-on ✅
+**Co-brand-admin promotion** — `GET/POST/DELETE /group/admins` + drawer UI. Last-admin guard prevents orphaning. Role gate at API + invite-accept rejects staff-role users with remediation message ("promote to manager first"). **Staff role change UI** — owner can promote staff↔manager inline on `/dashboard/staff`. Cascade-clears brand-admin claim when a manager-with-claim is demoted to staff (subject to last-admin guard). `merchant_users.brand_admin_group_id` (column added in migration `0008` — applied today).
+
+### Multi-branch / brand admin — Phase 2 (invite link) ✅
+Single-use, email-bound `brand_invites` (table created in migration `0009`). 7-day default expiry, configurable 1–30. `crypto.randomBytes(32).toString("base64url")` token. `POST/GET/DELETE /group/invites` for the inviter; public `GET /brand-invite/:token` + authenticated `POST /brand-invite/:token/accept`. **Signup-and-accept** path (`POST /brand-invite/:token/signup-and-accept`) for invitees without an existing GlowOS account — creates merchant_user with role=manager nominally tied to the inviter's home branch + `brand_admin_group_id` set. Recipient page at `/brand-invite/[token]` with three states (invalid / valid+sign-in / valid+signup-and-accept). `/login` honours allowlisted `return_to` query param (no open-redirect).
+
+### Sidebar role badges ✅
+`STAFF` / `BRANCH ADMIN` / `BRAND ADMIN` pills on the merchant + staff sidebars. Precedence: brand > branch > staff. Sage for BRAND, ink for BRANCH, grey for STAFF. Computed from `localStorage.user.role` + `brandAdminGroupId`.
+
+### Right-drawer client detail ✅
+Replaced the centred modal in `/dashboard/clients` with a right-side slide-in drawer reused across `/staff/clients` and (in aggregate form) `/dashboard/group/clients`. Single source of truth: `glowos/apps/web/app/dashboard/components/ClientFullDetail.tsx` — every section from the legacy `[id]` page (header w/ Export PDF + New Booking, stats, upcoming, service history, treatment log + add, packages, treatment quotes, reviews, waitlist history) plus the new EHR sections. Standalone `[id]` page reduced from 884 → 20 lines (thin wrapper around the same component, kept for direct URL access). Brand-admin variant (`<GroupClientDetailPanel/>`) shows cross-brand aggregate + per-branch breakdown with "Open at this branch →" actions that fire view-as-branch.
+
+### Super admin user account management ✅
+`/super/users` page with status filter (Active / Inactive / Deleted / All) + debounced search. Per-row Deactivate / Reactivate / Delete actions. Delete is irreversible PII scrub (email→`deleted-{uuid}@deleted.glowos.app`, name→`[deleted]`, password rotated, brand-admin + staff_id cleared, isActive=false) — row preserved so FK references stay valid. "Deleted" state detected by email-suffix pattern, no schema migration needed. Self-protection: cannot deactivate or delete oneself. Audit-logged via existing `super_admin_audit_log`.
+
+### EHR-grade clinical records foundation ✅
+Tables: `clinical_records` (immutable — amendments via `amends_id` + reason; no hard delete) and `clinical_record_access_log` (every read + write + amend logged with user, email, IP, timestamp). Migration `0010` applied. New "Clinical Records" section in client drawer with type-tagged entries (consultation_note / treatment_log / prescription / amendment), inline create + amend forms, audit log disclosure. Owner / manager only (staff explicitly rejected at API + UI).
+
+### Photo attachments + digital consent forms ✅
+Vercel Blob integration (sin1 region) configured on Vercel + Railway. `BLOB_READ_WRITE_TOKEN` injected via the dashboard's "connect" flow. SDK `@vercel/blob` added to API package. New endpoints on the clinical-records router: photo upload (multipart, jpeg/png/webp ≤ 10 MB, kind=before/after/other), photo delete (best-effort blob cleanup), consent submission (canvas signature → PNG → Blob, SHA-256 tamper hash, sets `locked_at` to make the record immutable). Migration `0011` adds the `locked_at` column. Drawer UI: photo grid with thumbnails + kind badges, signature canvas pad (pure HTML5, no library), locked-record badge once consent signed.
+
+### PDPA-specific exports ✅
+**Patient data export** — `GET /merchant/clients/:profileId/data-export` returns a JSON envelope with the client's full dataset (profile, bookings, casual notes, every clinical-record revision, access log, packages, reviews) + generator metadata. Logged as `pdpa-export:<ip>` in the access log. Drawer button "Export client data (PDPA)". **Audit log CSV export** — `GET /merchant/audit-log/export?from=&to=&format=csv` returns inspector-ready columns: timestamp, user_email, action, record_id, client_id, client_name, ip_address. Available on a new "PDPA Compliance" tab in `/dashboard/settings`.
+
+### Marketing automation ✅
+Three recurring rules: birthday wishes, win-back, re-booking reminder. New tables `automations` + `automation_sends` (migration `0012`). One row per (merchant, kind) with `enabled` toggle, message template, optional promo code, kind-specific config JSONB. **Hourly cron** (was daily) at minute :05 — dedupe via `(automationId, dedupeKey)` unique index makes re-runs idempotent. **Fire-on-save** in the PUT endpoint — saving an automation as enabled triggers the matching handler synchronously, no waiting for cron. **⚡ Run now** button per card for on-demand testing. **Recent sends** lazy-loaded disclosure per card (table of last 50 sends with client name, channel, timestamp). **Birthday MM-DD computed in `merchants.timezone`** via `Intl.DateTimeFormat('en-CA', ...)` — fixes the off-by-one for SE-Asian merchants when UTC and local date differ. Workers reuse the existing Twilio + SendGrid plumbing from `notification.worker.ts`.
+
+### Inline birthday capture on client drawer ✅
+Month + day selector (no year — privacy-friendly + simpler) on `<ClientFullDetail/>`. Day select adapts to month (Feb→29, 30-day months→30). Stored as `2000-MM-DD` sentinel since the worker only keys off MM-DD. Display as "Mar 15".
+
+### Schema migrations applied to prod Neon (all additive)
+- `0008_true_sheva_callister.sql` — `merchant_users.brand_admin_group_id`
+- `0009_groovy_rattler.sql` — `brand_invites` table
+- `0010_orange_terrax.sql` — `clinical_records` + `clinical_record_access_log` (+ indexes + FKs)
+- `0011_misty_union_jack.sql` — `clinical_records.locked_at`
+- `0012_lyrical_post.sql` — `automations` + `automation_sends`
+
+### Architectural notes
+- **Single source of truth** for client detail: `ClientFullDetail.tsx`. Both the drawer and the legacy `[id]` page render the same component.
+- **Brand-admin auth model** stays merchant_users-rooted: brand admins are a flag on a regular merchant_user row, not a separate identity. Works for both single-branch operators and brand-only co-admins.
+- **EHR retention by design**: hard-delete is intentionally not exposed at the app layer. Any "delete" semantically means "anonymize" (super-admin user accounts) or "amend with reason" (clinical records).
+- **Vercel Blob** is the storage backbone for PII (photos + consent signatures). Public-access blobs at unguessable paths — single-tenant exposure mitigated by token + path entropy. To consider at scale: signed URLs and a private-bucket migration.
+
+### Roadmap — next slots
+**Operationally urgent:**
+- Tests + CI gating merges (deferred multiple times — at this commit cadence, single-developer + zero tests is starting to bite).
+- `.gitignore` cleanup — `.superpowers/` brainstorm artifacts and auto-generated files keep sneaking into commits.
+
+**Product depth (clinic ICP):**
+- Photo-during-record-creation drag-and-drop (raised by user at end of session — being addressed next).
+- Granular RBAC: clinician role separate from manager.
+- Photo attachment storage migration to private bucket + signed URLs.
+- Encryption at rest for `clinical_records.body` via `pgcrypto`.
+- Patient self-service access portal (right-of-access without merchant intermediary).
+
+**Marketing depth:**
+- Loyalty points program.
+- Review request automation pipeline.
+- Per-service rebook cadence overrides (currently default-only).
+- Localization: Bahasa Malay + Chinese.
+
+**Adjacent features:**
+- Legacy `/dashboard/group/branches/[merchantId]` page still on indigo — out of Phase 1 scope but worth migrating before adoption grows.
+- Onboarding wizard for new merchants (services, staff, hours, branding) as a guided flow.
+- iPay88 + Stripe co-existence in MY (current state: enum at create time, no UI to switch).
 
 ---
 
