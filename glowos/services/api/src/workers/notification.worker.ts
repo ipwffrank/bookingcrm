@@ -937,13 +937,50 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
     return;
   }
 
+  // Compute amounts: priceSgd is gross, discountSgd is the loyalty redemption.
+  // The customer actually paid (gross - discount) at checkout.
+  const gross = parseFloat(String(booking.priceSgd));
+  const discount = parseFloat(String(booking.discountSgd ?? "0"));
+  const net = Math.max(0, gross - discount).toFixed(2);
+  const ptsRedeemed = booking.loyaltyPointsRedeemed ?? 0;
+
+  // Pull loyalty balance for the message footer. Only surface if the program
+  // is enabled — if the merchant has switched it off after this booking
+  // earned, we don't want to leak the balance number to the client.
+  const [program] = await db
+    .select({ enabled: loyaltyPrograms.enabled })
+    .from(loyaltyPrograms)
+    .where(eq(loyaltyPrograms.merchantId, merchant.id))
+    .limit(1);
+  let loyaltyLine: string | null = null;
+  if (program?.enabled) {
+    const [bal] = await db
+      .select({
+        balance: sql<string>`coalesce(sum(${loyaltyTransactions.amount}), 0)`,
+      })
+      .from(loyaltyTransactions)
+      .where(
+        and(
+          eq(loyaltyTransactions.merchantId, merchant.id),
+          eq(loyaltyTransactions.clientId, client.id),
+        ),
+      )
+      .limit(1);
+    const balance = Number(bal?.balance ?? 0);
+    loyaltyLine =
+      ptsRedeemed > 0
+        ? `*Redeemed:* ${ptsRedeemed} pts (−S$${discount.toFixed(2)})\n*Loyalty balance:* ${balance} pts`
+        : `*Loyalty balance:* ${balance} pts`;
+  }
+
   const receiptMessage =
     `✅ *Service Complete — ${merchant.name}*\n\n` +
     `Hi ${client.name ?? "there"}, thank you for visiting us!\n\n` +
     `*Service:* ${service.name}\n` +
-    `*Amount:* S$${booking.priceSgd}\n` +
-    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Singapore" })}\n\n` +
-    `We hope to see you again soon! 🌟`;
+    `*Amount paid:* S$${net}\n` +
+    `*Date:* ${new Date(booking.startTime).toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Singapore" })}\n` +
+    (loyaltyLine ? `\n${loyaltyLine}\n` : "") +
+    `\nWe hope to see you again soon! 🌟`;
 
   const sid = await sendWhatsApp(client.phone, receiptMessage);
 
@@ -968,7 +1005,7 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
       dateStr: new Date(booking.startTime).toLocaleDateString("en-SG", {
         day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Singapore",
       }),
-      priceSgd: parseFloat(String(booking.priceSgd)).toFixed(2),
+      priceSgd: net,
       bookingUrl,
     });
     const emailSent = await sendEmail({
