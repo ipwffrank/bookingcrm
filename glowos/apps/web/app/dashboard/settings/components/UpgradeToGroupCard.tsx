@@ -19,9 +19,10 @@ export function UpgradeToGroupCard() {
       const isOwner = u.role === 'owner';
       const noGroupOnUser = !u.brandAdminGroupId;
       const noGroupOnMerchant = !m.groupId;
+      const tierAllowsMultibranch = m.subscriptionTier === 'multibranch';
       const notBrandViewing = localStorage.getItem('brandViewing') !== 'true';
       const notImpersonating = localStorage.getItem('impersonating') !== 'true';
-      setShow(isOwner && noGroupOnUser && noGroupOnMerchant && notBrandViewing && notImpersonating);
+      setShow(isOwner && noGroupOnUser && noGroupOnMerchant && tierAllowsMultibranch && notBrandViewing && notImpersonating);
     } catch { /* hide on parse error — safer default */ }
   }, []);
 
