@@ -276,6 +276,7 @@ interface Attachment {
   kind: string;
   uploadedAt: string;
   uploadedByName: string;
+  pdpaConsentAck?: boolean;
 }
 
 // POST /merchant/clients/:profileId/clinical-records/:recordId/photos
@@ -311,6 +312,7 @@ clinicalRecordsRouter.post(
     const form = await c.req.formData();
     const file = form.get("file");
     const kind = (form.get("kind") as string) ?? "other";
+    const pdpaConsentAck = (form.get("pdpaConsent") as string) === "true";
 
     if (!(file instanceof File))
       return c.json({ error: "Bad Request", message: "Missing file" }, 400);
@@ -357,6 +359,7 @@ clinicalRecordsRouter.post(
       kind: ["before", "after", "other"].includes(kind) ? kind : "other",
       uploadedAt: new Date().toISOString(),
       uploadedByName: uploaderName,
+      pdpaConsentAck,
     };
     const updatedAttachments = [...existingAttachments, newAttachment];
 

@@ -221,6 +221,19 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
 
+  // ── Staged photos for new-record form ─────────────────────────────────────
+
+  interface StagedPhoto {
+    id: string;          // local-only, used for keying + remove
+    file: File;
+    kind: 'before' | 'after' | 'other';
+    previewUrl: string;  // URL.createObjectURL() — revoke on remove + on form close
+  }
+
+  const [stagedPhotos, setStagedPhotos] = useState<StagedPhoto[]>([]);
+  const [photoConsent, setPhotoConsent] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+
   // Photo upload state (keyed by recordId)
   const [showPhotoUpload, setShowPhotoUpload] = useState<string | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -428,27 +441,94 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
     }
   }
 
+  // ── Staged-photo helpers ───────────────────────────────────────────────────
+
+  function stagePhotos(files: File[]) {
+    const valid = files.filter(f => f.size <= 10 * 1024 * 1024); // 10 MB cap
+    const newOnes: StagedPhoto[] = valid.map(file => ({
+      id: Math.random().toString(36).slice(2, 10),
+      file,
+      kind: 'other' as const,
+      previewUrl: URL.createObjectURL(file),
+    }));
+    setStagedPhotos(curr => [...curr, ...newOnes]);
+    if (files.length !== valid.length) {
+      alert('Some files were too large (max 10 MB each) and were skipped.');
+    }
+  }
+
+  function removeStagedPhoto(id: string) {
+    setStagedPhotos(curr => {
+      const target = curr.find(x => x.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return curr.filter(x => x.id !== id);
+    });
+  }
+
+  function resetNewRecordForm() {
+    setShowNewRecordForm(false);
+    setNewRecordBody('');
+    setNewRecordTitle('');
+    setNewRecordType('consultation_note');
+    setStagedPhotos(curr => {
+      curr.forEach(p => URL.revokeObjectURL(p.previewUrl));
+      return [];
+    });
+    setPhotoConsent(false);
+    setDragActive(false);
+  }
+
   // ── Clinical record handlers ────────────────────────────────────────────────
 
+  async function refreshClinicalRecords() {
+    try {
+      const result = await apiFetch(`/merchant/clients/${profileId}/clinical-records`) as { records: ClinicalRecord[] };
+      setClinicalRecords(result.records ?? []);
+    } catch {
+      // best-effort refresh; ignore errors
+    }
+  }
+
   async function handleCreateClinicalRecord() {
-    if (!newRecordBody.trim()) return;
+    if (!newRecordBody.trim() || savingRecord) return;
+    // Block if photos staged but consent not given
+    if (stagedPhotos.length > 0 && !photoConsent) {
+      alert('Please confirm the PDPA consent acknowledgement to attach photos.');
+      return;
+    }
     setSavingRecord(true);
     try {
-      const result = await apiFetch(`/merchant/clients/${profileId}/clinical-records`, {
+      const created = (await apiFetch(`/merchant/clients/${profileId}/clinical-records`, {
         method: 'POST',
         body: JSON.stringify({
           type: newRecordType,
           title: newRecordTitle.trim() || undefined,
           body: newRecordBody.trim(),
         }),
-      }) as { record: ClinicalRecord };
-      setClinicalRecords(prev => [result.record, ...prev]);
-      setNewRecordBody('');
-      setNewRecordTitle('');
-      setNewRecordType('consultation_note');
-      setShowNewRecordForm(false);
+      })) as { record: ClinicalRecord };
+
+      // Sequential photo uploads (don't parallelize — keeps order + progress clear)
+      const recordId = created.record.id;
+      for (const p of stagedPhotos) {
+        const fd = new FormData();
+        fd.append('file', p.file);
+        fd.append('kind', p.kind);
+        fd.append('pdpaConsent', String(photoConsent));
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/merchant/clients/${profileId}/clinical-records/${recordId}/photos`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd },
+        );
+        if (!res.ok) {
+          // Best-effort: don't unwind. Log + continue. The record is saved already.
+          console.error('Photo upload failed', await res.text().catch(() => ''));
+        }
+      }
+
+      resetNewRecordForm();
+      void refreshClinicalRecords();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to save clinical record');
+      alert(err instanceof Error ? err.message : 'Failed to save record');
     } finally {
       setSavingRecord(false);
     }
@@ -863,7 +943,7 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                 <p className="text-[10px] text-grey-45 mt-0.5">Download full record as JSON on PDPA right-of-access request</p>
               </div>
               <button
-                onClick={() => setShowNewRecordForm(v => !v)}
+                onClick={() => { if (showNewRecordForm) resetNewRecordForm(); else setShowNewRecordForm(true); }}
                 className="text-xs font-medium text-tone-sage hover:text-tone-sage transition-colors"
               >
                 {showNewRecordForm ? 'Cancel' : '+ New Clinical Record'}
@@ -914,16 +994,99 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                     autoFocus
                   />
                 </div>
+
+                {/* Photo staging zone */}
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium text-grey-75">
+                    Photos <span className="font-normal text-grey-45">(optional — drag in or use the picker; before/after/other tags applied per photo)</span>
+                  </label>
+
+                  <div
+                    onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragActive(false);
+                      const files = Array.from(e.dataTransfer.files).filter(f => /^image\/(jpe?g|png|webp)$/.test(f.type));
+                      stagePhotos(files);
+                    }}
+                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                      dragActive ? 'border-tone-sage bg-tone-sage/5' : 'border-grey-15 bg-grey-5'
+                    }`}
+                  >
+                    <p className="text-xs text-grey-60">
+                      {stagedPhotos.length === 0 ? 'Drag images here, or' : `${stagedPhotos.length} photo${stagedPhotos.length === 1 ? '' : 's'} staged. Drop more, or`}
+                    </p>
+                    <label className="inline-block mt-1 cursor-pointer">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(e) => stagePhotos(Array.from(e.target.files ?? []))}
+                      />
+                      <span className="text-xs font-medium text-tone-sage hover:text-tone-ink underline">
+                        choose from your computer
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Staged thumbnails */}
+                  {stagedPhotos.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {stagedPhotos.map(p => (
+                        <div key={p.id} className="relative group bg-tone-surface rounded-md border border-grey-15 overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.previewUrl} alt="" className="w-full h-24 object-cover" />
+                          <select
+                            value={p.kind}
+                            onChange={(e) => setStagedPhotos(curr => curr.map(x => x.id === p.id ? { ...x, kind: e.target.value as StagedPhoto['kind'] } : x))}
+                            className="w-full text-[10px] py-0.5 px-1 border-t border-grey-10 bg-tone-surface text-grey-75 focus:outline-none"
+                          >
+                            <option value="before">Before</option>
+                            <option value="after">After</option>
+                            <option value="other">Other</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeStagedPhoto(p.id)}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-tone-ink/70 text-tone-surface opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* PDPA consent */}
+                {stagedPhotos.length > 0 && (
+                  <label className="flex items-start gap-2 p-3 rounded-lg bg-semantic-warn/5 border border-semantic-warn/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={photoConsent}
+                      onChange={(e) => setPhotoConsent(e.target.checked)}
+                      className="mt-0.5 flex-shrink-0"
+                    />
+                    <span className="text-xs text-grey-75 leading-relaxed">
+                      <strong className="text-tone-ink">PDPA consent.</strong> I confirm the client has given verbal or written consent to capture and store these photos as part of their treatment record under this clinic's privacy policy. Consent acknowledgement is logged with this record.
+                    </span>
+                  </label>
+                )}
+
                 <div className="flex gap-2">
                   <button
                     onClick={handleCreateClinicalRecord}
-                    disabled={!newRecordBody.trim() || savingRecord}
+                    disabled={!newRecordBody.trim() || savingRecord || (stagedPhotos.length > 0 && !photoConsent)}
                     className="px-4 py-1.5 bg-tone-ink text-white text-xs font-medium rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors"
                   >
                     {savingRecord ? 'Saving...' : 'Save Record'}
                   </button>
                   <button
-                    onClick={() => { setShowNewRecordForm(false); setNewRecordBody(''); setNewRecordTitle(''); }}
+                    onClick={resetNewRecordForm}
                     className="px-4 py-1.5 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-15 transition-colors"
                   >
                     Cancel
