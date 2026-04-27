@@ -182,7 +182,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [showSuperLink, setShowSuperLink] = useState(false);
   const [isBrandAdmin, setIsBrandAdmin] = useState(false);
   const [userName, setUserName] = useState<string>('');
-  const [roleLabel, setRoleLabel] = useState<string>('');
+  // The user can hold multiple authorities at once (e.g. Owner of their home
+  // branch AND Group Admin across the group). Each maps to its own chip so
+  // the role pill row reads "Owner · Group Admin" instead of clobbering one
+  // with the other.
+  const [roleLabels, setRoleLabels] = useState<string[]>([]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isSuper = localStorage.getItem('superAdmin') === 'true';
@@ -199,19 +203,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const tierAllowsMultibranch = m.subscriptionTier === 'multibranch';
       setIsBrandAdmin(hasGroupRole && tierAllowsMultibranch);
       setUserName(u.name ?? u.email ?? '');
-      setRoleLabel(
-        hasGroupRole
-          ? 'Group Admin'
-          : u.role === 'staff'
-            ? 'Staff'
-            : u.role === 'clinician'
-              ? 'Clinician'
-              : u.role === 'owner' || u.role === 'manager'
-                ? 'Branch Admin'
-                : '',
-      );
+
+      const labels: string[] = [];
+      if (u.role === 'owner') labels.push('Owner');
+      else if (u.role === 'manager') labels.push('Manager');
+      else if (u.role === 'clinician') labels.push('Clinician');
+      else if (u.role === 'staff') labels.push('Staff');
+      if (hasGroupRole) labels.push('Group Admin');
+      setRoleLabels(labels);
     } catch { /* ignore */ }
   }, [pathname, merchant]);
+
+  // Per-label chip styling. Distinct visuals for each authority so a
+  // multi-role user reads as a row of chips rather than one ambiguous pill.
+  function chipClass(label: string): string {
+    switch (label) {
+      case 'Owner':
+        return 'bg-tone-ink text-tone-surface border-tone-ink';
+      case 'Manager':
+        return 'bg-tone-ink/5 text-tone-ink border-tone-ink/20';
+      case 'Clinician':
+        return 'bg-tone-sage/15 text-tone-sage border-tone-sage/40';
+      case 'Staff':
+        return 'bg-grey-10 text-grey-70 border-grey-20';
+      case 'Group Admin':
+        return 'bg-tone-sage/10 text-tone-sage border-tone-sage/30';
+      default:
+        return 'bg-tone-ink/5 text-tone-ink border-tone-ink/20';
+    }
+  }
 
   const navItems = isBrandAdmin
     ? [...BASE_NAV_ITEMS, { href: '/dashboard/group/overview', label: 'Group', icon: BuildingIcon }]
@@ -288,19 +308,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {userName && (
               <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs font-medium text-grey-75 truncate">{userName}</span>
-                {roleLabel && (
-                  <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
-                    roleLabel === 'Group Admin'
-                      ? 'bg-tone-sage/10 text-tone-sage border-tone-sage/30'
-                      : roleLabel === 'Clinician'
-                        ? 'bg-tone-sage/15 text-tone-sage border-tone-sage/40'
-                        : roleLabel === 'Staff'
-                          ? 'bg-grey-10 text-grey-70 border-grey-20'
-                          : 'bg-tone-ink/5 text-tone-ink border-tone-ink/20'
-                  }`}>
-                    {roleLabel}
+                {roleLabels.map((label) => (
+                  <span
+                    key={label}
+                    className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${chipClass(label)}`}
+                  >
+                    {label}
                   </span>
-                )}
+                ))}
               </div>
             )}
           </>
