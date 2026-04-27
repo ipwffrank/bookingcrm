@@ -25,6 +25,7 @@ const BASE_NAV_ITEMS = [
   { href: '/dashboard/import', label: 'Import Clients', icon: ImportIcon },
   { href: '/dashboard/campaigns', label: 'Campaigns', icon: MegaphoneIcon },
   { href: '/dashboard/marketing/automation', label: 'Automation', icon: AutomationIcon },
+  { href: '/dashboard/marketing/loyalty', label: 'Loyalty', icon: LoyaltyIcon },
 ];
 
 function CalendarIcon({ className }: { className?: string }) {
@@ -111,6 +112,14 @@ function AutomationIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
+function LoyaltyIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3V6m0 10.5v.75M12 8.25l2.25 2.25L12 12.75l-2.25-2.25L12 8.25zM3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
     </svg>
   );
 }

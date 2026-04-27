@@ -256,6 +256,59 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   // PDPA data export state
   const [exporting, setExporting] = useState(false);
 
+  // ── Loyalty state ──────────────────────────────────────────────────────────
+  interface LoyaltyProgram {
+    id: string | null;
+    enabled: boolean;
+    pointsPerDollar: number;
+    pointsPerVisit: number;
+    pointsPerDollarRedeem: number;
+    minRedeemPoints: number;
+    earnExpiryMonths: number;
+  }
+  interface LoyaltyTransaction {
+    id: string;
+    kind: string;
+    amount: number;
+    reason: string | null;
+    actorName: string | null;
+    createdAt: string;
+    earnedFromSgd: string | null;
+    redeemedSgd: string | null;
+    bookingId: string | null;
+  }
+  const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
+  const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
+  const [loyaltyTransactionsData, setLoyaltyTransactionsData] = useState<LoyaltyTransaction[]>([]);
+  const [loyaltyLoading, setLoyaltyLoading] = useState(true);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+
+  // Adjust form
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+
+  // Redeem form
+  const [showRedeem, setShowRedeem] = useState(false);
+  const [redeemPoints, setRedeemPoints] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+
+  async function refetchLoyalty() {
+    try {
+      const d = (await apiFetch(`/merchant/clients/${profileId}/loyalty`)) as {
+        balance: number;
+        program: LoyaltyProgram;
+        recentTransactions: LoyaltyTransaction[];
+      };
+      setLoyaltyBalance(d.balance);
+      setLoyaltyProgram(d.program);
+      setLoyaltyTransactionsData(d.recentTransactions ?? []);
+    } catch { /* swallow */ }
+  }
+
   type ActivityEvent =
     | { type: 'purchase'; when: string; packageName: string; pricePaid: string }
     | {
@@ -332,6 +385,17 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
           setClinicalRecordsForbidden(true);
         }
       });
+
+    // Fetch loyalty balance + transactions
+    apiFetch(`/merchant/clients/${profileId}/loyalty`)
+      .then((d: unknown) => {
+        const result = d as { balance: number; program: LoyaltyProgram; recentTransactions: LoyaltyTransaction[] };
+        setLoyaltyBalance(result.balance);
+        setLoyaltyProgram(result.program);
+        setLoyaltyTransactionsData(result.recentTransactions ?? []);
+      })
+      .catch((err) => setLoyaltyError(err instanceof Error ? err.message : 'Failed to load loyalty'))
+      .finally(() => setLoyaltyLoading(false));
   }, [profileId, router]);
 
   // Fetch client packages once client data is available
@@ -1687,6 +1751,239 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Loyalty Points section ── */}
+      <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
+        <h2 className="text-sm font-semibold text-tone-ink mb-4">Loyalty Points</h2>
+
+        {loyaltyLoading && <p className="text-sm text-grey-50">Loading…</p>}
+        {loyaltyError && <p className="text-sm state-danger">{loyaltyError}</p>}
+
+        {!loyaltyLoading && !loyaltyError && loyaltyProgram && !loyaltyProgram.enabled && (
+          <div className="text-sm text-grey-60">
+            Loyalty program not enabled.{' '}
+            <a href="/dashboard/marketing/loyalty" className="text-tone-sage underline hover:opacity-80">
+              Configure it here
+            </a>
+          </div>
+        )}
+
+        {!loyaltyLoading && !loyaltyError && loyaltyProgram?.enabled && (
+          <div className="space-y-4">
+            {/* Balance card */}
+            <div className="bg-grey-5 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-3xl font-bold text-tone-ink leading-none">
+                  {loyaltyBalance ?? 0}
+                </p>
+                <p className="text-xs text-grey-50 mt-1">points balance</p>
+              </div>
+              <div className="text-right text-xs text-grey-50 space-y-0.5">
+                <p>{loyaltyProgram.pointsPerDollar} pt / SGD spent</p>
+                {loyaltyProgram.pointsPerVisit > 0 && (
+                  <p>+ {loyaltyProgram.pointsPerVisit} pt / visit</p>
+                )}
+                <p>{loyaltyProgram.pointsPerDollarRedeem} pts = SGD 1 off</p>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2 print:hidden">
+              <button
+                type="button"
+                onClick={() => { setShowAdjust((v) => !v); setShowRedeem(false); }}
+                className="px-3 py-1.5 border border-grey-20 bg-tone-surface text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-5 transition-colors"
+              >
+                Adjust
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowRedeem((v) => !v); setShowAdjust(false); }}
+                className="px-3 py-1.5 border border-grey-20 bg-tone-surface text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-5 transition-colors"
+              >
+                Redeem
+              </button>
+            </div>
+
+            {/* Adjust inline form */}
+            {showAdjust && (
+              <div className="rounded-lg border border-grey-15 bg-grey-5 p-4 space-y-3 print:hidden">
+                <p className="text-xs font-semibold text-grey-75 uppercase tracking-wider">Manual adjust</p>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-grey-70 w-24 flex-shrink-0">Amount</label>
+                  <input
+                    type="number"
+                    value={adjustAmount}
+                    onChange={(e) => setAdjustAmount(e.target.value)}
+                    placeholder="e.g. 50 or -50"
+                    className="w-32 px-3 py-1.5 border border-grey-20 rounded-lg text-sm bg-tone-surface focus:outline-none focus:border-tone-ink"
+                  />
+                  <span className="text-xs text-grey-45">positive = credit, negative = debit</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <label className="text-sm text-grey-70 w-24 flex-shrink-0 pt-1">Reason</label>
+                  <input
+                    type="text"
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    placeholder="Reason (required)"
+                    className="flex-1 px-3 py-1.5 border border-grey-20 rounded-lg text-sm bg-tone-surface focus:outline-none focus:border-tone-ink"
+                  />
+                </div>
+                {adjustError && <p className="text-xs state-danger">{adjustError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={adjusting}
+                    onClick={async () => {
+                      const amt = parseInt(adjustAmount, 10);
+                      if (Number.isNaN(amt) || amt === 0) {
+                        setAdjustError('Amount must be a non-zero integer');
+                        return;
+                      }
+                      if (!adjustReason.trim()) {
+                        setAdjustError('Reason is required');
+                        return;
+                      }
+                      setAdjusting(true);
+                      setAdjustError(null);
+                      try {
+                        await apiFetch(`/merchant/clients/${profileId}/loyalty/adjust`, {
+                          method: 'POST',
+                          body: JSON.stringify({ amount: amt, reason: adjustReason.trim() }),
+                        });
+                        setShowAdjust(false);
+                        setAdjustAmount('');
+                        setAdjustReason('');
+                        await refetchLoyalty();
+                      } catch (err) {
+                        setAdjustError(err instanceof Error ? err.message : 'Adjust failed');
+                      } finally {
+                        setAdjusting(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-tone-ink text-tone-surface text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+                  >
+                    {adjusting ? 'Saving…' : 'Apply'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAdjust(false); setAdjustError(null); }}
+                    className="px-3 py-1.5 border border-grey-20 text-grey-60 text-sm rounded-lg hover:bg-grey-5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Redeem inline form */}
+            {showRedeem && (
+              <div className="rounded-lg border border-grey-15 bg-grey-5 p-4 space-y-3 print:hidden">
+                <p className="text-xs font-semibold text-grey-75 uppercase tracking-wider">Redeem points</p>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-grey-70 w-24 flex-shrink-0">Points</label>
+                  <input
+                    type="number"
+                    min={loyaltyProgram.minRedeemPoints}
+                    max={loyaltyBalance ?? 0}
+                    value={redeemPoints}
+                    onChange={(e) => setRedeemPoints(e.target.value)}
+                    placeholder={`min ${loyaltyProgram.minRedeemPoints}`}
+                    className="w-28 px-3 py-1.5 border border-grey-20 rounded-lg text-sm bg-tone-surface focus:outline-none focus:border-tone-ink"
+                  />
+                  {redeemPoints && !Number.isNaN(parseInt(redeemPoints, 10)) && (
+                    <span className="text-xs text-grey-60">
+                      = SGD {(parseInt(redeemPoints, 10) / loyaltyProgram.pointsPerDollarRedeem).toFixed(2)} off
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-grey-45">
+                  Balance: {loyaltyBalance ?? 0} pts · Min redeem: {loyaltyProgram.minRedeemPoints} pts
+                </p>
+                {redeemError && <p className="text-xs state-danger">{redeemError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={redeeming}
+                    onClick={async () => {
+                      const pts = parseInt(redeemPoints, 10);
+                      if (Number.isNaN(pts) || pts <= 0) {
+                        setRedeemError('Enter a valid number of points');
+                        return;
+                      }
+                      setRedeeming(true);
+                      setRedeemError(null);
+                      try {
+                        await apiFetch(`/merchant/clients/${profileId}/loyalty/redeem`, {
+                          method: 'POST',
+                          body: JSON.stringify({ points: pts }),
+                        });
+                        setShowRedeem(false);
+                        setRedeemPoints('');
+                        await refetchLoyalty();
+                      } catch (err) {
+                        setRedeemError(err instanceof Error ? err.message : 'Redeem failed');
+                      } finally {
+                        setRedeeming(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-tone-ink text-tone-surface text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50"
+                  >
+                    {redeeming ? 'Redeeming…' : 'Redeem'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowRedeem(false); setRedeemError(null); }}
+                    className="px-3 py-1.5 border border-grey-20 text-grey-60 text-sm rounded-lg hover:bg-grey-5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Recent transactions */}
+            {loyaltyTransactionsData.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-grey-70 uppercase tracking-wider mb-2">Recent transactions</p>
+                <div className="space-y-0">
+                  {loyaltyTransactionsData.slice(0, 10).map((tx) => (
+                    <div key={tx.id} className="flex items-start justify-between py-2 border-b border-grey-5 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <span className={`text-xs font-medium uppercase tracking-wide mr-2 ${
+                          tx.kind === 'earn' ? 'text-tone-sage' :
+                          tx.kind === 'redeem' ? 'text-grey-60' :
+                          tx.kind === 'adjust' ? 'text-grey-75' :
+                          'text-semantic-warn'
+                        }`}>
+                          {tx.kind}
+                        </span>
+                        <span className="text-xs text-grey-60 truncate">
+                          {tx.reason ?? '—'}
+                          {tx.actorName && <span className="text-grey-40"> · {tx.actorName}</span>}
+                        </span>
+                      </div>
+                      <div className="text-right ml-3 flex-shrink-0">
+                        <span className={`text-sm font-semibold ${tx.amount >= 0 ? 'text-tone-ink' : 'text-grey-60'}`}>
+                          {tx.amount >= 0 ? '+' : ''}{tx.amount}
+                        </span>
+                        <p className="text-[10px] text-grey-40">
+                          {new Date(tx.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {loyaltyTransactionsData.length === 0 && (
+              <p className="text-xs text-grey-45 italic">No transactions yet.</p>
+            )}
           </div>
         )}
       </div>
