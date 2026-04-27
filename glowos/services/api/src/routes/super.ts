@@ -192,6 +192,7 @@ superRouter.get("/merchants", async (c) => {
       category: merchants.category,
       country: merchants.country,
       createdAt: merchants.createdAt,
+      subscriptionTier: merchants.subscriptionTier,
       // 30-day activity
       bookings30d: sql<number>`(
         SELECT COUNT(*)::int FROM ${bookings}

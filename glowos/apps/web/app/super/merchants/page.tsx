@@ -16,6 +16,7 @@ interface MerchantRow {
   bookings30d: number;
   revenue30d: string;
   lastBookingAt: string | null;
+  subscriptionTier: 'starter' | 'multibranch';
 }
 
 interface ListResponse {
@@ -39,6 +40,7 @@ export default function SuperMerchantsPage() {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+  const [pendingTierMerchantId, setPendingTierMerchantId] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
@@ -58,6 +60,26 @@ export default function SuperMerchantsPage() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false));
   }, [searchDebounced]);
+
+  async function setTier(merchantId: string, tier: 'starter' | 'multibranch') {
+    setPendingTierMerchantId(merchantId);
+    try {
+      const updated = (await apiFetch(`/super/merchants/${merchantId}/tier`, {
+        method: 'PATCH',
+        body: JSON.stringify({ tier }),
+      })) as { id: string; subscriptionTier: 'starter' | 'multibranch' };
+      // Optimistically reflect the change in the local list.
+      setRows((prev) =>
+        prev.map((m) => (m.id === updated.id ? { ...m, subscriptionTier: updated.subscriptionTier } : m)),
+      );
+    } catch (err) {
+      console.error('tier flip failed', err);
+      // The dropdown reverts visually because we never mutated state on failure.
+      alert('Could not update tier. Try again.');
+    } finally {
+      setPendingTierMerchantId(null);
+    }
+  }
 
   async function handleImpersonate(m: MerchantRow) {
     setImpersonatingId(m.id);
@@ -109,6 +131,7 @@ export default function SuperMerchantsPage() {
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Slug</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Contact</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Category</th>
+              <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Tier</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d bookings</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d revenue</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Last booking</th>
@@ -117,9 +140,9 @@ export default function SuperMerchantsPage() {
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
             ) : (
               rows.map((m) => (
                 <tr key={m.id} className="border-b border-grey-5 hover:bg-grey-5 transition-colors">
@@ -130,6 +153,17 @@ export default function SuperMerchantsPage() {
                     <div className="text-xs text-grey-45">{m.phone ?? ''}</div>
                   </td>
                   <td className="px-4 py-3 text-grey-75 text-xs capitalize">{m.category.replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-3">
+                    <select
+                      className="rounded border border-grey-15 bg-tone-surface px-2 py-1 text-xs"
+                      value={m.subscriptionTier}
+                      disabled={pendingTierMerchantId === m.id}
+                      onChange={(e) => setTier(m.id, e.target.value as 'starter' | 'multibranch')}
+                    >
+                      <option value="starter">starter</option>
+                      <option value="multibranch">multibranch</option>
+                    </select>
+                  </td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">{m.bookings30d.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">S${Number(m.revenue30d).toFixed(2)}</td>
                   <td className="px-4 py-3 text-xs text-grey-60">{formatDate(m.lastBookingAt)}</td>
