@@ -596,14 +596,23 @@ export function BookingForm(props: BookingFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientPhone, mode]);
 
-  // Current user's role from localStorage. Used to gate the operating-hours
-  // override (only owner can book after-hours). Computed once per render so
-  // the warning banner and the submit handler agree on what's visible.
+  // Current user's role for the purpose of the operating-hours override.
+  // Only the *local* owner of THIS merchant can override after-hours. A brand
+  // admin viewing another branch (brandViewing=true) is owner-equivalent for
+  // most RBAC purposes but is intentionally NOT treated as the local owner
+  // here — the local merchant's actual signup owner is the only authority on
+  // out-of-hours appointments at that location.
   const currentRole = (() => {
     if (typeof window === 'undefined') return null;
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      return (u.role ?? null) as 'owner' | 'manager' | 'clinician' | 'staff' | null;
+      const isBrandViewing = localStorage.getItem('brandViewing') === 'true';
+      const role = (u.role ?? null) as 'owner' | 'manager' | 'clinician' | 'staff' | null;
+      // When viewing-as-branch, downgrade owner→manager for hours-gate purposes.
+      // Other RBAC checks elsewhere already use the synthetic owner role from
+      // the JWT and stay unchanged.
+      if (isBrandViewing && role === 'owner') return 'manager';
+      return role;
     } catch {
       return null;
     }
