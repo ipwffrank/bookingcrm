@@ -221,7 +221,7 @@ merchantRouter.post(
     if (!tierRow || tierRow.tier !== "multibranch") {
       return c.json(
         {
-          error: "PlanGate",
+          error: "Forbidden",
           message: "Contact support to enable multi-branch on your plan",
         },
         403,

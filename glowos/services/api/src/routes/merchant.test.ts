@@ -2,7 +2,7 @@
  * Tests for the merchant routes.
  *
  * Covers:
- *   - POST /merchant/upgrade-to-brand returns 403 PlanGate when merchant is on
+ *   - POST /merchant/upgrade-to-brand returns 403 Forbidden when merchant is on
  *     the 'starter' tier (and never opens a transaction)
  *   - POST /merchant/upgrade-to-brand proceeds past the tier check when the
  *     merchant is on 'multibranch'
@@ -145,7 +145,7 @@ describe("POST /merchant/upgrade-to-brand — tier gate", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 403 PlanGate when subscription_tier is 'starter'", async () => {
+  it("returns 403 Forbidden when subscription_tier is 'starter'", async () => {
     // First select inside handler is the merchant row to read tier.
     _selectQueue.push([{ id: "m1", tier: "starter" }]);
 
@@ -157,8 +157,8 @@ describe("POST /merchant/upgrade-to-brand — tier gate", () => {
     });
 
     expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toBe("PlanGate");
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe("Forbidden");
     expect(body.message).toMatch(/multi-branch/i);
     // Confirm the handler short-circuited before opening the transaction.
     expect(mockDb.transaction).not.toHaveBeenCalled();
@@ -178,7 +178,11 @@ describe("POST /merchant/upgrade-to-brand — tier gate", () => {
       body: JSON.stringify({ groupName: "My Group" }),
     });
 
-    expect(res.status).not.toBe(403);
+    // Deterministic post-gate outcome: the in-tx user lookup returns no row,
+    // hitting the `user_inactive` switch case which maps to 401 Unauthorized.
+    // Asserting the exact status (vs. just `not.toBe(403)`) guards against
+    // future changes that might silently break the gate-passes-through path.
+    expect(res.status).toBe(401);
     expect(mockDb.transaction).toHaveBeenCalled();
   });
 });
