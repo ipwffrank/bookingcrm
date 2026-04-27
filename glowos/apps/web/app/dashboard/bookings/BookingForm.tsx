@@ -30,6 +30,12 @@ export interface BookingFormProps {
   services?: ServiceOption[];
   staffList?: StaffOption[];
   operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
+  /**
+   * When opening from a known-client surface (e.g. client profile drawer),
+   * pre-fill the client name and phone, and lock the fields so the merchant
+   * can't accidentally re-book against a different client.
+   */
+  prefilledClient?: { name: string; phone: string };
   onClose: () => void;
   onSave: () => void;
 }
@@ -42,9 +48,9 @@ export function BookingForm(props: BookingFormProps) {
   const [saving, setSaving] = useState(false);
   const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(props.groupId ?? null);
   const [apiError, setApiError] = useState('');
-  const [clientName, setClientName] = useState('');
+  const [clientName, setClientName] = useState(props.prefilledClient?.name ?? '');
   const [clientNoShowCount, setClientNoShowCount] = useState(0);
-  const [clientPhone, setClientPhone] = useState('');
+  const [clientPhone, setClientPhone] = useState(props.prefilledClient?.phone ?? '');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [notes, setNotes] = useState('');
   const [services, setServices] = useState<ServiceOption[]>(props.services ?? []);
@@ -598,7 +604,7 @@ export function BookingForm(props: BookingFormProps) {
                 onChange={(e) => setClientName(e.target.value)}
                 className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
                 placeholder="Jane Doe"
-                disabled={mode === 'edit'}
+                disabled={mode === 'edit' || !!props.prefilledClient}
               />
               {clientNoShowCount > 0 && (
                 <div className="mt-1">
@@ -611,7 +617,7 @@ export function BookingForm(props: BookingFormProps) {
               <PhoneInput
                 value={clientPhone}
                 onChange={setClientPhone}
-                disabled={mode === 'edit'}
+                disabled={mode === 'edit' || !!props.prefilledClient}
               />
             </div>
           </div>
