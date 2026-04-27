@@ -135,6 +135,15 @@ export function ServiceRow({
       );
       if (!stillValid) patch.usePackage = undefined;
     }
+    // If the currently-selected staff isn't credentialed for the new service
+    // (and isn't the "Any Available" placeholder), clear the staff selection
+    // so the user is forced to pick someone qualified.
+    if (newServiceId && row.staffId) {
+      const cur = staff.find((s) => s.id === row.staffId);
+      if (cur && !isAnyAvailablePlaceholder(cur.name) && !cur.serviceIds.includes(newServiceId)) {
+        patch.staffId = '';
+      }
+    }
     onChange(patch);
   }
 
@@ -171,16 +180,26 @@ export function ServiceRow({
           className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm"
         >
           <option value="">Select staff...</option>
-          {staff.map((s) => {
-            const busyUntil = isAnyAvailablePlaceholder(s.name) ? null : busyUntilFor(s.id);
-            return (
-              <option key={s.id} value={s.id}>
-                {busyUntil
-                  ? `⚠ ${s.name} — busy until ${fmtTime(busyUntil)}`
-                  : s.name}
-              </option>
-            );
-          })}
+          {staff
+            // Filter out staff who aren't credentialed for the selected service.
+            // Always keep "Any Available" placeholder and the currently-selected
+            // staff (so legacy bad-data bookings remain editable).
+            .filter((s) => {
+              if (isAnyAvailablePlaceholder(s.name)) return true;
+              if (!row.serviceId) return true;
+              if (s.id === row.staffId) return true;
+              return s.serviceIds.includes(row.serviceId);
+            })
+            .map((s) => {
+              const busyUntil = isAnyAvailablePlaceholder(s.name) ? null : busyUntilFor(s.id);
+              return (
+                <option key={s.id} value={s.id}>
+                  {busyUntil
+                    ? `⚠ ${s.name} — busy until ${fmtTime(busyUntil)}`
+                    : s.name}
+                </option>
+              );
+            })}
         </select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

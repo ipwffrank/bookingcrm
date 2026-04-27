@@ -730,6 +730,27 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     .from(staff)
     .where(eq(staff.merchantId, merchantId));
 
+  // Staff service-eligibility map so the form can filter the per-row staff
+  // dropdown to only those who actually perform the selected service.
+  const allStaffIds = allStaff.map((s) => s.id);
+  const staffServiceLinks =
+    allStaffIds.length === 0
+      ? []
+      : await db
+          .select({ staffId: staffServices.staffId, serviceId: staffServices.serviceId })
+          .from(staffServices)
+          .where(inArray(staffServices.staffId, allStaffIds));
+  const serviceIdsByStaff = new Map<string, string[]>();
+  for (const link of staffServiceLinks) {
+    const arr = serviceIdsByStaff.get(link.staffId) ?? [];
+    arr.push(link.serviceId);
+    serviceIdsByStaff.set(link.staffId, arr);
+  }
+  const allStaffWithServices = allStaff.map((s) => ({
+    ...s,
+    serviceIds: serviceIdsByStaff.get(s.id) ?? [],
+  }));
+
   // Last edit + full client info
   const [lastEdit] = await db
     .select()
@@ -772,7 +793,7 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
       pendingSessions: pendingSessions.filter((s) => s.clientPackageId === p.id),
     })),
     services: allServices,
-    staff: allStaff,
+    staff: allStaffWithServices,
     lastEdit: lastEdit ?? null,
   });
 });

@@ -19,6 +19,8 @@ export interface ServiceOption {
 export interface StaffOption {
   id: string;
   name: string;
+  /** Service IDs this staff member is credentialed to perform. Empty = none. */
+  serviceIds: string[];
 }
 
 export interface PendingPackageSession {
