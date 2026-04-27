@@ -63,7 +63,7 @@ vi.mock("../lib/config.js", () => ({
 }));
 
 // Import after mocks are registered
-import { requireMerchant, requireSuperAdmin } from "./auth.js";
+import { requireMerchant, requireSuperAdmin, PERMISSIONS } from "./auth.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +260,28 @@ describe("requireMerchant", () => {
     });
     const res = await app.request("/test", { headers: { Authorization: token } });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("PERMISSIONS map", () => {
+  it("clinician includes clinical_records.*", () => {
+    const clinicianPerms = PERMISSIONS["clinician"] ?? [];
+    expect(clinicianPerms).toContain("clinical_records.*");
+  });
+
+  it("manager does NOT include clinical_records.*", () => {
+    const managerPerms = PERMISSIONS["manager"] ?? [];
+    expect(managerPerms).not.toContain("clinical_records.*");
+    // Confirm manager also does not have a wildcard
+    expect(managerPerms).not.toContain("*");
+  });
+
+  it("clinician includes bookings.* and analytics.read", () => {
+    const clinicianPerms = PERMISSIONS["clinician"] ?? [];
+    expect(clinicianPerms).toContain("bookings.*");
+    expect(clinicianPerms).toContain("analytics.read");
+    expect(clinicianPerms).toContain("clients.read");
+    expect(clinicianPerms).toContain("clients.notes");
   });
 });
 

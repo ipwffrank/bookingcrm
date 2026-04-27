@@ -25,14 +25,14 @@ const clinicalRecordsRouter = new Hono<{ Variables: AppVariables }>();
 
 clinicalRecordsRouter.use("*", requireMerchant);
 
-// Owner + manager only; staff explicitly rejected.
+// Owner + clinician only; manager and staff explicitly rejected.
 clinicalRecordsRouter.use("*", async (c, next) => {
   const role = c.get("userRole");
-  if (role !== "owner" && role !== "manager") {
+  if (role !== "owner" && role !== "clinician") {
     return c.json(
       {
         error: "Forbidden",
-        message: "Clinical records require owner or manager role.",
+        message: "Clinical records require owner or clinician role.",
       },
       403,
     );

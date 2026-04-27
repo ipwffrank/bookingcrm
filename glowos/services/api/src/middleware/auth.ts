@@ -183,6 +183,13 @@ export function requireAdmin() {
 export const PERMISSIONS: Record<string, string[]> = {
   owner: ["*"],
   manager: ["bookings.*", "clients.read", "clients.notes", "analytics.read"],
+  clinician: [
+    "bookings.*",
+    "clients.read",
+    "clients.notes",
+    "analytics.read",
+    "clinical_records.*", // full clinical read/write/amend/photo/consent
+  ],
   staff: [
     "bookings.read_own",
     "bookings.checkin",

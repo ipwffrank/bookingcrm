@@ -118,12 +118,12 @@ staffAuthRouter.post("/:id/reset-password", zValidator(resetPasswordSchema), asy
   return c.json({ success: true });
 });
 
-// PATCH /merchant/staff/:id/role — promote staff↔manager. Owner-only.
-// If demoting from manager to staff and the user is a brand admin, the
-// brand-admin claim is cascade-cleared (subject to a last-admin guard so the
-// brand can't be orphaned).
+// PATCH /merchant/staff/:id/role — change role among staff/manager/clinician. Owner-only.
+// If demoting to staff and the user is a brand admin, the brand-admin claim is
+// cascade-cleared (subject to a last-admin guard so the brand can't be orphaned).
+// This applies symmetrically whether demoting from manager or clinician.
 const updateRoleSchema = z.object({
-  role: z.enum(["staff", "manager"]),
+  role: z.enum(["staff", "manager", "clinician"]),
 }).strict();
 
 staffAuthRouter.patch("/:id/role", zValidator(updateRoleSchema), async (c) => {
