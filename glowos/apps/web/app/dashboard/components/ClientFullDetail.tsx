@@ -33,7 +33,15 @@ interface Client {
 }
 
 interface BookingEntry {
-  booking: { id: string; startTime: string; status: string; priceSgd: string; };
+  booking: {
+    id: string;
+    startTime: string;
+    status: string;
+    priceSgd: string;
+    paymentMethod?: string | null;
+    discountSgd?: string | null;
+    loyaltyPointsRedeemed?: number | null;
+  };
   service: { name: string };
   staffMember: { name: string };
 }
@@ -888,15 +896,40 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
         <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
           <h2 className="text-sm font-semibold text-tone-ink mb-3">Upcoming</h2>
           <div className="space-y-2">
-            {upcoming.map(e => (
-              <div key={e.booking.id} className="flex items-center justify-between bg-tone-sage/5 rounded-lg px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
-                  <p className="text-xs text-grey-60 mt-0.5">{e.staffMember.name} · {fmt(e.booking.startTime)} · {new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+            {upcoming.map(e => {
+              const gross = parseFloat(e.booking.priceSgd);
+              const discount = parseFloat(e.booking.discountSgd ?? '0');
+              const ptsRedeemed = e.booking.loyaltyPointsRedeemed ?? 0;
+              const net = Math.max(0, gross - discount);
+              return (
+                <div key={e.booking.id} className="flex items-center justify-between bg-tone-sage/5 rounded-lg px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
+                    <p className="text-xs text-grey-60 mt-0.5">{e.staffMember.name} · {fmt(e.booking.startTime)} · {new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-grey-60">
+                      {e.booking.paymentMethod && (
+                        <span className="capitalize">💳 {e.booking.paymentMethod}</span>
+                      )}
+                      {ptsRedeemed > 0 && (
+                        <span className="text-tone-sage">
+                          ✦ {ptsRedeemed} pts redeemed (−${discount.toFixed(2)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    {discount > 0 ? (
+                      <>
+                        <span className="text-xs text-grey-45 line-through block leading-none">${gross.toFixed(0)}</span>
+                        <span className="text-sm font-semibold text-grey-90">${net.toFixed(2)}</span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-semibold text-grey-90">${gross.toFixed(0)}</span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-grey-90">${parseFloat(e.booking.priceSgd).toFixed(0)}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1764,7 +1797,21 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
 
       {/* ── Loyalty Points section ── */}
       <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
-        <h2 className="text-sm font-semibold text-tone-ink mb-4">Loyalty Points</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-tone-ink">Loyalty Points</h2>
+          <button
+            type="button"
+            onClick={() => void refetchLoyalty()}
+            className="flex items-center gap-1 text-xs text-grey-60 hover:text-tone-ink underline-offset-2 hover:underline print:hidden"
+            aria-label="Refresh loyalty"
+            title="Refresh"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            Refresh
+          </button>
+        </div>
 
         {loyaltyLoading && <p className="text-sm text-grey-50">Loading…</p>}
         {loyaltyError && <p className="text-sm state-danger">{loyaltyError}</p>}

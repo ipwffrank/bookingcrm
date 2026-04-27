@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import type { Job } from "bullmq";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { format } from "date-fns";
 import {
   db,
@@ -13,6 +13,8 @@ import {
   reviews,
   merchantUsers,
   treatmentQuotes,
+  loyaltyPrograms,
+  loyaltyTransactions,
 } from "@glowos/db";
 import { sendWhatsApp, sendWhatsAppTemplate } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
@@ -175,15 +177,71 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
   const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
-  const price = parseFloat(String(booking.priceSgd)).toFixed(2);
+  const gross = parseFloat(String(booking.priceSgd));
+  const discount = parseFloat(String(booking.discountSgd ?? "0"));
+  const net = Math.max(0, gross - discount).toFixed(2);
+  const ptsRedeemed = booking.loyaltyPointsRedeemed ?? 0;
+
+  // Payment line: human-readable method when known, "due at visit" for pending
+  const methodLabel = (() => {
+    const m = (booking.paymentMethod ?? "").toLowerCase();
+    if (m === "cash") return "Cash";
+    if (m === "card") return "Card";
+    if (m === "paynow") return "PayNow";
+    if (m === "other") return "Other";
+    return null;
+  })();
+  const paymentLine =
+    booking.status === "pending"
+      ? `💳 SGD ${net} (${methodLabel ?? "due at visit"})`
+      : `💳 SGD ${net} (${methodLabel ?? "paid"})`;
+
+  // Loyalty balance for the client at this merchant. Only surface if program
+  // is enabled — a disabled program shouldn't talk about points to clients.
+  const [program] = await db
+    .select({ enabled: loyaltyPrograms.enabled })
+    .from(loyaltyPrograms)
+    .where(eq(loyaltyPrograms.merchantId, merchant.id))
+    .limit(1);
+  let loyaltyLine: string | null = null;
+  if (program?.enabled) {
+    const [bal] = await db
+      .select({
+        balance: sql<string>`coalesce(sum(${loyaltyTransactions.amount}), 0)`,
+      })
+      .from(loyaltyTransactions)
+      .where(
+        and(
+          eq(loyaltyTransactions.merchantId, merchant.id),
+          eq(loyaltyTransactions.clientId, client.id),
+        ),
+      )
+      .limit(1);
+    const balance = Number(bal?.balance ?? 0);
+    if (ptsRedeemed > 0) {
+      loyaltyLine = `✦ Redeemed ${ptsRedeemed} pts (−SGD ${discount.toFixed(2)}). Balance: ${balance} pts`;
+    } else {
+      loyaltyLine = `✦ Loyalty balance: ${balance} pts`;
+    }
+  }
+
+  // Pending pre-bookings haven't been confirmed by the client yet, so the
+  // copy is "we've scheduled this — please confirm" rather than "is confirmed".
+  const headerLine =
+    booking.status === "pending"
+      ? `Hi ${client.name ?? "there"}! We've scheduled your appointment at ${merchant.name}.`
+      : `Hi ${client.name ?? "there"}! Your booking at ${merchant.name} is confirmed.`;
 
   // Client confirmation
   const clientMessage = [
-    `Hi ${client.name ?? "there"}! Your booking at ${merchant.name} is confirmed.`,
+    headerLine,
     `📅 ${dateStr} at ${timeStr}`,
     `✂️ ${service.name} with ${staffMember.name}`,
-    `💳 SGD ${price} paid`,
-    `Reschedule or cancel? → ${cancelUrl}`,
+    paymentLine,
+    ...(loyaltyLine ? [loyaltyLine] : []),
+    booking.status === "pending"
+      ? `Confirm or reschedule → ${cancelUrl}`
+      : `Reschedule or cancel? → ${cancelUrl}`,
   ].join("\n");
 
   const clientSid = await sendWhatsApp(client.phone, clientMessage);
@@ -209,7 +267,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       staffName: staffMember.name,
       dateStr,
       timeStr,
-      priceSgd: price,
+      priceSgd: net,
       cancelUrl,
     });
     const emailSent = await sendEmail({
@@ -235,7 +293,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     const merchantMessage = [
       `New booking! ${client.name ?? client.phone} — ${service.name}`,
       `📅 ${dateStr} at ${timeStr}`,
-      `💳 SGD ${price} (${source})`,
+      `💳 SGD ${net} (${source})`,
     ].join("\n");
 
     const merchantSid = await sendWhatsApp(merchant.phone, merchantMessage);
