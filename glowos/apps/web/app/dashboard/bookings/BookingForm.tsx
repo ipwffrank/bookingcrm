@@ -52,6 +52,17 @@ export interface BookingFormProps {
   showToast?: (message: string, type: 'success' | 'error') => void;
 }
 
+interface NotificationLogRow {
+  id: string;
+  type: string;
+  channel: string;
+  recipient: string | null;
+  status: string;
+  twilioSid: string | null;
+  messageBody: string | null;
+  createdAt: string;
+}
+
 export function BookingForm(props: BookingFormProps) {
   const { mode, onClose, onSave } = props;
   const router = useRouter();
@@ -164,6 +175,58 @@ export function BookingForm(props: BookingFormProps) {
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleNotify, setRescheduleNotify] = useState(true);
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+
+  // ── Notifications panel state (edit mode) ────────────────────────────────────
+  // Loads on open; renders the per-booking notification_log so admin can see
+  // exactly which messages went out, when, and (if any failed) why.
+  const [notifications, setNotifications] = useState<NotificationLogRow[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'edit' || !props.bookingId) return;
+    setNotificationsLoading(true);
+    apiFetch(`/merchant/bookings/${props.bookingId}/notifications`)
+      .then((d) => setNotifications((d as { notifications?: NotificationLogRow[] }).notifications ?? []))
+      .catch(() => { /* non-fatal — panel just shows empty */ })
+      .finally(() => setNotificationsLoading(false));
+  }, [mode, props.bookingId]);
+
+  // ── Reschedule notification status polling ───────────────────────────────────
+  // After a successful PATCH /reschedule with notify_client=true, the worker
+  // will create rows in notification_log within ~1-3s. We poll the new
+  // /:id/notifications endpoint to confirm the messages actually went out and
+  // surface a follow-up toast that replaces the optimistic "Sending…" one.
+  async function pollReschedNotificationStatus(
+    bookingId: string,
+    sentAfter: Date,
+    clientNameForToast: string,
+  ) {
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const data = (await apiFetch(`/merchant/bookings/${bookingId}/notifications`)) as {
+          notifications: Array<{ type: string; channel: string; status: string; createdAt: string }>;
+        };
+        const recent = (data.notifications ?? []).filter(
+          (n) => n.type === 'reschedule_confirmation' && new Date(n.createdAt) >= sentAfter,
+        );
+        if (recent.length > 0) {
+          const channels = recent.map((r) => `${r.channel}: ${r.status}`).join(', ');
+          const allSent = recent.every((r) => r.status === 'sent');
+          props.showToast?.(
+            allSent
+              ? `✓ Notification delivered to ${clientNameForToast} (${channels})`
+              : `⚠ Notification status — ${channels}`,
+            allSent ? 'success' : 'error',
+          );
+          return;
+        }
+      } catch {
+        // ignore poll errors, keep retrying
+      }
+    }
+    props.showToast?.('Notification status pending — check the booking detail panel.', 'success');
+  }
 
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
@@ -926,6 +989,48 @@ export function BookingForm(props: BookingFormProps) {
           </div>
         </form>
 
+        {mode === 'edit' && props.bookingId && (
+          <div className="mt-6 border-t border-grey-15 pt-4">
+            <h3 className="text-sm font-semibold text-tone-ink mb-3">Notifications</h3>
+            {notificationsLoading ? (
+              <p className="text-xs text-grey-60">Loading…</p>
+            ) : notifications.length === 0 ? (
+              <p className="text-xs text-grey-60">No notifications sent for this booking yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {notifications.map((n) => (
+                  <li key={n.id} className="flex items-start gap-3 text-xs">
+                    <span
+                      className={`mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] ${
+                        n.status === 'sent'
+                          ? 'bg-tone-sage/20 text-tone-sage'
+                          : 'bg-semantic-danger/15 text-semantic-danger'
+                      }`}
+                    >
+                      {n.status === 'sent' ? '✓' : '!'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-tone-ink">
+                        {prettyNotificationType(n.type)} · {n.channel}
+                      </p>
+                      <p className="text-grey-60 truncate">
+                        {n.recipient ?? '—'} ·{' '}
+                        {new Date(n.createdAt).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {n.status !== 'sent' ? ` · ${n.status}` : ''}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {showRescheduleModal && (
           <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
             <div className="bg-tone-surface rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
@@ -1006,16 +1111,26 @@ export function BookingForm(props: BookingFormProps) {
                           notify_client: rescheduleNotify,
                         }),
                       });
-                      props.showToast?.(
-                        rescheduleNotify
-                          ? 'Rescheduled. WhatsApp + email queued to client.'
-                          : 'Rescheduled. Client not notified.',
-                        'success',
-                      );
+                      const sentAfter = new Date();
+                      if (rescheduleNotify) {
+                        props.showToast?.('Rescheduled. Sending notification…', 'success');
+                      } else {
+                        props.showToast?.('Rescheduled. Client not notified.', 'success');
+                      }
                       setShowRescheduleModal(false);
                       // onSave (rather than onClose) so the parent calendar
                       // reloads its data via its existing onSave handler.
                       onSave();
+                      // Fire-and-forget: poll notification_log so the admin
+                      // sees a follow-up toast confirming delivery (or a
+                      // failure surface) without blocking modal close.
+                      if (rescheduleNotify && props.bookingId) {
+                        void pollReschedNotificationStatus(
+                          props.bookingId,
+                          sentAfter,
+                          clientName || 'client',
+                        );
+                      }
                     } catch (err) {
                       props.showToast?.(
                         err instanceof Error ? err.message : 'Reschedule failed',
@@ -1198,4 +1313,27 @@ function fmtTime(ms: number): string {
 function isoDateOnly(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function prettyNotificationType(t: string): string {
+  switch (t) {
+    case 'booking_confirmation':
+      return 'Booking confirmation';
+    case 'reschedule_confirmation':
+      return 'Reschedule notification';
+    case 'cancellation_notification':
+      return 'Cancellation';
+    case 'appointment_reminder':
+      return 'Appointment reminder';
+    case 'review_request':
+      return 'Review request';
+    case 'no_show_reengagement':
+      return 'No-show re-engagement';
+    case 'rebooking_prompt':
+      return 'Rebooking prompt';
+    case 'post_service_receipt':
+      return 'Post-service receipt';
+    default:
+      return t;
+  }
 }

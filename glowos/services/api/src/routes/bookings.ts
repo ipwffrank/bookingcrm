@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, gte, lte, inArray, sql, or } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, sql, or, desc } from "drizzle-orm";
 import { z } from "zod";
 import { addMinutes, addSeconds, parseISO, startOfDay, endOfDay } from "date-fns";
 import {
@@ -19,6 +19,7 @@ import {
   loyaltyPrograms,
   loyaltyTransactions,
   merchantUsers,
+  notificationLog,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -798,6 +799,55 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     lastEdit: lastEdit ?? null,
   });
 });
+
+// ─── Protected: GET /merchant/bookings/:id/notifications ─────────────────────
+// Returns recent notification_log entries for a single booking. Used by:
+//   - Booking detail panel: show full notification history
+//   - Reschedule polling: confirm WhatsApp/email actually went out
+// Scope: same as edit. Staff can only view notifications for their own bookings.
+
+merchantBookingsRouter.get(
+  "/:id/notifications",
+  requireMerchant,
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const userRole = c.get("userRole");
+    const contextStaffId = c.get("staffId");
+    const bookingId = c.req.param("id")!;
+
+    const [booking] = await db
+      .select({ id: bookings.id, staffId: bookings.staffId })
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!booking) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    if (userRole === "staff" && booking.staffId !== contextStaffId) {
+      return c.json({ error: "Forbidden", message: "You can only view your own bookings" }, 403);
+    }
+
+    const rows = await db
+      .select({
+        id: notificationLog.id,
+        type: notificationLog.type,
+        channel: notificationLog.channel,
+        recipient: notificationLog.recipient,
+        status: notificationLog.status,
+        twilioSid: notificationLog.twilioSid,
+        messageBody: notificationLog.messageBody,
+        createdAt: notificationLog.sentAt,
+      })
+      .from(notificationLog)
+      .where(eq(notificationLog.bookingId, bookingId))
+      .orderBy(desc(notificationLog.sentAt))
+      .limit(50);
+
+    return c.json({ notifications: rows });
+  }
+);
 
 // ─── Protected: POST /merchant/bookings ───────────────────────────────────────
 
