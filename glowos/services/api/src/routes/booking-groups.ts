@@ -14,6 +14,7 @@ import {
   clientPackages,
   packageSessions,
   servicePackages,
+  merchants,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -82,7 +83,51 @@ bookingGroupsRouter.post(
   async (c) => {
     const merchantId = c.get("merchantId")!;
     const userId = c.get("userId")!;
+    const userRole = c.get("userRole") as
+      | "owner"
+      | "manager"
+      | "clinician"
+      | "staff"
+      | undefined;
     const body = c.get("body") as z.infer<typeof createGroupSchema>;
+
+    // Operating-hours gate. Non-owners (manager / clinician / staff) can't
+    // schedule bookings outside the merchant's stated open hours or on a
+    // closed day. Owner can override — there are legitimate after-hours
+    // appointments and only the boss should authorise them.
+    if (userRole !== "owner") {
+      const [merchantRow] = await db
+        .select({ operatingHours: merchants.operatingHours })
+        .from(merchants)
+        .where(eq(merchants.id, merchantId))
+        .limit(1);
+      const ohours = merchantRow?.operatingHours ?? null;
+      if (ohours) {
+        for (let i = 0; i < body.services.length; i++) {
+          const row = body.services[i];
+          if (!row.start_time) continue;
+          const violation = outsideHoursViolation(row.start_time, ohours);
+          if (violation === "closed") {
+            return c.json(
+              {
+                error: "Forbidden",
+                message: `Service ${i + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`,
+              },
+              403,
+            );
+          }
+          if (violation === "outside") {
+            return c.json(
+              {
+                error: "Forbidden",
+                message: `Service ${i + 1} is outside operating hours. Only the owner can book outside operating hours.`,
+              },
+              403,
+            );
+          }
+        }
+      }
+    }
 
     // Find/create client
     let client: { id: string };
@@ -810,3 +855,38 @@ bookingGroupsRouter.patch(
     return c.json({ success: true });
   }
 );
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the kind of operating-hours violation at the given moment, or null
+ * if it falls inside open hours. Mirrors the frontend guard so non-owners
+ * can't bypass the UI block by hitting the API directly.
+ */
+function outsideHoursViolation(
+  iso: string,
+  operatingHours: Record<string, { open: string; close: string; closed: boolean }>,
+): "closed" | "outside" | null {
+  if (!iso) return null;
+  let d: Date;
+  try {
+    d = new Date(iso);
+  } catch {
+    return null;
+  }
+  if (Number.isNaN(d.getTime())) return null;
+  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const dayKey = dayNames[d.getDay()];
+  if (!dayKey) return null;
+  const day = operatingHours[dayKey];
+  if (!day) return null;
+  if (day.closed) return "closed";
+  const [oh, om] = day.open.split(":").map((n) => parseInt(n, 10));
+  const [ch, cm] = day.close.split(":").map((n) => parseInt(n, 10));
+  if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return null;
+  const open = oh * 60 + om;
+  const close = ch * 60 + cm;
+  const min = d.getHours() * 60 + d.getMinutes();
+  if (min < open || min > close) return "outside";
+  return null;
+}

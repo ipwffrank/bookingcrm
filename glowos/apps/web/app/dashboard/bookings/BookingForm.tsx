@@ -582,6 +582,33 @@ export function BookingForm(props: BookingFormProps) {
       return;
     }
 
+    // Block out-of-hours bookings for non-owners. The owner can still
+    // override (the operating-hours warning beneath each row remains
+    // visible for them) — sometimes a clinic genuinely runs an after-
+    // hours appointment and only the boss should authorise it.
+    const role = (() => {
+      try {
+        return (JSON.parse(localStorage.getItem('user') ?? '{}').role ?? null) as
+          | 'owner' | 'manager' | 'clinician' | 'staff' | null;
+      } catch {
+        return null;
+      }
+    })();
+    if (role !== 'owner' && props.operatingHours) {
+      const offending = rows
+        .map((r, i) => ({ row: r, index: i, violation: outsideHoursViolation(r.startTime, props.operatingHours!) }))
+        .filter((v) => v.violation !== null);
+      if (offending.length > 0) {
+        const first = offending[0];
+        setApiError(
+          first.violation === 'closed'
+            ? `Service ${first.index + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`
+            : `Service ${first.index + 1} is outside operating hours. Only the owner can book outside operating hours.`,
+        );
+        return;
+      }
+    }
+
     const token = localStorage.getItem('access_token');
     setSaving(true);
     try {
@@ -1313,6 +1340,38 @@ function fmtTime(ms: number): string {
 function isoDateOnly(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Returns the kind of operating-hours violation at the given moment, or null
+ * if it falls inside open hours. Used by the create-booking submit guard so
+ * non-owners can't schedule treatments outside the merchant's stated window.
+ */
+function outsideHoursViolation(
+  iso: string,
+  operatingHours: Record<string, { open: string; close: string; closed: boolean }>,
+): 'closed' | 'outside' | null {
+  if (!iso) return null;
+  let d: Date;
+  try {
+    d = new Date(iso);
+  } catch {
+    return null;
+  }
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayKey = dayNames[d.getDay()];
+  if (!dayKey) return null;
+  const day = operatingHours[dayKey];
+  if (!day) return null;
+  if (day.closed) return 'closed';
+  const [oh, om] = day.open.split(':').map((n) => parseInt(n, 10));
+  const [ch, cm] = day.close.split(':').map((n) => parseInt(n, 10));
+  if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return null;
+  const open = oh * 60 + om;
+  const close = ch * 60 + cm;
+  const min = d.getHours() * 60 + d.getMinutes();
+  if (min < open || min > close) return 'outside';
+  return null;
 }
 
 function prettyNotificationType(t: string): string {
