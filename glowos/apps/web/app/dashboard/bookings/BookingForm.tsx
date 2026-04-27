@@ -78,6 +78,13 @@ export function BookingForm(props: BookingFormProps) {
   const [notes, setNotes] = useState('');
   const [services, setServices] = useState<ServiceOption[]>(props.services ?? []);
   const [staffList, setStaffList] = useState<StaffOption[]>(props.staffList ?? []);
+  // Operating hours used by the per-row warnings AND by the submit gate.
+  // Mirrors the props.services / props.staffList pattern: trust the parent's
+  // copy, but keep an internal state in case the parent didn't pass it (the
+  // form is mounted from multiple surfaces; not all of them pre-fetch).
+  const [operatingHours, setOperatingHoursState] = useState<
+    Record<string, { open: string; close: string; closed: boolean }> | null
+  >(props.operatingHours ?? null);
 
   // Sync props → state whenever the parent's services/staffList arrive or
   // change. useState only consumes the initial prop at mount, which was
@@ -93,7 +100,33 @@ export function BookingForm(props: BookingFormProps) {
     if (props.staffList && props.staffList.length > 0) {
       setStaffList(props.staffList);
     }
-  }, [mode, props.services, props.staffList]);
+    if (props.operatingHours) {
+      setOperatingHoursState(props.operatingHours);
+    }
+  }, [mode, props.services, props.staffList, props.operatingHours]);
+
+  // Defensive fetch for operating hours — required by the submit gate that
+  // blocks non-owners from booking outside hours. If the parent didn't pass
+  // them (e.g. form mounted from a surface that doesn't pre-fetch), pull
+  // them ourselves so the gate has data to enforce.
+  useEffect(() => {
+    if (operatingHours) return;
+    let cancelled = false;
+    apiFetch('/merchant/me')
+      .then((d) => {
+        if (cancelled) return;
+        const res = d as {
+          merchant?: {
+            operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
+          };
+        };
+        if (res.merchant?.operatingHours) {
+          setOperatingHoursState(res.merchant.operatingHours);
+        }
+      })
+      .catch(() => { /* if it fails, the gate sees null and lets the booking through */ });
+    return () => { cancelled = true; };
+  }, [operatingHours]);
 
   // Defensive fallback — if the parent didn't pass services/staff (or passed
   // empty arrays and never updated), fetch them ourselves. Covers the case
@@ -563,6 +596,73 @@ export function BookingForm(props: BookingFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientPhone, mode]);
 
+  // Current user's role from localStorage. Used to gate the operating-hours
+  // override (only owner can book after-hours). Computed once per render so
+  // the warning banner and the submit handler agree on what's visible.
+  const currentRole = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
+      return (u.role ?? null) as 'owner' | 'manager' | 'clinician' | 'staff' | null;
+    } catch {
+      return null;
+    }
+  })();
+
+  // Pre-submit guard summary. Drives both the warning banner above the
+  // form and the early-return checks in handleSubmit. Computing it here
+  // (vs. inside handleSubmit) means the user sees the violation before
+  // they click, not after.
+  const submitGuard = (() => {
+    const outsideHoursViolations: Array<{ index: number; violation: 'closed' | 'outside' }> = [];
+    if (operatingHours) {
+      rows.forEach((r, i) => {
+        const v = outsideHoursViolation(r.startTime, operatingHours);
+        if (v) outsideHoursViolations.push({ index: i, violation: v });
+      });
+    }
+
+    // Per-row "staff busy until X" — same logic ServiceRow uses for its
+    // inline pill. Surfaces here so a row of conflicts also triggers the
+    // banner and disables submit.
+    const staffBusyViolations: Array<{ index: number; busyUntil: string }> = [];
+    rows.forEach((r, i) => {
+      if (!r.staffId || !r.serviceId || !r.startTime) return;
+      const svc = services.find((s) => s.id === r.serviceId);
+      if (!svc) return;
+      const rowStart = new Date(r.startTime).getTime();
+      const rowEnd = rowStart + (svc.durationMinutes + svc.bufferMinutes) * 60_000;
+      if (Number.isNaN(rowStart) || Number.isNaN(rowEnd)) return;
+      let latestEnd: number | null = null;
+      for (const b of dayBookings) {
+        if (ownBookingIds.has(b.id)) continue;
+        if (b.staffId !== r.staffId) continue;
+        if (b.status === 'cancelled' || b.status === 'no_show') continue;
+        const bStart = new Date(b.startTime).getTime();
+        const bEnd = new Date(b.endTime).getTime();
+        if (rowStart < bEnd && bStart < rowEnd) {
+          if (latestEnd === null || bEnd > latestEnd) latestEnd = bEnd;
+        }
+      }
+      if (latestEnd !== null) {
+        staffBusyViolations.push({
+          index: i,
+          busyUntil: new Date(latestEnd).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        });
+      }
+    });
+
+    const blocksOwner = staffBusyViolations.length > 0;
+    const blocksNonOwner = blocksOwner || outsideHoursViolations.length > 0;
+    return {
+      outsideHoursViolations,
+      staffBusyViolations,
+      blocksOwner,
+      blocksNonOwner,
+      blocks: currentRole === 'owner' ? blocksOwner : blocksNonOwner,
+    };
+  })();
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setApiError('');
@@ -584,30 +684,29 @@ export function BookingForm(props: BookingFormProps) {
     }
 
     // Block out-of-hours bookings for non-owners. The owner can still
-    // override (the operating-hours warning beneath each row remains
-    // visible for them) — sometimes a clinic genuinely runs an after-
-    // hours appointment and only the boss should authorise it.
-    const role = (() => {
-      try {
-        return (JSON.parse(localStorage.getItem('user') ?? '{}').role ?? null) as
-          | 'owner' | 'manager' | 'clinician' | 'staff' | null;
-      } catch {
-        return null;
-      }
-    })();
-    if (role !== 'owner' && props.operatingHours) {
-      const offending = rows
-        .map((r, i) => ({ row: r, index: i, violation: outsideHoursViolation(r.startTime, props.operatingHours!) }))
-        .filter((v) => v.violation !== null);
-      if (offending.length > 0) {
-        const first = offending[0];
-        setApiError(
-          first.violation === 'closed'
-            ? `Service ${first.index + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`
-            : `Service ${first.index + 1} is outside operating hours. Only the owner can book outside operating hours.`,
-        );
-        return;
-      }
+    // override — sometimes a clinic genuinely runs an after-hours
+    // appointment and only the boss should authorise it. We surface
+    // the same violations as a banner above the form (see
+    // submitGuard) so the user sees the warning before they click.
+    if (currentRole !== 'owner' && submitGuard.outsideHoursViolations.length > 0) {
+      const first = submitGuard.outsideHoursViolations[0];
+      setApiError(
+        first.violation === 'closed'
+          ? `Service ${first.index + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`
+          : `Service ${first.index + 1} is outside operating hours. Only the owner can book outside operating hours.`,
+      );
+      return;
+    }
+
+    // Block double-booking. Even an owner can't intentionally double-book
+    // a real staff member — the backend rejects it too, this just gives
+    // earlier, friendlier feedback.
+    if (submitGuard.staffBusyViolations.length > 0) {
+      const first = submitGuard.staffBusyViolations[0];
+      setApiError(
+        `Service ${first.index + 1}: staff is already booked at that time. Pick a different time or staff member.`,
+      );
+      return;
     }
 
     const token = localStorage.getItem('access_token');
@@ -732,6 +831,29 @@ export function BookingForm(props: BookingFormProps) {
             {apiError}
           </div>
         )}
+        {/* Pre-submit warning banner — surfaces every operating-hours / staff-
+            conflict violation in one place so the user sees it before clicking
+            save. The same conditions also disable the submit button. */}
+        {(submitGuard.outsideHoursViolations.length > 0 || submitGuard.staffBusyViolations.length > 0) && (
+          <div className="mb-4 rounded-lg bg-semantic-warn/5 border border-semantic-warn/40 px-4 py-3 text-sm text-semantic-warn">
+            <p className="font-semibold mb-1">⚠ Cannot save yet — resolve below:</p>
+            <ul className="list-disc pl-5 space-y-0.5 text-xs">
+              {submitGuard.outsideHoursViolations.map((v) => (
+                <li key={`oh-${v.index}`}>
+                  Service {v.index + 1} — {v.violation === 'closed'
+                    ? 'falls on a day the merchant is closed'
+                    : 'is outside operating hours'}
+                  {currentRole !== 'owner' ? ' (only the owner can override)' : ''}
+                </li>
+              ))}
+              {submitGuard.staffBusyViolations.map((v) => (
+                <li key={`sb-${v.index}`}>
+                  Service {v.index + 1} — selected staff is already booked at that time (busy until {v.busyUntil})
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -789,7 +911,7 @@ export function BookingForm(props: BookingFormProps) {
                   row={row}
                   services={services}
                   staff={staffList}
-                  operatingHours={props.operatingHours ?? null}
+                  operatingHours={operatingHours}
                   activePackages={activePackages}
                   dayBookings={dayBookings}
                   ownBookingIds={ownBookingIds}
@@ -1021,7 +1143,14 @@ export function BookingForm(props: BookingFormProps) {
             )}
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || submitGuard.blocks}
+              title={
+                submitGuard.blocks
+                  ? submitGuard.staffBusyViolations.length > 0
+                    ? 'Resolve the staff conflict before saving.'
+                    : 'Resolve the operating-hours conflict before saving.'
+                  : undefined
+              }
               className="flex-1 min-w-[120px] rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
             >
               {saving ? 'Saving…' : mode === 'create' ? 'Create Booking' : 'Save changes'}

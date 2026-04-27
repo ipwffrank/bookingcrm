@@ -232,6 +232,40 @@ bookingGroupsRouter.post(
       });
     }
 
+    // Staff double-booking guard. The PATCH (edit) handler has the same
+    // check; the POST (create) handler was missing it, so a manager could
+    // create a brand-new booking on a slot that already had one. Run the
+    // same buffer-aware findBookingConflict against the freshly-built plan
+    // before we try to insert anything.
+    for (let i = 0; i < plan.length; i++) {
+      const p = plan[i];
+      const svc = svcMap.get(p.serviceId)!;
+      const conflict = await findBookingConflict({
+        merchantId,
+        candidate: {
+          staffId: p.staffId,
+          secondaryStaffId: p.secondaryStaffId,
+          startTime: p.startTime,
+          // Legacy bufferMinutes is shared/extra time that always blocks
+          // the primary; lump it into the primary window.
+          serviceDurationMinutes: svc.durationMinutes + svc.bufferMinutes,
+          preBufferMinutes: svc.preBufferMinutes,
+          postBufferMinutes: svc.postBufferMinutes,
+        },
+        excludeBookingIds: [],
+      });
+      if (conflict) {
+        return c.json(
+          {
+            error: "Conflict",
+            message: `Service ${i + 1}: staff is already booked at that time. Pick a different time or staff member.`,
+            ...conflict,
+          },
+          409,
+        );
+      }
+    }
+
     // Validate use_new_package rows: require sell_package in same request,
     // and require the row's service to be included in the sold package.
     if (body.services.some((s) => s.use_new_package)) {
