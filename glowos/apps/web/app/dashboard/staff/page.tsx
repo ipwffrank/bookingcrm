@@ -424,11 +424,11 @@ function StaffCard({
   onDelete: () => void;
   deleting: boolean;
   loginEmail?: string;
-  loginRole?: 'staff' | 'manager' | 'owner';
+  loginRole?: 'staff' | 'manager' | 'clinician' | 'owner';
   callerIsOwner: boolean;
   onCreateLogin: () => void;
   onResetPassword: () => void;
-  onChangeRole: (role: 'staff' | 'manager') => void;
+  onChangeRole: (role: 'staff' | 'manager' | 'clinician') => void;
 }) {
   const assignedServices = services.filter((s) => member.service_ids.includes(s.id));
 
@@ -466,6 +466,11 @@ function StaffCard({
                   Manager
                 </span>
               )}
+              {loginRole === 'clinician' && (
+                <span className="text-xs text-tone-sage bg-tone-sage/10 px-2 py-0.5 rounded-full border border-tone-sage/30">
+                  Clinician
+                </span>
+              )}
               {loginRole === 'owner' && (
                 <span className="text-xs text-tone-ink bg-tone-ink/10 px-2 py-0.5 rounded-full border border-tone-ink/40 font-medium">
                   Owner
@@ -477,21 +482,16 @@ function StaffCard({
               >
                 Reset Password
               </button>
-              {callerIsOwner && loginRole === 'staff' && (
-                <button
-                  onClick={() => onChangeRole('manager')}
-                  className="text-xs text-tone-sage hover:text-tone-ink underline"
+              {callerIsOwner && loginRole !== 'owner' && (
+                <select
+                  value={loginRole ?? 'staff'}
+                  onChange={(e) => onChangeRole(e.target.value as 'staff' | 'manager' | 'clinician')}
+                  className="text-xs border border-grey-15 rounded px-1.5 py-0.5"
                 >
-                  Promote to manager
-                </button>
-              )}
-              {callerIsOwner && loginRole === 'manager' && (
-                <button
-                  onClick={() => onChangeRole('staff')}
-                  className="text-xs text-grey-60 hover:text-tone-ink underline"
-                >
-                  Demote to staff
-                </button>
+                  <option value="staff">Staff</option>
+                  <option value="manager">Manager</option>
+                  <option value="clinician">Clinician</option>
+                </select>
               )}
             </div>
           ) : (
@@ -545,20 +545,20 @@ export default function StaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [staffLogins, setStaffLogins] = useState<Record<string, { email: string; role: 'staff' | 'manager' | 'owner' }>>({});
-  const [callerRole, setCallerRole] = useState<'staff' | 'manager' | 'owner' | null>(null);
+  const [staffLogins, setStaffLogins] = useState<Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }>>({});
+  const [callerRole, setCallerRole] = useState<'staff' | 'manager' | 'clinician' | 'owner' | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      if (u.role === 'staff' || u.role === 'manager' || u.role === 'owner') {
+      if (u.role === 'staff' || u.role === 'manager' || u.role === 'clinician' || u.role === 'owner') {
         setCallerRole(u.role);
       }
     } catch { /* ignore */ }
   }, []);
 
-  async function changeRole(staffId: string, newRole: 'staff' | 'manager') {
+  async function changeRole(staffId: string, newRole: 'staff' | 'manager' | 'clinician') {
     const current = staffLogins[staffId];
     if (!current) return;
     setStaffLogins((prev) => ({ ...prev, [staffId]: { ...current, role: newRole } }));
@@ -608,8 +608,8 @@ export default function StaffPage() {
         setStaffList(staffData.staff ?? []);
         setServices(servicesData.services ?? []);
         // Fetch which staff have logins
-        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string; role: 'staff' | 'manager' | 'owner' }> }) => {
-          const map: Record<string, { email: string; role: 'staff' | 'manager' | 'owner' }> = {};
+        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }> }) => {
+          const map: Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }> = {};
           (d.logins ?? []).forEach((l) => { if (l.staffId) map[l.staffId] = { email: l.email, role: l.role }; });
           setStaffLogins(map);
         }).catch(() => {});

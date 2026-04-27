@@ -21,7 +21,7 @@ export const merchantUsers = pgTable("merchant_users", {
   passwordHash: text("password_hash").notNull(),
   role: varchar("role", { length: 20 })
     .notNull()
-    .$type<"owner" | "manager" | "staff">(),
+    .$type<"owner" | "manager" | "clinician" | "staff">(),
   photoUrl: text("photo_url"),
   isActive: boolean("is_active").notNull().default(true),
   // When non-null, this merchant_user also has brand-admin authority over

@@ -139,7 +139,7 @@ describe("Clinical records — auth gate (role check)", () => {
     vi.clearAllMocks();
   });
 
-  it("staff role → 403 with 'owner or manager' message", async () => {
+  it("staff role → 403 with 'owner or clinician' message", async () => {
     _injectedRoleRef.value = "staff";
     const app = makeApp();
     const res = await app.request("/merchant/clients/profile-1/clinical-records", {
@@ -147,11 +147,20 @@ describe("Clinical records — auth gate (role check)", () => {
     });
     expect(res.status).toBe(403);
     const body = await jsonBody(res);
-    expect(body.message).toMatch(/owner or manager/i);
+    expect(body.message).toMatch(/owner or clinician/i);
   });
 
-  it("manager role → proceeds past role gate (returns 200)", async () => {
+  it("manager role → 403 (manager no longer has clinical access)", async () => {
     _injectedRoleRef.value = "manager";
+    const app = makeApp();
+    const res = await app.request("/merchant/clients/profile-1/clinical-records");
+    expect(res.status).toBe(403);
+    const body = await jsonBody(res);
+    expect(body.message).toMatch(/owner or clinician/i);
+  });
+
+  it("clinician role → proceeds past role gate (returns 200)", async () => {
+    _injectedRoleRef.value = "clinician";
     _selectQueue.push([{ clientId: "client-1" }]);  // resolveClientId
     _selectQueue.push([]);                            // records query
     const app = makeApp();

@@ -187,9 +187,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ? 'Brand Admin'
           : u.role === 'staff'
             ? 'Staff'
-            : u.role === 'owner' || u.role === 'manager'
-              ? 'Branch Admin'
-              : '',
+            : u.role === 'clinician'
+              ? 'Clinician'
+              : u.role === 'owner' || u.role === 'manager'
+                ? 'Branch Admin'
+                : '',
       );
     } catch { /* ignore */ }
   }, [pathname]);
@@ -273,9 +275,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
                     roleLabel === 'Brand Admin'
                       ? 'bg-tone-sage/10 text-tone-sage border-tone-sage/30'
-                      : roleLabel === 'Staff'
-                        ? 'bg-grey-10 text-grey-70 border-grey-20'
-                        : 'bg-tone-ink/5 text-tone-ink border-tone-ink/20'
+                      : roleLabel === 'Clinician'
+                        ? 'bg-tone-sage/15 text-tone-sage border-tone-sage/40'
+                        : roleLabel === 'Staff'
+                          ? 'bg-grey-10 text-grey-70 border-grey-20'
+                          : 'bg-tone-ink/5 text-tone-ink border-tone-ink/20'
                   }`}>
                     {roleLabel}
                   </span>
