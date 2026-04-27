@@ -81,7 +81,7 @@ export function BookingForm(props: BookingFormProps) {
         ? apiFetch('/merchant/services', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ services: ServiceOption[] }>
         : Promise.resolve(null),
       staffList.length === 0
-        ? apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: StaffOption[] }>
+        ? apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: Array<{ id: string; name: string; service_ids?: string[] }> }>
         : Promise.resolve(null),
     ])
       .then(([svcRes, staffRes]) => {
@@ -90,7 +90,15 @@ export function BookingForm(props: BookingFormProps) {
           setServices(svcRes.services);
         }
         if (staffRes && staffRes.staff && staffRes.staff.length > 0) {
-          setStaffList(staffRes.staff);
+          // /merchant/staff returns snake_case service_ids; normalise to camelCase
+          // so ServiceRow can filter the per-service staff dropdown.
+          setStaffList(
+            staffRes.staff.map((s) => ({
+              id: s.id,
+              name: s.name,
+              serviceIds: s.service_ids ?? [],
+            }))
+          );
         }
       })
       .catch(() => { /* surfaces below via the empty-state guard */ });

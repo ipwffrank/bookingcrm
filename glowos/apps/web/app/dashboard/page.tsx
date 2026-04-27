@@ -340,14 +340,20 @@ function DashboardPageInner() {
         const [bookingsData, servicesData, staffData] = await Promise.all([
           apiFetch(`/merchant/bookings?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ bookings: BookingRow[] }>,
           apiFetch('/merchant/services', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ services: ServiceOption[] }>,
-          apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: StaffOption[] }>,
+          apiFetch('/merchant/staff', { headers: { Authorization: `Bearer ${token}` } }) as Promise<{ staff: Array<{ id: string; name: string; service_ids?: string[] }> }>,
         ]);
         const sorted = [...(bookingsData.bookings ?? [])].sort(
           (a, b) => new Date(a.booking.startTime).getTime() - new Date(b.booking.startTime).getTime()
         );
         setBookings(sorted);
         setServices(servicesData.services ?? []);
-        setStaffList(staffData.staff ?? []);
+        setStaffList(
+          (staffData.staff ?? []).map((s) => ({
+            id: s.id,
+            name: s.name,
+            serviceIds: s.service_ids ?? [],
+          }))
+        );
 
         apiFetch('/merchant/analytics/today-revenue', { headers: { Authorization: `Bearer ${token}` } })
           .then((d) => setRevenue(d as {
