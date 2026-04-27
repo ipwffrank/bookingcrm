@@ -44,6 +44,12 @@ export interface BookingFormProps {
    * which is only possible against an existing booking row).
    */
   onSave: (createdBookingId?: string) => void;
+  /**
+   * Optional toast emitter wired by the parent (e.g. the calendar page) so
+   * the reschedule sub-modal can surface success/error feedback in the
+   * parent's existing toast stack instead of a nested transient.
+   */
+  showToast?: (message: string, type: 'success' | 'error') => void;
 }
 
 export function BookingForm(props: BookingFormProps) {
@@ -148,6 +154,16 @@ export function BookingForm(props: BookingFormProps) {
   const [redemption, setRedemption] = useState<{ points: number; sgd: string } | null>(null);
   const [loyaltyBusy, setLoyaltyBusy] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+
+  // ── Reschedule sub-modal state (edit mode, reschedulable statuses only) ────
+  // The button is rendered alongside Save inside the edit-mode form; clicking
+  // it pre-fills the date/time inputs from the loaded booking's current start
+  // (rows[0].startTime) so the operator sees what they're moving FROM.
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleNotify, setRescheduleNotify] = useState(true);
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
 
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
@@ -866,23 +882,158 @@ export function BookingForm(props: BookingFormProps) {
             />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5"
+              className="flex-1 min-w-[120px] rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5"
             >
               Cancel
             </button>
+            {mode === 'edit' && (bookingStatus === 'confirmed' || bookingStatus === 'in_progress') && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Pre-populate fields from the loaded booking's current
+                  // start time (sourced from rows[0].startTime, which is
+                  // hydrated from /edit-context's ctx.booking.startTime).
+                  const startIso = rows[0]?.startTime;
+                  if (!startIso) return;
+                  const start = new Date(startIso);
+                  if (Number.isNaN(start.getTime())) return;
+                  const yyyy = start.getFullYear();
+                  const mm = String(start.getMonth() + 1).padStart(2, '0');
+                  const dd = String(start.getDate()).padStart(2, '0');
+                  const hh = String(start.getHours()).padStart(2, '0');
+                  const mi = String(start.getMinutes()).padStart(2, '0');
+                  setRescheduleDate(`${yyyy}-${mm}-${dd}`);
+                  setRescheduleTime(`${hh}:${mi}`);
+                  setRescheduleNotify(true);
+                  setShowRescheduleModal(true);
+                }}
+                className="flex-1 min-w-[120px] rounded-xl border border-tone-sage/40 py-2.5 text-sm font-medium text-tone-sage hover:bg-tone-sage/10"
+              >
+                Reschedule
+              </button>
+            )}
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+              className="flex-1 min-w-[120px] rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
             >
               {saving ? 'Saving…' : mode === 'create' ? 'Create Booking' : 'Save changes'}
             </button>
           </div>
         </form>
+
+        {showRescheduleModal && (
+          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+            <div className="bg-tone-surface rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-tone-ink">Reschedule appointment</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowRescheduleModal(false)}
+                  disabled={rescheduleSubmitting}
+                  className="text-grey-45 hover:text-grey-75 disabled:opacity-40"
+                  aria-label="Close"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-grey-70 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    disabled={rescheduleSubmitting}
+                    className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm text-tone-ink focus:outline-none focus:ring-2 focus:ring-tone-sage"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-grey-70 mb-1">Time</label>
+                  <input
+                    type="time"
+                    value={rescheduleTime}
+                    onChange={(e) => setRescheduleTime(e.target.value)}
+                    disabled={rescheduleSubmitting}
+                    step={900}
+                    className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm text-tone-ink focus:outline-none focus:ring-2 focus:ring-tone-sage"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-grey-20 text-tone-ink focus:ring-tone-ink"
+                  checked={rescheduleNotify}
+                  onChange={(e) => setRescheduleNotify(e.target.checked)}
+                  disabled={rescheduleSubmitting}
+                />
+                <span className="text-tone-ink">Notify client by WhatsApp + email</span>
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRescheduleModal(false)}
+                  disabled={rescheduleSubmitting}
+                  className="px-4 py-2 rounded-lg border border-grey-20 text-tone-ink text-sm font-medium hover:bg-grey-5 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!rescheduleDate || !rescheduleTime || !props.bookingId) return;
+                    const newStart = new Date(`${rescheduleDate}T${rescheduleTime}:00`);
+                    if (Number.isNaN(newStart.getTime())) {
+                      props.showToast?.('Invalid date or time', 'error');
+                      return;
+                    }
+                    setRescheduleSubmitting(true);
+                    try {
+                      await apiFetch(`/merchant/bookings/${props.bookingId}/reschedule`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                          start_time: newStart.toISOString(),
+                          notify_client: rescheduleNotify,
+                        }),
+                      });
+                      props.showToast?.(
+                        rescheduleNotify
+                          ? 'Rescheduled. WhatsApp + email queued to client.'
+                          : 'Rescheduled. Client not notified.',
+                        'success',
+                      );
+                      setShowRescheduleModal(false);
+                      // onSave (rather than onClose) so the parent calendar
+                      // reloads its data via its existing onSave handler.
+                      onSave();
+                    } catch (err) {
+                      props.showToast?.(
+                        err instanceof Error ? err.message : 'Reschedule failed',
+                        'error',
+                      );
+                    } finally {
+                      setRescheduleSubmitting(false);
+                    }
+                  }}
+                  disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime}
+                  className="px-4 py-2 rounded-lg bg-tone-ink text-tone-surface-warm text-sm font-medium hover:opacity-90 disabled:opacity-40"
+                >
+                  {rescheduleSubmitting ? 'Rescheduling…' : 'Confirm reschedule'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
