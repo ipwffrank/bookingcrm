@@ -44,6 +44,23 @@ export interface BookingFormProps {
    * which is only possible against an existing booking row).
    */
   onSave: (createdBookingId?: string) => void;
+  /**
+   * Optional toast emitter wired by the parent (e.g. the calendar page) so
+   * the reschedule sub-modal can surface success/error feedback in the
+   * parent's existing toast stack instead of a nested transient.
+   */
+  showToast?: (message: string, type: 'success' | 'error') => void;
+}
+
+interface NotificationLogRow {
+  id: string;
+  type: string;
+  channel: string;
+  recipient: string | null;
+  status: string;
+  twilioSid: string | null;
+  messageBody: string | null;
+  createdAt: string;
 }
 
 export function BookingForm(props: BookingFormProps) {
@@ -148,6 +165,68 @@ export function BookingForm(props: BookingFormProps) {
   const [redemption, setRedemption] = useState<{ points: number; sgd: string } | null>(null);
   const [loyaltyBusy, setLoyaltyBusy] = useState(false);
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+
+  // ── Reschedule sub-modal state (edit mode, reschedulable statuses only) ────
+  // The button is rendered alongside Save inside the edit-mode form; clicking
+  // it pre-fills the date/time inputs from the loaded booking's current start
+  // (rows[0].startTime) so the operator sees what they're moving FROM.
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleNotify, setRescheduleNotify] = useState(true);
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+
+  // ── Notifications panel state (edit mode) ────────────────────────────────────
+  // Loads on open; renders the per-booking notification_log so admin can see
+  // exactly which messages went out, when, and (if any failed) why.
+  const [notifications, setNotifications] = useState<NotificationLogRow[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'edit' || !props.bookingId) return;
+    setNotificationsLoading(true);
+    apiFetch(`/merchant/bookings/${props.bookingId}/notifications`)
+      .then((d) => setNotifications((d as { notifications?: NotificationLogRow[] }).notifications ?? []))
+      .catch(() => { /* non-fatal — panel just shows empty */ })
+      .finally(() => setNotificationsLoading(false));
+  }, [mode, props.bookingId]);
+
+  // ── Reschedule notification status polling ───────────────────────────────────
+  // After a successful PATCH /reschedule with notify_client=true, the worker
+  // will create rows in notification_log within ~1-3s. We poll the new
+  // /:id/notifications endpoint to confirm the messages actually went out and
+  // surface a follow-up toast that replaces the optimistic "Sending…" one.
+  async function pollReschedNotificationStatus(
+    bookingId: string,
+    sentAfter: Date,
+    clientNameForToast: string,
+  ) {
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const data = (await apiFetch(`/merchant/bookings/${bookingId}/notifications`)) as {
+          notifications: Array<{ type: string; channel: string; status: string; createdAt: string }>;
+        };
+        const recent = (data.notifications ?? []).filter(
+          (n) => n.type === 'reschedule_confirmation' && new Date(n.createdAt) >= sentAfter,
+        );
+        if (recent.length > 0) {
+          const channels = recent.map((r) => `${r.channel}: ${r.status}`).join(', ');
+          const allSent = recent.every((r) => r.status === 'sent');
+          props.showToast?.(
+            allSent
+              ? `✓ Notification delivered to ${clientNameForToast} (${channels})`
+              : `⚠ Notification status — ${channels}`,
+            allSent ? 'success' : 'error',
+          );
+          return;
+        }
+      } catch {
+        // ignore poll errors, keep retrying
+      }
+    }
+    props.showToast?.('Notification status pending — check the booking detail panel.', 'success');
+  }
 
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
@@ -866,23 +945,210 @@ export function BookingForm(props: BookingFormProps) {
             />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5"
+              className="flex-1 min-w-[120px] rounded-xl border border-grey-30 py-2.5 text-sm font-medium text-grey-75 hover:bg-grey-5"
             >
               Cancel
             </button>
+            {mode === 'edit' && (bookingStatus === 'confirmed' || bookingStatus === 'in_progress') && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Pre-populate fields from the loaded booking's current
+                  // start time (sourced from rows[0].startTime, which is
+                  // hydrated from /edit-context's ctx.booking.startTime).
+                  const startIso = rows[0]?.startTime;
+                  if (!startIso) return;
+                  const start = new Date(startIso);
+                  if (Number.isNaN(start.getTime())) return;
+                  const yyyy = start.getFullYear();
+                  const mm = String(start.getMonth() + 1).padStart(2, '0');
+                  const dd = String(start.getDate()).padStart(2, '0');
+                  const hh = String(start.getHours()).padStart(2, '0');
+                  const mi = String(start.getMinutes()).padStart(2, '0');
+                  setRescheduleDate(`${yyyy}-${mm}-${dd}`);
+                  setRescheduleTime(`${hh}:${mi}`);
+                  setRescheduleNotify(true);
+                  setShowRescheduleModal(true);
+                }}
+                className="flex-1 min-w-[120px] rounded-xl border border-tone-sage/40 py-2.5 text-sm font-medium text-tone-sage hover:bg-tone-sage/10"
+              >
+                Reschedule
+              </button>
+            )}
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+              className="flex-1 min-w-[120px] rounded-xl bg-tone-ink py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
             >
               {saving ? 'Saving…' : mode === 'create' ? 'Create Booking' : 'Save changes'}
             </button>
           </div>
         </form>
+
+        {mode === 'edit' && props.bookingId && (
+          <div className="mt-6 border-t border-grey-15 pt-4">
+            <h3 className="text-sm font-semibold text-tone-ink mb-3">Notifications</h3>
+            {notificationsLoading ? (
+              <p className="text-xs text-grey-60">Loading…</p>
+            ) : notifications.length === 0 ? (
+              <p className="text-xs text-grey-60">No notifications sent for this booking yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {notifications.map((n) => (
+                  <li key={n.id} className="flex items-start gap-3 text-xs">
+                    <span
+                      className={`mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] ${
+                        n.status === 'sent'
+                          ? 'bg-tone-sage/20 text-tone-sage'
+                          : 'bg-semantic-danger/15 text-semantic-danger'
+                      }`}
+                    >
+                      {n.status === 'sent' ? '✓' : '!'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-tone-ink">
+                        {prettyNotificationType(n.type)} · {n.channel}
+                      </p>
+                      <p className="text-grey-60 truncate">
+                        {n.recipient ?? '—'} ·{' '}
+                        {new Date(n.createdAt).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {n.status !== 'sent' ? ` · ${n.status}` : ''}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {showRescheduleModal && (
+          <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+            <div className="bg-tone-surface rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 font-manrope">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-tone-ink">Reschedule appointment</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowRescheduleModal(false)}
+                  disabled={rescheduleSubmitting}
+                  className="text-grey-45 hover:text-grey-75 disabled:opacity-40"
+                  aria-label="Close"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-grey-70 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    disabled={rescheduleSubmitting}
+                    className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm text-tone-ink focus:outline-none focus:ring-2 focus:ring-tone-sage"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-grey-70 mb-1">Time</label>
+                  <input
+                    type="time"
+                    value={rescheduleTime}
+                    onChange={(e) => setRescheduleTime(e.target.value)}
+                    disabled={rescheduleSubmitting}
+                    step={900}
+                    className="w-full border border-grey-20 rounded-md px-3 py-2 text-sm text-tone-ink focus:outline-none focus:ring-2 focus:ring-tone-sage"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-grey-20 text-tone-ink focus:ring-tone-ink"
+                  checked={rescheduleNotify}
+                  onChange={(e) => setRescheduleNotify(e.target.checked)}
+                  disabled={rescheduleSubmitting}
+                />
+                <span className="text-tone-ink">Notify client by WhatsApp + email</span>
+              </label>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRescheduleModal(false)}
+                  disabled={rescheduleSubmitting}
+                  className="px-4 py-2 rounded-lg border border-grey-20 text-tone-ink text-sm font-medium hover:bg-grey-5 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!rescheduleDate || !rescheduleTime || !props.bookingId) return;
+                    const newStart = new Date(`${rescheduleDate}T${rescheduleTime}:00`);
+                    if (Number.isNaN(newStart.getTime())) {
+                      props.showToast?.('Invalid date or time', 'error');
+                      return;
+                    }
+                    setRescheduleSubmitting(true);
+                    try {
+                      await apiFetch(`/merchant/bookings/${props.bookingId}/reschedule`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                          start_time: newStart.toISOString(),
+                          notify_client: rescheduleNotify,
+                        }),
+                      });
+                      const sentAfter = new Date();
+                      if (rescheduleNotify) {
+                        props.showToast?.('Rescheduled. Sending notification…', 'success');
+                      } else {
+                        props.showToast?.('Rescheduled. Client not notified.', 'success');
+                      }
+                      setShowRescheduleModal(false);
+                      // onSave (rather than onClose) so the parent calendar
+                      // reloads its data via its existing onSave handler.
+                      onSave();
+                      // Fire-and-forget: poll notification_log so the admin
+                      // sees a follow-up toast confirming delivery (or a
+                      // failure surface) without blocking modal close.
+                      if (rescheduleNotify && props.bookingId) {
+                        void pollReschedNotificationStatus(
+                          props.bookingId,
+                          sentAfter,
+                          clientName || 'client',
+                        );
+                      }
+                    } catch (err) {
+                      props.showToast?.(
+                        err instanceof Error ? err.message : 'Reschedule failed',
+                        'error',
+                      );
+                    } finally {
+                      setRescheduleSubmitting(false);
+                    }
+                  }}
+                  disabled={rescheduleSubmitting || !rescheduleDate || !rescheduleTime}
+                  className="px-4 py-2 rounded-lg bg-tone-ink text-tone-surface-warm text-sm font-medium hover:opacity-90 disabled:opacity-40"
+                >
+                  {rescheduleSubmitting ? 'Rescheduling…' : 'Confirm reschedule'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1047,4 +1313,27 @@ function fmtTime(ms: number): string {
 function isoDateOnly(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function prettyNotificationType(t: string): string {
+  switch (t) {
+    case 'booking_confirmation':
+      return 'Booking confirmation';
+    case 'reschedule_confirmation':
+      return 'Reschedule notification';
+    case 'cancellation_notification':
+      return 'Cancellation';
+    case 'appointment_reminder':
+      return 'Appointment reminder';
+    case 'review_request':
+      return 'Review request';
+    case 'no_show_reengagement':
+      return 'No-show re-engagement';
+    case 'rebooking_prompt':
+      return 'Rebooking prompt';
+    case 'post_service_receipt':
+      return 'Post-service receipt';
+    default:
+      return t;
+  }
 }

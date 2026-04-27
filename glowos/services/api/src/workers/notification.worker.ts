@@ -19,7 +19,7 @@ import {
 import { sendWhatsApp, sendWhatsAppTemplate } from "../lib/twilio.js";
 import { config } from "../lib/config.js";
 import { generateBookingToken } from "../lib/jwt.js";
-import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail } from "../lib/email.js";
+import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail, rescheduleConfirmationEmail } from "../lib/email.js";
 import { addJob } from "../lib/queue.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -328,7 +328,10 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
   console.log("[NotificationWorker] booking_confirmation handled", { bookingId });
 }
 
-async function handleRescheduleConfirmation(bookingId: string): Promise<void> {
+async function handleRescheduleConfirmation(
+  bookingId: string,
+  previousStartTime: Date | null
+): Promise<void> {
   const row = await loadBookingWithDetails(bookingId);
   if (!row) {
     console.warn("[NotificationWorker] reschedule_confirmation: booking not found", { bookingId });
@@ -346,6 +349,8 @@ async function handleRescheduleConfirmation(bookingId: string): Promise<void> {
   const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
+  const previousDateStr = previousStartTime ? formatDate(previousStartTime) : "previously scheduled";
+  const previousTimeStr = previousStartTime ? formatTime(previousStartTime) : "previously scheduled";
 
   const message = [
     `📅 Your appointment at ${merchant.name} has been rescheduled.`,
@@ -372,6 +377,38 @@ async function handleRescheduleConfirmation(bookingId: string): Promise<void> {
   if (merchant.phone) {
     const merchantMsg = `Booking rescheduled: ${client.name ?? client.phone} — ${service.name} now ${dateStr} at ${timeStr}`;
     await sendWhatsApp(merchant.phone, merchantMsg);
+  }
+
+  // Email confirmation (if client has email)
+  if (client.email) {
+    const html = rescheduleConfirmationEmail({
+      merchantName: merchant.name,
+      clientName: client.name ?? null,
+      serviceName: service.name,
+      staffName: staffMember.name,
+      previousDateStr,
+      previousTimeStr,
+      newDateStr: dateStr,
+      newTimeStr: timeStr,
+      cancelUrl,
+    });
+    const emailSent = await sendEmail({
+      to: client.email,
+      subject: `Appointment rescheduled — ${service.name} at ${merchant.name}`,
+      html,
+    });
+    await logNotification({
+      merchantId: merchant.id,
+      clientId: client.id,
+      bookingId: booking.id,
+      type: "reschedule_confirmation",
+      channel: "email",
+      recipient: client.email,
+      messageBody: `Reschedule confirmation email for ${service.name}`,
+      status: emailSent ? "sent" : "failed",
+    });
+  } else {
+    console.warn("[NotificationWorker] reschedule_confirmation: client has no email, skipping email", { bookingId });
   }
 
   console.log("[NotificationWorker] reschedule_confirmation handled", { bookingId });
@@ -1833,8 +1870,9 @@ export function createNotificationWorker(): Worker {
           break;
         }
         case "reschedule_confirmation": {
-          const data = job.data as BookingConfirmationData;
-          await handleRescheduleConfirmation(data.booking_id);
+          const data = job.data as { booking_id: string; previous_start_time?: string };
+          const prev = data.previous_start_time ? new Date(data.previous_start_time) : null;
+          await handleRescheduleConfirmation(data.booking_id, prev);
           break;
         }
         case "appointment_reminder": {

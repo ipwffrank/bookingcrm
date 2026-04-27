@@ -87,10 +87,15 @@ export default function GroupLayout({ children }: { children: React.ReactNode })
     if (typeof window === 'undefined') return;
     try {
       const m = JSON.parse(localStorage.getItem('merchant') ?? '{}');
-      // Tier policy: only `starter` blocks multi-branch features. Any other
-      // tier (multibranch, professional, future paid tiers) is allowed.
-      // Treat missing tier as starter-equivalent (default-deny).
-      if (!m.subscriptionTier || m.subscriptionTier === 'starter') {
+      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
+      // Group routes require BOTH conditions:
+      //   1. Tier policy: `starter` blocks multi-branch features. Any other
+      //      tier (multibranch, professional, future paid tiers) is allowed.
+      //   2. Role: user must hold Group Admin authority (brandAdminGroupId).
+      //      A Branch Admin without group authority gets redirected — they
+      //      can't see cross-branch data even if their merchant's tier permits.
+      // Missing tier or missing brandAdminGroupId → redirect (default-deny).
+      if (!m.subscriptionTier || m.subscriptionTier === 'starter' || !u.brandAdminGroupId) {
         router.replace('/dashboard');
       }
     } catch {

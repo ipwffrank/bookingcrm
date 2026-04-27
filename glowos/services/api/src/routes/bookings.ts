@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, gte, lte, inArray, sql, or } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, sql, or, desc } from "drizzle-orm";
 import { z } from "zod";
 import { addMinutes, addSeconds, parseISO, startOfDay, endOfDay } from "date-fns";
 import {
@@ -19,6 +19,7 @@ import {
   loyaltyPrograms,
   loyaltyTransactions,
   merchantUsers,
+  notificationLog,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -92,6 +93,7 @@ const merchantBookingCreateSchema = z.object({
 const rescheduleSchema = z.object({
   start_time: z.string().datetime({ message: "start_time must be an ISO datetime string" }),
   end_time: z.string().datetime({ message: "end_time must be an ISO datetime string" }).optional(),
+  notify_client: z.boolean().optional().default(true),
 });
 
 const patchBookingSchema = z.object({
@@ -798,6 +800,55 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
   });
 });
 
+// ─── Protected: GET /merchant/bookings/:id/notifications ─────────────────────
+// Returns recent notification_log entries for a single booking. Used by:
+//   - Booking detail panel: show full notification history
+//   - Reschedule polling: confirm WhatsApp/email actually went out
+// Scope: same as edit. Staff can only view notifications for their own bookings.
+
+merchantBookingsRouter.get(
+  "/:id/notifications",
+  requireMerchant,
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const userRole = c.get("userRole");
+    const contextStaffId = c.get("staffId");
+    const bookingId = c.req.param("id")!;
+
+    const [booking] = await db
+      .select({ id: bookings.id, staffId: bookings.staffId })
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!booking) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    if (userRole === "staff" && booking.staffId !== contextStaffId) {
+      return c.json({ error: "Forbidden", message: "You can only view your own bookings" }, 403);
+    }
+
+    const rows = await db
+      .select({
+        id: notificationLog.id,
+        type: notificationLog.type,
+        channel: notificationLog.channel,
+        recipient: notificationLog.recipient,
+        status: notificationLog.status,
+        twilioSid: notificationLog.twilioSid,
+        messageBody: notificationLog.messageBody,
+        createdAt: notificationLog.sentAt,
+      })
+      .from(notificationLog)
+      .where(eq(notificationLog.bookingId, bookingId))
+      .orderBy(desc(notificationLog.sentAt))
+      .limit(50);
+
+    return c.json({ notifications: rows });
+  }
+);
+
 // ─── Protected: POST /merchant/bookings ───────────────────────────────────────
 
 merchantBookingsRouter.post(
@@ -1476,6 +1527,21 @@ merchantBookingsRouter.patch(
       freed_end: oldEnd.toISOString(),
       notified_booking_slot_id: existing.id,
     });
+
+    // Notify the client of the new time. Worker selects email + WhatsApp
+    // channels per client.preferredContactChannel and renders the
+    // `reschedule_confirmation` template (already registered in
+    // notification.worker.ts). Carry the previous start_time so the
+    // template can show "moved from X to Y".
+    // Schema default is `true`; the explicit check keeps legacy callers
+    // (no `notify_client` field) sending while letting the calendar drag-
+    // drop modal pass `notify_client: false` to suppress the message.
+    if (body.notify_client !== false) {
+      await addJob("notifications", "reschedule_confirmation", {
+        booking_id: bookingId,
+        previous_start_time: oldStart.toISOString(),
+      });
+    }
 
     return c.json({ booking: updated });
   }

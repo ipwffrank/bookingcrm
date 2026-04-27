@@ -109,6 +109,31 @@ function isoToLocalMin(iso: string) {
 function snap(min: number)                        { return Math.round(min / SNAP_MIN) * SNAP_MIN; }
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
+// ─── Toast ─────────────────────────────────────────────────────────────────────
+// Dashboard-palette compliant (tone-* / semantic-* only). Auto-dismisses after
+// 4s. Triggered from BookingForm's reschedule sub-modal via the showToast prop.
+function Toast({
+  message,
+  type,
+  onDismiss,
+}: { message: string; type: 'success' | 'error'; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+  const bg = type === 'success' ? 'bg-tone-ink' : 'bg-semantic-danger';
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-4 py-3 shadow-lg text-sm font-medium ${bg} text-tone-surface-warm max-w-md`}>
+      <span className="flex-1">{message}</span>
+      <button onClick={onDismiss} aria-label="Dismiss" className="opacity-70 hover:opacity-100">
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function CalendarPage() {
   const [date,       setDate]       = useState(() => new Date());
@@ -149,6 +174,10 @@ export default function CalendarPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [clientBookings, setClientBookings] = useState<{ id: string; startTime: string; endTime: string; status: string; serviceName: string; staffName: string }[] | null>(null);
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(null);
+
+  // Reschedule feedback toast. Triggered from BookingForm via the showToast prop
+  // after a successful (or failed) reschedule submission.
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -1682,6 +1711,7 @@ export default function CalendarPage() {
             setEditBookingId(null);
             void load();
           }}
+          showToast={(message, type) => setToast({ message, type })}
         />
       )}
 
@@ -1695,6 +1725,8 @@ export default function CalendarPage() {
           }}
         />
       )}
+
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
   );
 }

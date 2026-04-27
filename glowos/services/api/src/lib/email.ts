@@ -80,6 +80,36 @@ export function bookingConfirmationEmail(params: {
   </body></html>`;
 }
 
+export function rescheduleConfirmationEmail(params: {
+  merchantName: string;
+  clientName: string | null;
+  serviceName: string;
+  staffName: string;
+  previousDateStr: string;
+  previousTimeStr: string;
+  newDateStr: string;
+  newTimeStr: string;
+  cancelUrl: string;
+}): string {
+  const greeting = params.clientName ? `Hi ${params.clientName},` : "Hi,";
+  return `<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1a2313;">
+  <h2 style="margin: 0 0 16px;">Your appointment has been rescheduled</h2>
+  <p>${greeting}</p>
+  <p>Your appointment at <strong>${params.merchantName}</strong> has been moved.</p>
+  <table style="width: 100%; margin: 16px 0; border-collapse: collapse;">
+    <tr><td style="padding: 8px 0; color: #6b7771;">Service</td><td style="padding: 8px 0;"><strong>${params.serviceName}</strong></td></tr>
+    <tr><td style="padding: 8px 0; color: #6b7771;">With</td><td style="padding: 8px 0;">${params.staffName}</td></tr>
+    <tr><td style="padding: 8px 0; color: #6b7771;">Was</td><td style="padding: 8px 0; text-decoration: line-through; color: #9ca3a1;">${params.previousDateStr} at ${params.previousTimeStr}</td></tr>
+    <tr><td style="padding: 8px 0; color: #6b7771;">Now</td><td style="padding: 8px 0;"><strong>${params.newDateStr} at ${params.newTimeStr}</strong></td></tr>
+  </table>
+  <p>Need to cancel or reschedule? <a href="${params.cancelUrl}" style="color: #456466;">Click here</a>.</p>
+  <p style="margin-top: 32px; color: #6b7771; font-size: 13px;">— ${params.merchantName}</p>
+</body>
+</html>`;
+}
+
 export function postServiceReceiptEmail(params: {
   clientName: string;
   merchantName: string;
