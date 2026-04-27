@@ -10,11 +10,11 @@ interface ViewingMerchant {
 }
 
 /**
- * Visible when the current session is a brand admin viewing a branch other
+ * Visible when the current session is a group admin viewing a branch other
  * than their home branch. Reads the local flag set by the BranchPicker.
  * Sage tint — informational, not warn.
  */
-export function BrandViewBanner() {
+export function GroupViewBanner() {
   const router = useRouter();
   const [active, setActive] = useState(false);
   const [merchant, setMerchant] = useState<ViewingMerchant | null>(null);
@@ -58,7 +58,7 @@ export function BrandViewBanner() {
   return (
     <div className="bg-tone-sage/10 border-b border-tone-sage/30 px-4 py-2 text-sm flex items-center justify-between">
       <span className="text-tone-ink">
-        Viewing <strong>{merchant.name}</strong> as a brand admin.
+        Viewing <strong>{merchant.name}</strong> as a group admin.
       </span>
       <button
         onClick={handleExit}

@@ -145,7 +145,7 @@ function Valid({
 
       <p className="text-sm text-grey-70 mb-2">
         Invited by{' '}
-        <span className="text-tone-ink">{data.inviterName ?? data.inviterEmail ?? 'a brand admin'}</span>
+        <span className="text-tone-ink">{data.inviterName ?? data.inviterEmail ?? 'a group admin'}</span>
         {data.inviterEmail && data.inviterName && (
           <span className="text-grey-50"> · {data.inviterEmail}</span>
         )}
@@ -160,13 +160,13 @@ function Valid({
           {isNewAccountPath ? (
             <>
               <li>• Create your GlowOS account</li>
-              <li>• Make you a co-brand-admin of {data.groupName}</li>
+              <li>• Make you a co-group-admin of {data.groupName}</li>
               <li>• Sign you in</li>
             </>
           ) : (
             <>
-              <li>• Move your branch into this brand</li>
-              <li>• Make you a co-brand-admin</li>
+              <li>• Move your branch into this group</li>
+              <li>• Make you a co-group-admin</li>
               <li>• Re-issue your session</li>
             </>
           )}

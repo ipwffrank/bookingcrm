@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
-import { BrandViewBanner } from './components/BrandViewBanner';
+import { GroupViewBanner } from './components/GroupViewBanner';
 
 interface Merchant {
   id: string;
@@ -188,12 +188,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setShowSuperLink(isSuper && !impersonating);
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      const hasBrand = Boolean(u.brandAdminGroupId);
-      setIsBrandAdmin(hasBrand);
+      const hasGroup = Boolean(u.brandAdminGroupId);
+      setIsBrandAdmin(hasGroup);
       setUserName(u.name ?? u.email ?? '');
       setRoleLabel(
-        hasBrand
-          ? 'Brand Admin'
+        hasGroup
+          ? 'Group Admin'
           : u.role === 'staff'
             ? 'Staff'
             : u.role === 'clinician'
@@ -282,7 +282,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <span className="text-xs font-medium text-grey-75 truncate">{userName}</span>
                 {roleLabel && (
                   <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
-                    roleLabel === 'Brand Admin'
+                    roleLabel === 'Group Admin'
                       ? 'bg-tone-sage/10 text-tone-sage border-tone-sage/30'
                       : roleLabel === 'Clinician'
                         ? 'bg-tone-sage/15 text-tone-sage border-tone-sage/40'
@@ -442,7 +442,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
 
         <ImpersonationBanner />
-        <BrandViewBanner />
+        <GroupViewBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">
           {children}
         </main>

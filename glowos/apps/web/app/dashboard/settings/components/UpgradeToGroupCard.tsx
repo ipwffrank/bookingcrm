@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../../lib/api';
 
-export function UpgradeToBrandCard() {
+export function UpgradeToGroupCard() {
   const router = useRouter();
   const [show, setShow] = useState(false);
   const [groupName, setGroupName] = useState('');
@@ -54,17 +54,17 @@ export function UpgradeToBrandCard() {
   return (
     <section className="bg-tone-surface border border-grey-20 rounded-lg p-6 mb-6">
       <h2 className="text-lg font-semibold text-tone-ink mb-1">
-        Manage multiple branches as one brand
+        Manage multiple branches as one group
       </h2>
       <p className="text-sm text-grey-70 mb-4">
-        If you operate more than one location under a single brand, upgrade your
-        account to brand admin. You'll be able to add new branches, edit profiles
-        across the brand, and switch between branches without separate logins.
-        Your current branch becomes the first in your new brand.
+        If you operate more than one location under a single group, upgrade your
+        account to group admin. You'll be able to add new branches, edit profiles
+        across the group, and switch between branches without separate logins.
+        Your current branch becomes the first in your new group.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
         <label className="flex-1">
-          <span className="block text-xs uppercase tracking-wide text-grey-60 mb-1">Brand name</span>
+          <span className="block text-xs uppercase tracking-wide text-grey-60 mb-1">Group name</span>
           <input
             type="text"
             value={groupName}
@@ -80,7 +80,7 @@ export function UpgradeToBrandCard() {
           disabled={submitting || !groupName.trim()}
           className="bg-tone-ink text-tone-surface px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
-          {submitting ? 'Converting…' : 'Convert to brand admin'}
+          {submitting ? 'Converting…' : 'Convert to group admin'}
         </button>
       </form>
       {error && <p className="text-sm text-semantic-danger mt-3">{error}</p>}
