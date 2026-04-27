@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from '../../lib/api';
 import { NoShowChip } from './NoShowChip';
 import { PrivatePhoto } from './PrivatePhoto';
 import { BookingForm } from '../bookings/BookingForm';
+import { CheckoutModal } from './CheckoutModal';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -150,6 +151,13 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   }>>([]);
   const [showIssueQuote, setShowIssueQuote] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(false);
+  // Inline status actions in the Upcoming list. acting tracks which booking
+  // is currently in flight so we can disable buttons during the request.
+  const [acting, setActing] = useState<{ bookingId: string; action: string } | null>(null);
+  const [statusActionError, setStatusActionError] = useState<string | null>(null);
+  // Checkout modal — same pattern as the dashboard. Opens for Complete /
+  // Checkout Now actions on Upcoming bookings.
+  const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
   const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; priceSgd: string; requiresConsultFirst: boolean }>>([]);
   const [quoteServiceId, setQuoteServiceId] = useState('');
   const [quotePrice, setQuotePrice] = useState('');
@@ -317,6 +325,36 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
       setLoyaltyProgram(d.program);
       setLoyaltyTransactionsData(d.recentTransactions ?? []);
     } catch { /* swallow */ }
+  }
+
+  async function refetchClientData() {
+    try {
+      const d = (await apiFetch(`/merchant/clients/${profileId}`)) as ClientDetailData;
+      setData(d);
+    } catch { /* swallow — view stays on stale data */ }
+  }
+
+  // Inline status actions for the Upcoming list. Used when staff calls a
+  // client offline and needs to update the booking status without going to
+  // the dashboard for that future date.
+  async function handleStatusAction(
+    bookingId: string,
+    action: 'confirm' | 'check-in' | 'no-show',
+  ) {
+    setStatusActionError(null);
+    setActing({ bookingId, action });
+    try {
+      await apiFetch(`/merchant/bookings/${bookingId}/${action}`, { method: 'PUT' });
+      await refetchClientData();
+    } catch (e) {
+      setStatusActionError(
+        e instanceof ApiError
+          ? (e.message ?? `Failed to ${action}`)
+          : `Failed to ${action}`,
+      );
+    } finally {
+      setActing(null);
+    }
   }
 
   type ActivityEvent =
@@ -891,6 +929,9 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
       {upcoming.length > 0 && (
         <div className="bg-tone-surface rounded-xl border border-grey-15 p-5">
           <h2 className="text-sm font-semibold text-tone-ink mb-3">Upcoming</h2>
+          {statusActionError && (
+            <p className="mb-2 text-xs text-semantic-danger">{statusActionError}</p>
+          )}
           <div className="space-y-2">
             {upcoming.map(e => {
               const gross = parseFloat(e.booking.priceSgd);
@@ -906,39 +947,111 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                 }
               })();
               const statusClass = e.booking.status === 'pending' ? 'state-notified' : 'state-default';
+              const isActing = acting?.bookingId === e.booking.id;
+              const canConfirm = e.booking.status === 'pending';
+              const canCheckIn = e.booking.status === 'pending' || e.booking.status === 'confirmed';
+              const canCheckoutNow = e.booking.status === 'confirmed';
+              const canComplete = e.booking.status === 'in_progress';
+              const canNoShow =
+                e.booking.status === 'pending' ||
+                e.booking.status === 'confirmed' ||
+                e.booking.status === 'in_progress';
+              const hasActions =
+                canConfirm || canCheckIn || canCheckoutNow || canComplete || canNoShow;
               return (
-                <div key={e.booking.id} className="flex items-center justify-between bg-tone-sage/5 rounded-lg px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
-                      {statusLabel && (
-                        <span className={`text-[10px] uppercase tracking-wider ${statusClass}`}>
-                          {statusLabel}
-                        </span>
-                      )}
+                <div key={e.booking.id} className="bg-tone-sage/5 rounded-lg px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-tone-ink">{e.service.name}</p>
+                        {statusLabel && (
+                          <span className={`text-[10px] uppercase tracking-wider ${statusClass}`}>
+                            {statusLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-grey-60 mt-0.5">{e.staffMember.name} · {fmt(e.booking.startTime)} · {new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-grey-60">
+                        {e.booking.paymentMethod && (
+                          <span className="capitalize">💳 {e.booking.paymentMethod}</span>
+                        )}
+                        {ptsRedeemed > 0 && (
+                          <span className="text-tone-sage">
+                            ✦ {ptsRedeemed} pts redeemed (−${discount.toFixed(2)})
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-grey-60 mt-0.5">{e.staffMember.name} · {fmt(e.booking.startTime)} · {new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-grey-60">
-                      {e.booking.paymentMethod && (
-                        <span className="capitalize">💳 {e.booking.paymentMethod}</span>
-                      )}
-                      {ptsRedeemed > 0 && (
-                        <span className="text-tone-sage">
-                          ✦ {ptsRedeemed} pts redeemed (−${discount.toFixed(2)})
-                        </span>
+                    <div className="text-right shrink-0 ml-2">
+                      {discount > 0 ? (
+                        <>
+                          <span className="text-xs text-grey-45 line-through block leading-none">${gross.toFixed(0)}</span>
+                          <span className="text-sm font-semibold text-grey-90">${net.toFixed(2)}</span>
+                        </>
+                      ) : (
+                        <span className="text-sm font-semibold text-grey-90">${gross.toFixed(0)}</span>
                       )}
                     </div>
                   </div>
-                  <div className="text-right shrink-0 ml-2">
-                    {discount > 0 ? (
-                      <>
-                        <span className="text-xs text-grey-45 line-through block leading-none">${gross.toFixed(0)}</span>
-                        <span className="text-sm font-semibold text-grey-90">${net.toFixed(2)}</span>
-                      </>
-                    ) : (
-                      <span className="text-sm font-semibold text-grey-90">${gross.toFixed(0)}</span>
-                    )}
-                  </div>
+
+                  {hasActions && (
+                    <div className="mt-2 pt-2 border-t border-tone-sage/15 flex flex-wrap gap-1.5 print:hidden">
+                      {canConfirm && (
+                        <button
+                          type="button"
+                          onClick={() => void handleStatusAction(e.booking.id, 'confirm')}
+                          disabled={isActing}
+                          title="Confirm on behalf of the customer (e.g. they confirmed by phone)"
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-tone-surface bg-semantic-warn hover:opacity-90 disabled:opacity-50 transition-opacity"
+                        >
+                          {isActing && acting?.action === 'confirm' ? '…' : 'Confirm'}
+                        </button>
+                      )}
+                      {canCheckIn && (
+                        <button
+                          type="button"
+                          onClick={() => void handleStatusAction(e.booking.id, 'check-in')}
+                          disabled={isActing}
+                          title="Check the customer in (marks in progress)."
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-tone-surface bg-tone-sage hover:opacity-90 disabled:opacity-50 transition-opacity"
+                        >
+                          {isActing && acting?.action === 'check-in' ? '…' : 'Check In'}
+                        </button>
+                      )}
+                      {canCheckoutNow && (
+                        <button
+                          type="button"
+                          onClick={() => setCheckoutBookingId(e.booking.id)}
+                          disabled={isActing}
+                          title="Take payment now (before service). Applies loyalty redemption and marks complete."
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-tone-ink bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 disabled:opacity-50 transition-colors"
+                        >
+                          Checkout Now
+                        </button>
+                      )}
+                      {canComplete && (
+                        <button
+                          type="button"
+                          onClick={() => setCheckoutBookingId(e.booking.id)}
+                          disabled={isActing}
+                          title="Take payment, optionally apply loyalty redemption, and mark complete."
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-tone-surface bg-tone-ink hover:opacity-90 disabled:opacity-50 transition-opacity"
+                        >
+                          Complete
+                        </button>
+                      )}
+                      {canNoShow && (
+                        <button
+                          type="button"
+                          onClick={() => void handleStatusAction(e.booking.id, 'no-show')}
+                          disabled={isActing}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
+                        >
+                          {isActing && acting?.action === 'no-show' ? '…' : 'No-Show'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -2098,6 +2211,18 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
             void apiFetch(`/merchant/clients/${profileId}`)
               .then((d: unknown) => setData(d as ClientDetailData))
               .catch(() => {});
+          }}
+        />
+      )}
+
+      {checkoutBookingId && (
+        <CheckoutModal
+          bookingId={checkoutBookingId}
+          onClose={() => setCheckoutBookingId(null)}
+          onComplete={() => {
+            setCheckoutBookingId(null);
+            void refetchClientData();
+            void refetchLoyalty();
           }}
         />
       )}
