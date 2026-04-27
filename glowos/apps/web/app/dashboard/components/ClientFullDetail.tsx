@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { apiFetch, ApiError } from '../../lib/api';
 import { NoShowChip } from './NoShowChip';
 import { PrivatePhoto } from './PrivatePhoto';
+import { BookingForm } from '../bookings/BookingForm';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,7 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
     issuedByName: string | null;
   }>>([]);
   const [showIssueQuote, setShowIssueQuote] = useState(false);
+  const [showNewBooking, setShowNewBooking] = useState(false);
   const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; priceSgd: string; requiresConsultFirst: boolean }>>([]);
   const [quoteServiceId, setQuoteServiceId] = useState('');
   const [quotePrice, setQuotePrice] = useState('');
@@ -858,13 +860,14 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
               </svg>
               Export PDF
             </button>
-            <Link
-              href="/dashboard"
+            <button
+              type="button"
+              onClick={() => setShowNewBooking(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-[#1a2313] text-white text-sm font-medium rounded-lg hover:bg-[#2f3827] transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
               New Booking
-            </Link>
+            </button>
           </div>
         </div>
       </div>
@@ -2011,6 +2014,25 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
             className="max-w-full max-h-full object-contain"
           />
         </div>
+      )}
+
+      {showNewBooking && data && (
+        <BookingForm
+          mode="create"
+          intent="prebook"
+          prefilledClient={{
+            name: data.client.name ?? '',
+            phone: data.client.phone,
+          }}
+          onClose={() => setShowNewBooking(false)}
+          onSave={() => {
+            setShowNewBooking(false);
+            // Refresh the client view so the new booking appears in Upcoming.
+            void apiFetch(`/merchant/clients/${profileId}`)
+              .then((d: unknown) => setData(d as ClientDetailData))
+              .catch(() => {});
+          }}
+        />
       )}
 
     </div>
