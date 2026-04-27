@@ -1064,25 +1064,27 @@ export default function BookingWidget({
                     </div>
                   )}
                   {!slotsLoading && !slotsError && slots.length === 0 && (
-                    <div className="rounded-xl bg-grey-5 border border-grey-5 px-4 py-6 text-sm text-grey-60 text-center">
-                      <div className="text-2xl mb-2">😔</div>
-                      No availability on {formatDateFull(selectedDate)}.<br />
-                      <span className="text-grey-45">Please try another day.</span>
+                    <div className="rounded-xl bg-grey-5 border border-grey-5 px-4 py-6 text-sm text-grey-60">
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">😔</div>
+                        No availability on {formatDateFull(selectedDate)}.<br />
+                        <span className="text-grey-45">Please try another day.</span>
+                      </div>
 
                       {/* Next available suggestion */}
                       {nextAvailableLoading && (
-                        <div className="mt-4 text-xs text-grey-45 animate-pulse">
-                          Searching for next available slot...
+                        <div className="mt-4 text-xs text-grey-45 animate-pulse text-center">
+                          Searching for next available slot…
                         </div>
                       )}
                       {nextAvailable && !nextAvailableLoading && (
-                        <div className="mt-4 bg-tone-surface border border-tone-sage/30 rounded-xl px-4 py-3">
+                        <div className="mt-4 bg-tone-surface border border-tone-sage/30 rounded-xl px-4 py-3 text-center">
                           <p className="text-xs text-tone-sage font-semibold mb-1">Next available with {selectedStaff?.name}</p>
                           <p className="text-sm font-semibold text-tone-ink">
                             {new Date(nextAvailable.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                           </p>
                           <p className="text-xs text-grey-60 mt-0.5">
-                            {nextAvailable.slotsCount} slot{nextAvailable.slotsCount > 1 ? 's' : ''} available · First at {nextAvailable.firstSlot}
+                            {nextAvailable.slotsCount} slot{nextAvailable.slotsCount > 1 ? 's' : ''} · first at {formatTime(nextAvailable.firstSlot)}
                           </p>
                           <button
                             type="button"
@@ -1090,14 +1092,14 @@ export default function BookingWidget({
                               const jumpDate = new Date(nextAvailable.date + 'T00:00:00');
                               setSelectedDate(jumpDate);
                             }}
-                            className="mt-2 px-4 py-2 bg-tone-ink text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-colors"
+                            className="mt-3 w-full px-4 py-2 bg-tone-ink text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-colors"
                           >
                             Jump to {new Date(nextAvailable.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' })}
                           </button>
                         </div>
                       )}
                       {!nextAvailable && !nextAvailableLoading && selectedStaff && selectedStaff.id !== 'any' && (
-                        <div className="mt-3 text-xs text-grey-45">
+                        <div className="mt-3 text-xs text-grey-45 text-center">
                           No availability with {selectedStaff.name} in the next 30 days.
                         </div>
                       )}
