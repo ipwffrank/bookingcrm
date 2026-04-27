@@ -176,3 +176,61 @@ describe("PATCH /super/merchants/:id/tier", () => {
     expect(values.metadata.newTier).toBe("multibranch");
   });
 });
+
+describe("PATCH /super/merchants/:id/pilot", () => {
+  beforeEach(() => {
+    _selectQueue.length = 0;
+    _updateQueue.length = 0;
+    _insertCalls.length = 0;
+    vi.clearAllMocks();
+  });
+
+  it("returns 400 when isPilot is not a boolean", async () => {
+    const app = buildApp();
+    const res = await app.request("/super/merchants/m1/pilot", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isPilot: "yes" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("writes the new pilot flag, returns the updated merchant, and audits the change", async () => {
+    // 1st select: previous-pilot read
+    _selectQueue.push([{ id: "m1", isPilot: false }]);
+    // update().returning(): updated row
+    _updateQueue.push([
+      { id: "m1", isPilot: true, name: "Test" },
+    ]);
+    // 2nd select: actor email lookup
+    _selectQueue.push([{ email: "host@glowos.com" }]);
+
+    const app = buildApp();
+    const res = await app.request("/super/merchants/m1/pilot", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isPilot: true }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.isPilot).toBe(true);
+    expect(body.id).toBe("m1");
+
+    const auditCall = _insertCalls.find(
+      (call) =>
+        (call.table as { __name?: string }).__name === "super_admin_audit_log",
+    );
+    expect(auditCall).toBeDefined();
+    const values = auditCall!.values as {
+      action: string;
+      targetMerchantId: string;
+      metadata: { subAction: string; previousIsPilot: boolean; newIsPilot: boolean };
+    };
+    expect(values.action).toBe("write");
+    expect(values.targetMerchantId).toBe("m1");
+    expect(values.metadata.subAction).toBe("set_pilot");
+    expect(values.metadata.previousIsPilot).toBe(false);
+    expect(values.metadata.newIsPilot).toBe(true);
+  });
+});

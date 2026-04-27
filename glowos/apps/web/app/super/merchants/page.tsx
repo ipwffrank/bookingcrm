@@ -17,6 +17,7 @@ interface MerchantRow {
   revenue30d: string;
   lastBookingAt: string | null;
   subscriptionTier: 'starter' | 'multibranch';
+  isPilot: boolean;
 }
 
 interface ListResponse {
@@ -41,6 +42,7 @@ export default function SuperMerchantsPage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [pendingTierMerchantId, setPendingTierMerchantId] = useState<string | null>(null);
+  const [pendingPilotMerchantId, setPendingPilotMerchantId] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
@@ -78,6 +80,24 @@ export default function SuperMerchantsPage() {
       alert('Could not update tier. Try again.');
     } finally {
       setPendingTierMerchantId(null);
+    }
+  }
+
+  async function setPilot(merchantId: string, isPilot: boolean) {
+    setPendingPilotMerchantId(merchantId);
+    try {
+      const updated = (await apiFetch(`/super/merchants/${merchantId}/pilot`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isPilot }),
+      })) as { id: string; isPilot: boolean };
+      setRows((prev) =>
+        prev.map((m) => (m.id === updated.id ? { ...m, isPilot: updated.isPilot } : m)),
+      );
+    } catch (err) {
+      console.error('pilot flip failed', err);
+      alert('Could not update pilot status. Try again.');
+    } finally {
+      setPendingPilotMerchantId(null);
     }
   }
 
@@ -132,6 +152,7 @@ export default function SuperMerchantsPage() {
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Contact</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Tier</th>
+              <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Pilot</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d bookings</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d revenue</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Last booking</th>
@@ -140,9 +161,9 @@ export default function SuperMerchantsPage() {
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
             ) : (
               rows.map((m) => (
                 <tr key={m.id} className="border-b border-grey-5 hover:bg-grey-5 transition-colors">
@@ -163,6 +184,17 @@ export default function SuperMerchantsPage() {
                       <option value="starter">starter</option>
                       <option value="multibranch">multibranch</option>
                     </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-grey-15 text-tone-ink focus:ring-tone-ink"
+                        checked={m.isPilot}
+                        disabled={pendingPilotMerchantId === m.id}
+                        onChange={(e) => setPilot(m.id, e.target.checked)}
+                      />
+                    </label>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">{m.bookings30d.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">S${Number(m.revenue30d).toFixed(2)}</td>

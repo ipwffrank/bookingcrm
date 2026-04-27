@@ -6,12 +6,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../lib/api';
 import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { GroupViewBanner } from './components/GroupViewBanner';
+import { PilotBanner } from './components/PilotBanner';
 
 interface Merchant {
   id: string;
   name: string;
   slug: string;
   subscriptionTier: 'starter' | 'multibranch';
+  isPilot?: boolean;
   groupId?: string | null;
 }
 
@@ -474,6 +476,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </header>
 
+        <PilotBanner />
         <ImpersonationBanner />
         <GroupViewBanner />
         <main className="flex-1 px-4 lg:px-6 py-6 min-w-0">

@@ -193,6 +193,7 @@ superRouter.get("/merchants", async (c) => {
       country: merchants.country,
       createdAt: merchants.createdAt,
       subscriptionTier: merchants.subscriptionTier,
+      isPilot: merchants.isPilot,
       // 30-day activity
       bookings30d: sql<number>`(
         SELECT COUNT(*)::int FROM ${bookings}
@@ -298,6 +299,59 @@ superRouter.patch("/merchants/:id/tier", zValidator(setTierSchema), async (c) =>
       subAction: "set_tier",
       previousTier: previous.subscriptionTier,
       newTier: body.tier,
+    },
+  });
+
+  return c.json(updated);
+});
+
+// ─── PATCH /super/merchants/:id/pilot ─────────────────────────────────────────
+// Host-admin pilot flag toggle. Drives the merchant-side "you're on pilot"
+// banner. Independent of subscription_tier — pilot merchants can be on any
+// tier. Logged via logAudit using action: 'write' + metadata.subAction.
+
+const setPilotSchema = z.object({
+  isPilot: z.boolean(),
+});
+
+superRouter.patch("/merchants/:id/pilot", zValidator(setPilotSchema), async (c) => {
+  const merchantId = c.req.param("id")!;
+  const body = c.get("body") as z.infer<typeof setPilotSchema>;
+  const actorUserId = c.get("userId")!;
+
+  const [previous] = await db
+    .select({ id: merchants.id, isPilot: merchants.isPilot })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  if (!previous) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  const [updated] = await db
+    .update(merchants)
+    .set({ isPilot: body.isPilot, updatedAt: new Date() })
+    .where(eq(merchants.id, merchantId))
+    .returning();
+
+  const [actor] = await db
+    .select({ email: merchantUsers.email })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, actorUserId))
+    .limit(1);
+
+  await logAudit({
+    actorUserId,
+    actorEmail: actor?.email ?? "unknown",
+    action: "write",
+    targetMerchantId: merchantId,
+    method: "PATCH",
+    path: `/super/merchants/${merchantId}/pilot`,
+    metadata: {
+      subAction: "set_pilot",
+      previousIsPilot: previous.isPilot,
+      newIsPilot: body.isPilot,
     },
   });
 
