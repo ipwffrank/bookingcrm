@@ -190,11 +190,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setShowSuperLink(isSuper && !impersonating);
     try {
       const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      const hasGroup = Boolean(u.brandAdminGroupId);
-      setIsBrandAdmin(hasGroup);
+      const m = JSON.parse(localStorage.getItem('merchant') ?? '{}');
+      // isBrandAdmin gates the Group nav item. It requires BOTH the
+      // brand-admin role on the user AND the multibranch tier on the
+      // merchant — tier alone doesn't grant the role; role alone doesn't
+      // grant the feature.
+      const hasGroupRole = Boolean(u.brandAdminGroupId);
+      const tierAllowsMultibranch = m.subscriptionTier === 'multibranch';
+      setIsBrandAdmin(hasGroupRole && tierAllowsMultibranch);
       setUserName(u.name ?? u.email ?? '');
       setRoleLabel(
-        hasGroup
+        hasGroupRole
           ? 'Group Admin'
           : u.role === 'staff'
             ? 'Staff'
@@ -205,7 +211,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 : '',
       );
     } catch { /* ignore */ }
-  }, [pathname]);
+  }, [pathname, merchant]);
 
   const navItems = isBrandAdmin
     ? [...BASE_NAV_ITEMS, { href: '/dashboard/group/overview', label: 'Group', icon: BuildingIcon }]
