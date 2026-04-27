@@ -11,6 +11,7 @@ import type {
   ActivePackage,
   EditContextResponse,
   DayBooking,
+  BookingStatus,
 } from './types';
 import { ServiceRow } from './ServiceRow';
 import { EditHistoryPanel } from './EditHistoryPanel';
@@ -113,6 +114,20 @@ export function BookingForm(props: BookingFormProps) {
   const [soldByStaffId, setSoldByStaffId] = useState<string>('');
   const [sellOpen, setSellOpen] = useState(false);
 
+  // ── Loyalty redemption state (edit mode only) ──────────────────────────────
+  const [bookingStatus, setBookingStatus] = useState<BookingStatus | null>(null);
+  const [profileId, setProfileId] = useState<string | null>(null);
+  const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
+  const [loyaltyProgram, setLoyaltyProgram] = useState<{
+    enabled: boolean;
+    pointsPerDollarRedeem: number;
+    minRedeemPoints: number;
+  } | null>(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState<string>('');
+  const [redemption, setRedemption] = useState<{ points: number; sgd: string } | null>(null);
+  const [loyaltyBusy, setLoyaltyBusy] = useState(false);
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+
   useEffect(() => {
     if (mode !== 'edit' || !props.bookingId) {
       const token = localStorage.getItem('access_token');
@@ -142,11 +157,19 @@ export function BookingForm(props: BookingFormProps) {
         setResolvedGroupId(ctx.group?.id ?? null);
         setStaffList(ctx.staff);
         setActivePackages(ctx.activePackages);
-        setClientName(ctx.client.name ?? '');
-        setClientPhone(ctx.client.phone);
+        setClientName(ctx.client?.name ?? '');
+        setClientPhone(ctx.client?.phone ?? '');
+        setProfileId(ctx.client?.profileId ?? null);
+        setBookingStatus(ctx.booking.status);
         setPaymentMethod((ctx.group?.paymentMethod ?? 'cash') as PaymentMethod);
         setNotes(ctx.group?.notes ?? ctx.booking.clientNotes ?? '');
         setCompletedBanner(ctx.booking.status === 'completed');
+        const redeemedPts = ctx.booking.loyaltyPointsRedeemed ?? 0;
+        if (redeemedPts > 0) {
+          setRedemption({ points: redeemedPts, sgd: ctx.booking.discountSgd ?? '0' });
+        } else {
+          setRedemption(null);
+        }
         if (ctx.lastEdit) {
           setLastEditLabel(
             `Last edited ${new Date(ctx.lastEdit.createdAt).toLocaleString('en-SG')}`
@@ -263,6 +286,108 @@ export function BookingForm(props: BookingFormProps) {
       cancelled = true;
     };
   }, [focusDate]);
+
+  // Fetch loyalty balance + program once we have a profileId (edit mode).
+  useEffect(() => {
+    if (mode !== 'edit' || !profileId) return;
+    let cancelled = false;
+    apiFetch(`/merchant/clients/${profileId}/loyalty`)
+      .then((data) => {
+        if (cancelled) return;
+        const res = data as {
+          balance: number;
+          program: {
+            enabled: boolean;
+            pointsPerDollarRedeem: number;
+            minRedeemPoints: number;
+          };
+        };
+        setLoyaltyBalance(res.balance);
+        setLoyaltyProgram({
+          enabled: res.program.enabled,
+          pointsPerDollarRedeem: res.program.pointsPerDollarRedeem,
+          minRedeemPoints: res.program.minRedeemPoints,
+        });
+      })
+      .catch(() => {
+        // silent — loyalty section just won't render
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, profileId]);
+
+  // ── Loyalty redemption helpers ─────────────────────────────────────────────
+  const maxRedeemablePoints = (() => {
+    if (!loyaltyProgram || loyaltyBalance == null) return 0;
+    const cappedBySgd = Math.floor(totalPrice * loyaltyProgram.pointsPerDollarRedeem);
+    return Math.max(0, Math.min(loyaltyBalance, cappedBySgd));
+  })();
+
+  const parsedPointsToRedeem = Number(pointsToRedeem || 0);
+  const pointsToRedeemSgd =
+    loyaltyProgram && parsedPointsToRedeem > 0
+      ? (parsedPointsToRedeem / loyaltyProgram.pointsPerDollarRedeem).toFixed(2)
+      : '0.00';
+
+  const loyaltyDiscountReadOnly =
+    bookingStatus === 'completed' || bookingStatus === 'cancelled' || bookingStatus === 'no_show';
+
+  async function handleApplyRedemption() {
+    if (!props.bookingId || !loyaltyProgram) return;
+    setLoyaltyError(null);
+    if (parsedPointsToRedeem < loyaltyProgram.minRedeemPoints) {
+      setLoyaltyError(`Minimum redemption is ${loyaltyProgram.minRedeemPoints} points`);
+      return;
+    }
+    if (parsedPointsToRedeem > maxRedeemablePoints) {
+      setLoyaltyError(
+        `Cannot redeem more than ${maxRedeemablePoints} points (capped by booking total)`,
+      );
+      return;
+    }
+    setLoyaltyBusy(true);
+    try {
+      const res = (await apiFetch(
+        `/merchant/bookings/${props.bookingId}/apply-loyalty-redemption`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ points: parsedPointsToRedeem }),
+        },
+      )) as {
+        booking: { discountSgd: string; loyaltyPointsRedeemed: number };
+        newBalance: number;
+      };
+      setRedemption({
+        points: res.booking.loyaltyPointsRedeemed,
+        sgd: res.booking.discountSgd,
+      });
+      setLoyaltyBalance(res.newBalance);
+      setPointsToRedeem('');
+    } catch (err) {
+      setLoyaltyError(err instanceof Error ? err.message : 'Failed to apply');
+    } finally {
+      setLoyaltyBusy(false);
+    }
+  }
+
+  async function handleRemoveRedemption() {
+    if (!props.bookingId) return;
+    setLoyaltyError(null);
+    setLoyaltyBusy(true);
+    try {
+      const res = (await apiFetch(
+        `/merchant/bookings/${props.bookingId}/remove-loyalty-redemption`,
+        { method: 'POST' },
+      )) as { newBalance: number };
+      setRedemption(null);
+      setLoyaltyBalance(res.newBalance);
+    } catch (err) {
+      setLoyaltyError(err instanceof Error ? err.message : 'Failed to remove');
+    } finally {
+      setLoyaltyBusy(false);
+    }
+  }
 
   function addServiceRow() {
     const prev = rows[rows.length - 1];
@@ -600,6 +725,23 @@ export function BookingForm(props: BookingFormProps) {
             </div>
           )}
 
+          {mode === 'edit' && loyaltyProgram?.enabled && (
+            <LoyaltySection
+              balance={loyaltyBalance ?? 0}
+              program={loyaltyProgram}
+              redemption={redemption}
+              maxRedeemable={maxRedeemablePoints}
+              points={pointsToRedeem}
+              onPointsChange={setPointsToRedeem}
+              pointsSgd={pointsToRedeemSgd}
+              onApply={handleApplyRedemption}
+              onRemove={handleRemoveRedemption}
+              busy={loyaltyBusy}
+              error={loyaltyError}
+              readOnly={loyaltyDiscountReadOnly}
+            />
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-grey-75 mb-1">Payment Method</label>
@@ -626,9 +768,39 @@ export function BookingForm(props: BookingFormProps) {
                       <span>Package:</span>
                       <span>S${Number(sellPackageTemplate.priceSgd).toFixed(2)}</span>
                     </div>
+                    {redemption && (
+                      <div className="flex justify-between text-xs text-tone-sage">
+                        <span>Loyalty discount:</span>
+                        <span>−S${Number(redemption.sgd).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-semibold text-tone-ink border-t border-grey-15 mt-1 pt-1">
                       <span>Total:</span>
-                      <span>S${(totalPrice + Number(sellPackageTemplate.priceSgd)).toFixed(2)}</span>
+                      <span>
+                        S$
+                        {(
+                          totalPrice +
+                          Number(sellPackageTemplate.priceSgd) -
+                          Number(redemption?.sgd ?? 0)
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                ) : redemption ? (
+                  <>
+                    <div className="flex justify-between text-xs text-grey-75">
+                      <span>Subtotal:</span>
+                      <span>S${totalPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-tone-sage">
+                      <span>Loyalty discount:</span>
+                      <span>−S${Number(redemption.sgd).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-tone-ink border-t border-grey-15 mt-1 pt-1">
+                      <span>Total:</span>
+                      <span>
+                        S${(totalPrice - Number(redemption.sgd)).toFixed(2)}
+                      </span>
                     </div>
                   </>
                 ) : (
@@ -670,6 +842,108 @@ export function BookingForm(props: BookingFormProps) {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+interface LoyaltySectionProps {
+  balance: number;
+  program: { pointsPerDollarRedeem: number; minRedeemPoints: number };
+  redemption: { points: number; sgd: string } | null;
+  maxRedeemable: number;
+  points: string;
+  onPointsChange: (v: string) => void;
+  pointsSgd: string;
+  onApply: () => void;
+  onRemove: () => void;
+  busy: boolean;
+  error: string | null;
+  readOnly: boolean;
+}
+
+function LoyaltySection(props: LoyaltySectionProps) {
+  const {
+    balance,
+    program,
+    redemption,
+    maxRedeemable,
+    points,
+    onPointsChange,
+    pointsSgd,
+    onApply,
+    onRemove,
+    busy,
+    error,
+    readOnly,
+  } = props;
+
+  const balanceSgd = (balance / program.pointsPerDollarRedeem).toFixed(2);
+  const canApply =
+    !redemption &&
+    balance >= program.minRedeemPoints &&
+    maxRedeemable >= program.minRedeemPoints;
+
+  return (
+    <div className="rounded-lg border border-tone-sage/30 bg-tone-sage/5 px-3 py-2">
+      <p className="text-xs font-semibold text-tone-sage mb-1">Loyalty points</p>
+      {redemption ? (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-tone-ink">
+            Loyalty discount: −S${Number(redemption.sgd).toFixed(2)} ({redemption.points} pts)
+          </span>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={busy}
+              className="text-xs font-medium text-tone-sage hover:underline disabled:opacity-60"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-grey-75 mb-2">
+            Balance: {balance} pts (S${balanceSgd} available)
+          </p>
+          {canApply && !readOnly ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={program.minRedeemPoints}
+                max={maxRedeemable}
+                step={1}
+                value={points}
+                onChange={(e) => onPointsChange(e.target.value)}
+                placeholder={`min ${program.minRedeemPoints}`}
+                className="w-32 rounded-lg border border-grey-30 px-2 py-1.5 text-sm"
+              />
+              <span className="text-xs text-grey-60">
+                = S${pointsSgd} (max {maxRedeemable} pts)
+              </span>
+              <button
+                type="button"
+                onClick={onApply}
+                disabled={busy || Number(points || 0) <= 0}
+                className="ml-auto rounded-lg bg-tone-sage px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
+              >
+                Apply
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-grey-60">
+              {readOnly
+                ? "Booking is finalised — discount can't be changed."
+                : balance < program.minRedeemPoints
+                  ? `Below minimum of ${program.minRedeemPoints} pts.`
+                  : 'Booking total is too low to redeem points.'}
+            </p>
+          )}
+        </>
+      )}
+      {error && <p className="mt-1 text-xs text-semantic-danger">{error}</p>}
     </div>
   );
 }

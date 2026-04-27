@@ -6,7 +6,7 @@ import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import { stripe } from "../lib/stripe.js";
 import { config } from "../lib/config.js";
-import { processRefund } from "../lib/refunds.js";
+import { processRefund, restoreLoyaltyOnCancel } from "../lib/refunds.js";
 import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
@@ -559,6 +559,7 @@ paymentsRouter.post(
 
     // 3. Process the refund
     await processRefund(bookingId, body.refund_type);
+    await restoreLoyaltyOnCancel(bookingId, c.get("userId") ?? null);
 
     // 4. Return updated booking
     const [updated] = await db

@@ -18,6 +18,7 @@ import {
   packageSessions,
   loyaltyPrograms,
   loyaltyTransactions,
+  merchantUsers,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -28,7 +29,7 @@ import { normalizePhone, normalizeEmail } from "../lib/normalize.js";
 import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
-import { processRefund } from "../lib/refunds.js";
+import { processRefund, restoreLoyaltyOnCancel } from "../lib/refunds.js";
 import { findStaffConflict } from "../lib/booking-conflicts.js";
 import { writeAuditDiff } from "../lib/booking-edits.js";
 import { addJob } from "../lib/queue.js";
@@ -347,6 +348,11 @@ bookingsRouter.post("/cancel/:bookingToken", async (c) => {
       .where(eq(bookings.id, bookingId))
       .returning();
   }
+
+  // Restore any loyalty points that were redeemed against this booking.
+  // The compensating `adjust` row in loyalty_transactions is the source of
+  // truth — booking.loyaltyPointsRedeemed stays set so we keep the trail.
+  await restoreLoyaltyOnCancel(bookingId, null);
 
   await invalidateAvailabilityCacheByMerchantId(booking.merchantId);
 
@@ -742,10 +748,24 @@ merchantBookingsRouter.get("/:id/edit-context", requireMerchant, async (c) => {
     .where(eq(clients.id, row.booking.clientId))
     .limit(1);
 
+  // Resolve the client's profile row for THIS merchant — the loyalty endpoint
+  // is keyed by profileId, not clientId. Surfaced here so the booking edit UI
+  // can fetch loyalty balance without a second round trip to look it up.
+  const [profileRow] = await db
+    .select({ id: clientProfiles.id })
+    .from(clientProfiles)
+    .where(
+      and(
+        eq(clientProfiles.clientId, row.booking.clientId),
+        eq(clientProfiles.merchantId, merchantId),
+      ),
+    )
+    .limit(1);
+
   return c.json({
     booking: row.booking,
     group: row.group,
-    client: clientRow,
+    client: clientRow ? { ...clientRow, profileId: profileRow?.id ?? null } : null,
     siblingBookings,
     activePackages: activePackages.map((p) => ({
       ...p,
@@ -1029,6 +1049,274 @@ merchantBookingsRouter.put("/:id/complete", requireMerchant, async (c) => {
 
   return c.json({ booking: updated });
 });
+
+// ─── Protected: POST /merchant/bookings/:id/apply-loyalty-redemption ──────────
+// Owner / manager / staff can apply a redemption at checkout time.
+// Re-applying a redemption is not supported in this Phase 2 PR — the user
+// must call /remove-loyalty-redemption first and then re-apply.
+
+const applyRedemptionSchema = z.object({
+  points: z.number().int().positive("points must be positive"),
+}).strict();
+
+merchantBookingsRouter.post(
+  "/:id/apply-loyalty-redemption",
+  requireMerchant,
+  zValidator(applyRedemptionSchema),
+  async (c) => {
+    const role = c.get("userRole");
+    if (!role || !["owner", "manager", "staff"].includes(role)) {
+      return c.json({ error: "Forbidden", message: "Owner, manager, or staff only" }, 403);
+    }
+
+    const merchantId = c.get("merchantId")!;
+    const userId = c.get("userId")!;
+    const bookingId = c.req.param("id")!;
+    const body = c.get("body") as z.infer<typeof applyRedemptionSchema>;
+
+    const [existing] = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!existing) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    if (
+      existing.status === "completed" ||
+      existing.status === "cancelled" ||
+      existing.status === "no_show"
+    ) {
+      return c.json(
+        {
+          error: "Conflict",
+          message: `Cannot apply loyalty redemption to a booking with status: ${existing.status}`,
+        },
+        409,
+      );
+    }
+
+    if (!existing.clientId) {
+      return c.json(
+        { error: "Conflict", message: "Booking has no client attached" },
+        409,
+      );
+    }
+
+    if ((existing.loyaltyPointsRedeemed ?? 0) > 0) {
+      return c.json(
+        {
+          error: "Conflict",
+          message: "Booking already has a loyalty redemption — remove it before re-applying",
+        },
+        409,
+      );
+    }
+
+    const [program] = await db
+      .select()
+      .from(loyaltyPrograms)
+      .where(eq(loyaltyPrograms.merchantId, merchantId))
+      .limit(1);
+
+    if (!program || !program.enabled) {
+      return c.json({ error: "Conflict", message: "Loyalty program is not enabled" }, 409);
+    }
+
+    if (body.points < program.minRedeemPoints) {
+      return c.json(
+        {
+          error: "Conflict",
+          message: `Minimum redemption is ${program.minRedeemPoints} points`,
+        },
+        409,
+      );
+    }
+
+    const [balanceRow] = await db
+      .select({ balance: sql<string>`coalesce(sum(${loyaltyTransactions.amount}), 0)` })
+      .from(loyaltyTransactions)
+      .where(
+        and(
+          eq(loyaltyTransactions.merchantId, merchantId),
+          eq(loyaltyTransactions.clientId, existing.clientId),
+        ),
+      )
+      .limit(1);
+    const currentBalance = Number(balanceRow?.balance ?? 0);
+
+    if (body.points > currentBalance) {
+      return c.json(
+        {
+          error: "Conflict",
+          message: `Insufficient balance. Have ${currentBalance} points, requested ${body.points}`,
+        },
+        409,
+      );
+    }
+
+    const sgdValue = body.points / program.pointsPerDollarRedeem;
+    const bookingTotal = parseFloat(existing.priceSgd);
+    if (sgdValue > bookingTotal) {
+      return c.json(
+        {
+          error: "Conflict",
+          message: `Redemption (SGD ${sgdValue.toFixed(2)}) exceeds booking total (SGD ${bookingTotal.toFixed(2)})`,
+        },
+        409,
+      );
+    }
+
+    const sgdValueStr = sgdValue.toFixed(2);
+
+    const [actor] = await db
+      .select({ name: merchantUsers.name })
+      .from(merchantUsers)
+      .where(eq(merchantUsers.id, userId))
+      .limit(1);
+
+    const result = await db.transaction(async (tx) => {
+      const [insertedTx] = await tx
+        .insert(loyaltyTransactions)
+        .values({
+          merchantId,
+          clientId: existing.clientId,
+          kind: "redeem",
+          amount: -body.points,
+          redeemedSgd: sgdValueStr,
+          bookingId,
+          reason: "Redeemed at booking checkout",
+          actorUserId: userId,
+          actorName: actor?.name ?? null,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      const [updatedBooking] = await tx
+        .update(bookings)
+        .set({
+          discountSgd: sgdValueStr,
+          loyaltyPointsRedeemed: body.points,
+          loyaltyRedemptionTxId: insertedTx.id,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+        .returning();
+
+      return { tx: insertedTx, booking: updatedBooking };
+    });
+
+    const newBalance = currentBalance - body.points;
+
+    return c.json({
+      booking: result.booking,
+      transaction: result.tx,
+      newBalance,
+    });
+  },
+);
+
+// ─── Protected: POST /merchant/bookings/:id/remove-loyalty-redemption ─────────
+// Inserts a compensating `adjust` row that restores the redeemed points and
+// zeros the redemption columns on the booking. Disallowed once the booking is
+// completed (payment has already been taken at the discounted total).
+
+merchantBookingsRouter.post(
+  "/:id/remove-loyalty-redemption",
+  requireMerchant,
+  async (c) => {
+    const role = c.get("userRole");
+    if (!role || !["owner", "manager", "staff"].includes(role)) {
+      return c.json({ error: "Forbidden", message: "Owner, manager, or staff only" }, 403);
+    }
+
+    const merchantId = c.get("merchantId")!;
+    const userId = c.get("userId")!;
+    const bookingId = c.req.param("id")!;
+
+    const [existing] = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!existing) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    if (existing.status === "completed") {
+      return c.json(
+        {
+          error: "Conflict",
+          message: "Cannot remove loyalty redemption from a completed booking",
+        },
+        409,
+      );
+    }
+
+    if ((existing.loyaltyPointsRedeemed ?? 0) <= 0) {
+      return c.json(
+        { error: "Conflict", message: "Booking has no loyalty redemption to remove" },
+        409,
+      );
+    }
+
+    const originalPoints = existing.loyaltyPointsRedeemed;
+    const originalTxId = existing.loyaltyRedemptionTxId;
+
+    const [actor] = await db
+      .select({ name: merchantUsers.name })
+      .from(merchantUsers)
+      .where(eq(merchantUsers.id, userId))
+      .limit(1);
+
+    const result = await db.transaction(async (tx) => {
+      await tx
+        .insert(loyaltyTransactions)
+        .values({
+          merchantId,
+          clientId: existing.clientId,
+          kind: "adjust",
+          amount: originalPoints,
+          bookingId,
+          reason: `Reversed booking redemption${originalTxId ? ` (tx ${originalTxId})` : ""}`,
+          actorUserId: userId,
+          actorName: actor?.name ?? null,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      const [updatedBooking] = await tx
+        .update(bookings)
+        .set({
+          discountSgd: "0",
+          loyaltyPointsRedeemed: 0,
+          loyaltyRedemptionTxId: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+        .returning();
+
+      return { booking: updatedBooking };
+    });
+
+    const [balanceRow] = await db
+      .select({ balance: sql<string>`coalesce(sum(${loyaltyTransactions.amount}), 0)` })
+      .from(loyaltyTransactions)
+      .where(
+        and(
+          eq(loyaltyTransactions.merchantId, merchantId),
+          eq(loyaltyTransactions.clientId, existing.clientId),
+        ),
+      )
+      .limit(1);
+    const newBalance = Number(balanceRow?.balance ?? 0);
+
+    return c.json({ booking: result.booking, newBalance });
+  },
+);
 
 // ─── Protected: PUT /merchant/bookings/:id/no-show ────────────────────────────
 

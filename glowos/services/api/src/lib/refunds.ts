@@ -1,7 +1,56 @@
-import { eq } from "drizzle-orm";
-import { db, bookings } from "@glowos/db";
+import { eq, and } from "drizzle-orm";
+import { db, bookings, loyaltyTransactions } from "@glowos/db";
 import { stripe } from "./stripe.js";
 import { invalidateAvailabilityCacheByMerchantId } from "./availability.js";
+
+// ─── restoreLoyaltyOnCancel ────────────────────────────────────────────────────
+// When a booking with an applied loyalty redemption is cancelled, insert a
+// compensating `adjust` row so the customer's balance is restored. We keep
+// the redemption columns on the booking row intact for the audit trail —
+// the offsetting adjust row is the source of truth for current balance.
+//
+// Idempotent: if an offsetting adjust for this booking already exists we
+// skip. (`bookingId` + a redeem of the same magnitude already covered.)
+export async function restoreLoyaltyOnCancel(
+  bookingId: string,
+  actorUserId: string | null,
+): Promise<void> {
+  const [booking] = await db
+    .select({
+      merchantId: bookings.merchantId,
+      clientId: bookings.clientId,
+      loyaltyPointsRedeemed: bookings.loyaltyPointsRedeemed,
+    })
+    .from(bookings)
+    .where(eq(bookings.id, bookingId))
+    .limit(1);
+
+  if (!booking || (booking.loyaltyPointsRedeemed ?? 0) <= 0) return;
+
+  // Skip if we've already inserted a compensating adjust for this booking.
+  const [existing] = await db
+    .select({ id: loyaltyTransactions.id })
+    .from(loyaltyTransactions)
+    .where(
+      and(
+        eq(loyaltyTransactions.bookingId, bookingId),
+        eq(loyaltyTransactions.kind, "adjust"),
+      ),
+    )
+    .limit(1);
+  if (existing) return;
+
+  await db.insert(loyaltyTransactions).values({
+    merchantId: booking.merchantId,
+    clientId: booking.clientId,
+    kind: "adjust",
+    amount: booking.loyaltyPointsRedeemed,
+    bookingId,
+    reason: "Restored on booking cancellation",
+    actorUserId,
+    createdAt: new Date(),
+  });
+}
 
 // ─── processRefund ─────────────────────────────────────────────────────────────
 
