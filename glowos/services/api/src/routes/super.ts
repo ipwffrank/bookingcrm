@@ -194,6 +194,7 @@ superRouter.get("/merchants", async (c) => {
       createdAt: merchants.createdAt,
       subscriptionTier: merchants.subscriptionTier,
       isPilot: merchants.isPilot,
+      paymentGateway: merchants.paymentGateway,
       // 30-day activity
       bookings30d: sql<number>`(
         SELECT COUNT(*)::int FROM ${bookings}
@@ -299,6 +300,59 @@ superRouter.patch("/merchants/:id/tier", zValidator(setTierSchema), async (c) =>
       subAction: "set_tier",
       previousTier: previous.subscriptionTier,
       newTier: body.tier,
+    },
+  });
+
+  return c.json(updated);
+});
+
+// ─── PATCH /super/merchants/:id/gateway ──────────────────────────────────────
+// Host-admin gateway flip. Routes the merchant's online payments through
+// either Stripe (default) or iPay88 (preferred for MY merchants). Logged
+// via logAudit using action: 'write' + metadata.subAction.
+
+const setGatewaySchema = z.object({
+  gateway: z.enum(["stripe", "ipay88"]),
+});
+
+superRouter.patch("/merchants/:id/gateway", zValidator(setGatewaySchema), async (c) => {
+  const merchantId = c.req.param("id")!;
+  const body = c.get("body") as z.infer<typeof setGatewaySchema>;
+  const actorUserId = c.get("userId")!;
+
+  const [previous] = await db
+    .select({ id: merchants.id, paymentGateway: merchants.paymentGateway })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  if (!previous) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  const [updated] = await db
+    .update(merchants)
+    .set({ paymentGateway: body.gateway, updatedAt: new Date() })
+    .where(eq(merchants.id, merchantId))
+    .returning();
+
+  const [actor] = await db
+    .select({ email: merchantUsers.email })
+    .from(merchantUsers)
+    .where(eq(merchantUsers.id, actorUserId))
+    .limit(1);
+
+  await logAudit({
+    actorUserId,
+    actorEmail: actor?.email ?? "unknown",
+    action: "write",
+    targetMerchantId: merchantId,
+    method: "PATCH",
+    path: `/super/merchants/${merchantId}/gateway`,
+    metadata: {
+      subAction: "set_gateway",
+      previousGateway: previous.paymentGateway,
+      newGateway: body.gateway,
     },
   });
 
