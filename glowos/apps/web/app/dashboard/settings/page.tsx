@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { UpgradeToGroupCard } from './components/UpgradeToGroupCard';
@@ -31,6 +32,9 @@ interface Merchant {
   } | null;
   gbpBookingLinkConnectedAt: string | null;
   subscriptionTier?: 'starter' | 'multibranch';
+  country?: 'SG' | 'MY';
+  paymentGateway?: 'stripe' | 'ipay88';
+  ipay88MerchantCode?: string | null;
 }
 
 interface ConnectStatus {
@@ -2081,6 +2085,28 @@ function SettingsContent() {
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your business profile, policies, and integrations</p>
       </div>
+
+      {merchant?.country === 'MY' &&
+       merchant?.paymentGateway === 'ipay88' &&
+       !merchant?.ipay88MerchantCode && (
+        <div className="mb-6 rounded-xl border border-tone-sage/30 bg-tone-surface-warm p-5 shadow-sm">
+          <h2 className="font-newsreader text-lg font-semibold text-tone-ink">
+            🇲🇾 Set up iPay88 to accept Malaysian payments
+          </h2>
+          <p className="mt-1 text-sm text-grey-70">
+            Once configured, your customers can pay with FPX online banking,
+            Touch'n Go, DuitNow, GrabPay, and credit cards. Until then, your
+            booking widget will show only "Pay at the venue".
+          </p>
+          <Link
+            href="/dashboard/settings/ipay88"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-tone-ink px-4 py-2 text-sm font-medium text-tone-surface-warm transition-colors hover:bg-tone-sage"
+          >
+            Configure iPay88
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+      )}
 
       {merchant?.subscriptionTier === 'starter' && (
         <div className="mb-6 rounded-xl border border-tone-sage/30 bg-tone-surface-warm p-5 shadow-sm">

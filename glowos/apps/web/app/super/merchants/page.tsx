@@ -18,6 +18,7 @@ interface MerchantRow {
   lastBookingAt: string | null;
   subscriptionTier: 'starter' | 'multibranch';
   isPilot: boolean;
+  paymentGateway: 'stripe' | 'ipay88';
 }
 
 interface ListResponse {
@@ -43,6 +44,7 @@ export default function SuperMerchantsPage() {
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [pendingTierMerchantId, setPendingTierMerchantId] = useState<string | null>(null);
   const [pendingPilotMerchantId, setPendingPilotMerchantId] = useState<string | null>(null);
+  const [pendingGatewayMerchantId, setPendingGatewayMerchantId] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
@@ -101,6 +103,24 @@ export default function SuperMerchantsPage() {
     }
   }
 
+  async function setGateway(merchantId: string, gateway: 'stripe' | 'ipay88') {
+    setPendingGatewayMerchantId(merchantId);
+    try {
+      const updated = (await apiFetch(`/super/merchants/${merchantId}/gateway`, {
+        method: 'PATCH',
+        body: JSON.stringify({ gateway }),
+      })) as { id: string; paymentGateway: 'stripe' | 'ipay88' };
+      setRows((prev) =>
+        prev.map((m) => (m.id === updated.id ? { ...m, paymentGateway: updated.paymentGateway } : m)),
+      );
+    } catch (err) {
+      console.error('gateway flip failed', err);
+      alert('Could not update gateway. Try again.');
+    } finally {
+      setPendingGatewayMerchantId(null);
+    }
+  }
+
   async function handleImpersonate(m: MerchantRow) {
     setImpersonatingId(m.id);
     try {
@@ -153,6 +173,7 @@ export default function SuperMerchantsPage() {
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Tier</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Pilot</th>
+              <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Gateway</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d bookings</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider text-right">30d revenue</th>
               <th className="px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wider">Last booking</th>
@@ -161,9 +182,9 @@ export default function SuperMerchantsPage() {
           </thead>
           <tbody>
             {loading && rows.length === 0 ? (
-              <tr><td colSpan={10} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
+              <tr><td colSpan={11} className="px-4 py-8 text-center text-grey-45 text-sm">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={10} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
+              <tr><td colSpan={11} className="px-4 py-8 text-center text-grey-45 text-sm">No merchants found.</td></tr>
             ) : (
               rows.map((m) => (
                 <tr key={m.id} className="border-b border-grey-5 hover:bg-grey-5 transition-colors">
@@ -195,6 +216,17 @@ export default function SuperMerchantsPage() {
                         onChange={(e) => setPilot(m.id, e.target.checked)}
                       />
                     </label>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select
+                      className="rounded border border-grey-15 bg-tone-surface px-2 py-1 text-xs"
+                      value={m.paymentGateway}
+                      disabled={pendingGatewayMerchantId === m.id}
+                      onChange={(e) => setGateway(m.id, e.target.value as 'stripe' | 'ipay88')}
+                    >
+                      <option value="stripe">stripe</option>
+                      <option value="ipay88">ipay88</option>
+                    </select>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">{m.bookings30d.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-tone-ink">S${Number(m.revenue30d).toFixed(2)}</td>

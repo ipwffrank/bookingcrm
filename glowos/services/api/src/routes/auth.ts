@@ -35,6 +35,11 @@ const signupSchema = z.object({
         "Invalid business category. Must be one of: hair_salon, nail_studio, spa, massage, beauty_centre, restaurant, beauty_clinic, medical_clinic, other",
     }),
   }),
+  // Country drives the auto-default for payment_gateway (MY → ipay88,
+  // SG → stripe). Optional on the wire so legacy callers without a country
+  // field continue to work — defaults to SG, matching the merchants schema
+  // default. New MY signups are expected to send 'MY' explicitly.
+  country: z.enum(["SG", "MY"]).optional().default("SG"),
 });
 
 const loginSchema = z.object({
@@ -70,6 +75,14 @@ auth.post("/signup", zValidator(signupSchema), async (c) => {
   const slug = await ensureUniqueSlug(baseSlug, db);
 
   // Create merchant
+  // Auto-default the payment gateway based on country: MY merchants get
+  // ipay88 (native FPX / Touch'n Go / DuitNow / GrabPay MY rails); SG and
+  // anything else fall through to the schema default of stripe. Mirrors the
+  // pattern used in POST /group/branches.
+  const paymentGateway: "stripe" | "ipay88" =
+    body.country === "MY" ? "ipay88" : "stripe";
+  const timezone = body.country === "MY" ? "Asia/Kuala_Lumpur" : "Asia/Singapore";
+
   const [merchant] = await db
     .insert(merchants)
     .values({
@@ -78,6 +91,9 @@ auth.post("/signup", zValidator(signupSchema), async (c) => {
       category: body.salon_category,
       email: body.email,
       phone: body.phone,
+      country: body.country,
+      timezone,
+      paymentGateway,
     })
     .returning();
 

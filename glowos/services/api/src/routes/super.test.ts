@@ -177,6 +177,64 @@ describe("PATCH /super/merchants/:id/tier", () => {
   });
 });
 
+describe("PATCH /super/merchants/:id/gateway", () => {
+  beforeEach(() => {
+    _selectQueue.length = 0;
+    _updateQueue.length = 0;
+    _insertCalls.length = 0;
+    vi.clearAllMocks();
+  });
+
+  it("returns 400 when gateway is not in the allowed enum", async () => {
+    const app = buildApp();
+    const res = await app.request("/super/merchants/m1/gateway", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ gateway: "hitpay" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("writes the new gateway, returns the updated merchant, and audits the change", async () => {
+    // 1st select: previous-gateway read
+    _selectQueue.push([{ id: "m1", paymentGateway: "stripe" }]);
+    // update().returning(): updated row
+    _updateQueue.push([
+      { id: "m1", paymentGateway: "ipay88", name: "Test" },
+    ]);
+    // 2nd select: actor email lookup
+    _selectQueue.push([{ email: "host@glowos.com" }]);
+
+    const app = buildApp();
+    const res = await app.request("/super/merchants/m1/gateway", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ gateway: "ipay88" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.paymentGateway).toBe("ipay88");
+    expect(body.id).toBe("m1");
+
+    const auditCall = _insertCalls.find(
+      (call) =>
+        (call.table as { __name?: string }).__name === "super_admin_audit_log",
+    );
+    expect(auditCall).toBeDefined();
+    const values = auditCall!.values as {
+      action: string;
+      targetMerchantId: string;
+      metadata: { subAction: string; previousGateway: string; newGateway: string };
+    };
+    expect(values.action).toBe("write");
+    expect(values.targetMerchantId).toBe("m1");
+    expect(values.metadata.subAction).toBe("set_gateway");
+    expect(values.metadata.previousGateway).toBe("stripe");
+    expect(values.metadata.newGateway).toBe("ipay88");
+  });
+});
+
 describe("PATCH /super/merchants/:id/pilot", () => {
   beforeEach(() => {
     _selectQueue.length = 0;
