@@ -31,6 +31,10 @@ import { findOrCreateClient } from "../lib/findOrCreateClient.js";
 import { isFirstTimerAtMerchant } from "../lib/firstTimerCheck.js";
 import { verifyVerificationToken } from "../lib/jwt.js";
 import { processRefund, restoreLoyaltyOnCancel } from "../lib/refunds.js";
+import {
+  loadMerchantHoursContext,
+  outsideHoursViolation,
+} from "../lib/operating-hours-gate.js";
 import { findBookingConflict } from "../lib/booking-conflicts.js";
 import { writeAuditDiff } from "../lib/booking-edits.js";
 import { addJob } from "../lib/queue.js";
@@ -884,6 +888,28 @@ merchantBookingsRouter.post(
     const merchantId = c.get("merchantId")!;
     const body = c.get("body") as z.infer<typeof merchantBookingCreateSchema>;
 
+    // Operating-hours gate — same rule as the group create path. Single-
+    // booking and group-booking endpoints both write into the same bookings
+    // table; both need to enforce the same constraint.
+    {
+      const ctx = await loadMerchantHoursContext(merchantId);
+      if (ctx.operatingHours && body.start_time) {
+        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+        if (v === "closed") {
+          return c.json(
+            { error: "Forbidden", message: "Booking falls on a day the merchant is closed." },
+            403,
+          );
+        }
+        if (v === "outside") {
+          return c.json(
+            { error: "Forbidden", message: "Booking is outside operating hours." },
+            403,
+          );
+        }
+      }
+    }
+
     // Load merchant (for country → phone normalization default)
     const [merchant] = await db
       .select({ country: merchants.country })
@@ -1528,6 +1554,27 @@ merchantBookingsRouter.patch(
     const bookingId = c.req.param("id")!;
     const body = c.get("body") as z.infer<typeof rescheduleSchema>;
 
+    // Operating-hours gate — reschedule moves start_time; the new time has
+    // to still fall inside hours.
+    if (body.start_time) {
+      const ctx = await loadMerchantHoursContext(merchantId);
+      if (ctx.operatingHours) {
+        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+        if (v === "closed") {
+          return c.json(
+            { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
+            403,
+          );
+        }
+        if (v === "outside") {
+          return c.json(
+            { error: "Forbidden", message: "New time is outside operating hours." },
+            403,
+          );
+        }
+      }
+    }
+
     const [existing] = await db
       .select()
       .from(bookings)
@@ -1664,6 +1711,28 @@ merchantBookingsRouter.patch(
         { error: "Conflict", message: "Cannot edit a cancelled booking" },
         409
       );
+    }
+
+    // Operating-hours gate — when start_time is being moved, the new time
+    // must still fall inside the merchant's stated hours. Closes the
+    // create-then-edit-to-out-of-hours bypass.
+    if (body.start_time) {
+      const ctx = await loadMerchantHoursContext(merchantId);
+      if (ctx.operatingHours) {
+        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+        if (v === "closed") {
+          return c.json(
+            { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
+            403,
+          );
+        }
+        if (v === "outside") {
+          return c.json(
+            { error: "Forbidden", message: "New time is outside operating hours." },
+            403,
+          );
+        }
+      }
     }
 
     // If staff_id is changing, verify the new staff belongs to this merchant
