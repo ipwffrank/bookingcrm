@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from '../lib/api';
 import type { ServiceOption, StaffOption } from './bookings/types';
 import { BookingForm } from './bookings/BookingForm';
 import { CheckoutModal } from './components/CheckoutModal';
+import { CancelBookingDialog, describeRefund } from './components/CancelBookingDialog';
 import { DayTimelineStrip } from './components/DayTimelineStrip';
 import { WaitlistCard, type WaitlistEntry } from './components/WaitlistCard';
 import { StaffContributionCard } from './components/StaffContributionCard';
@@ -103,14 +104,17 @@ function BookingCard({
   onAction,
   onEdit,
   onCheckout,
+  onCancelled,
 }: {
   row: BookingRow;
   onAction: (bookingId: string, action: 'check-in' | 'no-show' | 'confirm') => Promise<void>;
   onEdit: (bookingId: string) => void;
   onCheckout: (bookingId: string) => void;
+  onCancelled: () => void;
 }) {
   const { booking, service, staffMember, client } = row;
   const [acting, setActing] = useState<string | null>(null);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   async function handleAction(action: 'check-in' | 'no-show' | 'confirm') {
     setActing(action);
@@ -133,6 +137,9 @@ function BookingCard({
   // Available from 'confirmed' (skips check-in step internally).
   const canCheckoutNow = booking.status === 'confirmed';
   const canNoShow = booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'in_progress';
+  // Cancel is allowed for any non-terminal status. Mirrors the backend
+  // guard (rejects completed / cancelled / no_show with 409).
+  const canCancel = booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress';
 
   return (
     <div className="bg-tone-surface rounded-xl border border-grey-15 p-4 shadow-sm hover:shadow-md transition-shadow">
@@ -222,9 +229,32 @@ function BookingCard({
                 {acting === 'no-show' ? '...' : 'No-Show'}
               </button>
             )}
+            {canCancel && (
+              <button
+                onClick={() => setShowCancelDialog(true)}
+                disabled={acting !== null}
+                title="Cancel this appointment on behalf of the customer"
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {showCancelDialog && (
+        <CancelBookingDialog
+          bookingId={booking.id}
+          bookingLabel={`${service.name} · ${formatTime(booking.startTime)} with ${staffMember.name}`}
+          onClose={() => setShowCancelDialog(false)}
+          onCancelled={(result) => {
+            setShowCancelDialog(false);
+            alert(`Booking cancelled. ${describeRefund(result)}`);
+            onCancelled();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -692,6 +722,7 @@ function DashboardPageInner() {
                 onAction={handleAction}
                 onEdit={(bookingId) => setEditTarget({ bookingId })}
                 onCheckout={(bookingId) => setCheckoutBookingId(bookingId)}
+                onCancelled={() => { void fetchBookings(); }}
               />
             </div>
           ))}

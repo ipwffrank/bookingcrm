@@ -8,6 +8,7 @@ import { NoShowChip } from './NoShowChip';
 import { PrivatePhoto } from './PrivatePhoto';
 import { BookingForm } from '../bookings/BookingForm';
 import { CheckoutModal } from './CheckoutModal';
+import { CancelBookingDialog, describeRefund } from './CancelBookingDialog';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -154,6 +155,9 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
   // Inline status actions in the Upcoming list. acting tracks which booking
   // is currently in flight so we can disable buttons during the request.
   const [acting, setActing] = useState<{ bookingId: string; action: string } | null>(null);
+  // Cancel dialog target — null when closed. We carry the label here so the
+  // dialog can show the service + time without re-deriving it from upcoming[].
+  const [cancelTarget, setCancelTarget] = useState<{ bookingId: string; label: string } | null>(null);
   const [statusActionError, setStatusActionError] = useState<string | null>(null);
   // Checkout modal — same pattern as the dashboard. Opens for Complete /
   // Checkout Now actions on Upcoming bookings.
@@ -956,8 +960,12 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                 e.booking.status === 'pending' ||
                 e.booking.status === 'confirmed' ||
                 e.booking.status === 'in_progress';
+              // Cancel mirrors the backend guard: any non-terminal status is
+              // cancellable. Backend rejects already-cancelled / completed /
+              // no-show with 409.
+              const canCancel = canNoShow;
               const hasActions =
-                canConfirm || canCheckIn || canCheckoutNow || canComplete || canNoShow;
+                canConfirm || canCheckIn || canCheckoutNow || canComplete || canNoShow || canCancel;
               return (
                 <div key={e.booking.id} className="bg-tone-sage/5 rounded-lg px-4 py-3">
                   <div className="flex items-center justify-between">
@@ -1048,6 +1056,20 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
                           className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
                         >
                           {isActing && acting?.action === 'no-show' ? '…' : 'No-Show'}
+                        </button>
+                      )}
+                      {canCancel && (
+                        <button
+                          type="button"
+                          onClick={() => setCancelTarget({
+                            bookingId: e.booking.id,
+                            label: `${e.service.name} · ${new Date(e.booking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} with ${e.staffMember.name}`,
+                          })}
+                          disabled={isActing}
+                          title="Cancel this appointment on behalf of the customer"
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
+                        >
+                          Cancel
                         </button>
                       )}
                     </div>
@@ -2223,6 +2245,19 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
             setCheckoutBookingId(null);
             void refetchClientData();
             void refetchLoyalty();
+          }}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelBookingDialog
+          bookingId={cancelTarget.bookingId}
+          bookingLabel={cancelTarget.label}
+          onClose={() => setCancelTarget(null)}
+          onCancelled={(result) => {
+            setCancelTarget(null);
+            alert(`Booking cancelled. ${describeRefund(result)}`);
+            void refetchClientData();
           }}
         />
       )}
