@@ -3,7 +3,6 @@ import { createNotificationWorker } from "./notification.worker.js";
 import { createCrmWorker } from "./crm.worker.js";
 import { createVipWorker } from "./vip.worker.js";
 import { createAutomationWorker } from "./automation.worker.js";
-import { createReportWorker } from "./report.worker.js";
 import { addJob } from "../lib/queue.js";
 import { sweepExpiredQuotes } from "../routes/quotes.js";
 
@@ -31,7 +30,6 @@ export function startWorkers(): void {
     createCrmWorker(),
     createVipWorker(),
     createAutomationWorker(),
-    createReportWorker(),
   ];
 
   console.log("[Workers] All workers started", { count: workers.length });
@@ -64,18 +62,6 @@ export function startWorkers(): void {
     "treatment_quote_reminder_sweep",
     {},
     { repeat: { pattern: "10 0 * * *" } } // 00:10 daily, server time
-  );
-
-  // Analytics Digest dispatch tick — every 15 minutes the worker walks
-  // active configs and fires any whose local time matches their schedule.
-  // The 15-min cadence is fine-grained enough to land within any
-  // configured `send_hour_local` window once per day. BullMQ de-dupes
-  // repeatable jobs by jobId so re-registration on restart is safe.
-  void addJob(
-    "reports",
-    "tick",
-    {},
-    { repeat: { pattern: "*/15 * * * *" } } // every 15 min, server time
   );
 
   // Expired-quote sweeper runs directly in the API process (not a queue job) —

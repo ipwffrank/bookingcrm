@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { UpgradeToGroupCard } from './components/UpgradeToGroupCard';
-import { AnalyticsDigestTab } from './components/AnalyticsDigestTab';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,7 +70,7 @@ interface CancellationForm {
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type TabId = 'profile' | 'hours' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account' | 'compliance' | 'analytics-digest';
+type TabId = 'profile' | 'hours' | 'cancellation' | 'closures' | 'payments' | 'booking-page' | 'account' | 'compliance';
 
 interface Tab {
   id: TabId;
@@ -85,7 +84,6 @@ const TABS: Tab[] = [
   { id: 'closures', label: 'Holidays & Closures' },
   { id: 'payments', label: 'Payments' },
   { id: 'booking-page', label: 'Booking Page' },
-  { id: 'analytics-digest', label: 'Analytics Digest' },
   { id: 'account', label: 'Account' },
   { id: 'compliance', label: 'PDPA Compliance' },
 ];
@@ -2202,12 +2200,6 @@ function SettingsContent() {
         )}
         {activeTab === 'compliance' && (
           <ComplianceTab />
-        )}
-        {activeTab === 'analytics-digest' && (
-          <AnalyticsDigestTab
-            onSaved={(msg) => showToast(msg)}
-            onError={(msg) => showToast(msg, 'error')}
-          />
         )}
       </div>
 
