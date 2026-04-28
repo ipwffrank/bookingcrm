@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { and, eq, gte, lte, inArray, sql, or, desc } from "drizzle-orm";
+import { config } from "../lib/config.js";
 import { z } from "zod";
 import { addMinutes, addSeconds, parseISO, startOfDay, endOfDay } from "date-fns";
 import {
@@ -2083,9 +2084,17 @@ bookingsRouter.get("/:slug", async (c) => {
 
   // Don't expose the actual stripe account ID or iPay88 credentials to public,
   // just whether online payment is enabled and which gateway will be used.
+  // - iPay88: requires per-merchant credentials (no platform fallback).
+  // - Stripe: per-merchant Connect account (`stripeAccountId`) is one path,
+  //   but the platform's own Stripe key is a valid fallback (PR #46) — the
+  //   PaymentIntent endpoint routes accordingly. So Stripe payment is enabled
+  //   whenever EITHER the merchant has Connect OR the platform has Stripe
+  //   configured. This unblocks pilot merchants who haven't onboarded Connect.
   const { stripeAccountId, ipay88MerchantCode, paymentGateway, ...merchantPublic } = merchant;
   const paymentEnabled =
-    paymentGateway === "ipay88" ? !!ipay88MerchantCode : !!stripeAccountId;
+    paymentGateway === "ipay88"
+      ? !!ipay88MerchantCode
+      : !!stripeAccountId || !!config.stripeSecretKey;
 
   return c.json({
     merchant: { ...merchantPublic, paymentEnabled, paymentGateway },
