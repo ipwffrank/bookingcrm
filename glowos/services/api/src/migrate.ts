@@ -14,7 +14,31 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+
+/**
+ * Walk up from `start` looking for the first ancestor that contains
+ * `packages/db/src/migrations`. Avoids the off-by-one trap of counting
+ * `..` segments — works whether the script lives under
+ * `/app/glowos/services/api/src` (Docker) or
+ * `<repo>/glowos/services/api/src` (local dev).
+ */
+function findMigrationsFolder(start: string): string {
+  let cur = start;
+  for (let i = 0; i < 8; i++) {
+    const candidate = path.join(cur, "packages", "db", "src", "migrations");
+    if (fs.existsSync(path.join(candidate, "meta", "_journal.json"))) {
+      return candidate;
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) break; // hit the filesystem root
+    cur = parent;
+  }
+  throw new Error(
+    `Could not locate packages/db/src/migrations starting from ${start}`,
+  );
+}
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -23,23 +47,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Resolve the migrations folder relative to THIS file so the script
-  // works whether it's run from /app, /app/glowos, or anywhere else.
-  // In Docker the layout is:
-  //   /app/glowos/services/api/src/migrate.ts        (this file)
-  //   /app/glowos/packages/db/src/migrations/        (target)
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const migrationsFolder = path.resolve(
-    here,
-    "..",
-    "..",
-    "..",
-    "..",
-    "packages",
-    "db",
-    "src",
-    "migrations",
-  );
+  const migrationsFolder = findMigrationsFolder(here);
   console.log(`[migrate] applying migrations from: ${migrationsFolder}`);
 
   const pool = new Pool({
