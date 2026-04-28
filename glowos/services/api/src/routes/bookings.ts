@@ -2016,6 +2016,8 @@ bookingsRouter.get("/:slug", async (c) => {
       timezone: merchants.timezone,
       country: merchants.country,
       stripeAccountId: merchants.stripeAccountId,
+      paymentGateway: merchants.paymentGateway,
+      ipay88MerchantCode: merchants.ipay88MerchantCode,
       operatingHours: merchants.operatingHours,
     })
     .from(merchants)
@@ -2079,11 +2081,14 @@ bookingsRouter.get("/:slug", async (c) => {
     serviceIds: serviceIdsByStaff.get(s.id) ?? [],
   }));
 
-  // Don't expose the actual stripe account ID to public, just whether payment is enabled
-  const { stripeAccountId, ...merchantPublic } = merchant;
+  // Don't expose the actual stripe account ID or iPay88 credentials to public,
+  // just whether online payment is enabled and which gateway will be used.
+  const { stripeAccountId, ipay88MerchantCode, paymentGateway, ...merchantPublic } = merchant;
+  const paymentEnabled =
+    paymentGateway === "ipay88" ? !!ipay88MerchantCode : !!stripeAccountId;
 
   return c.json({
-    merchant: { ...merchantPublic, paymentEnabled: !!stripeAccountId },
+    merchant: { ...merchantPublic, paymentEnabled, paymentGateway },
     services: activeServices,
     staff: staffWithServices,
   });
