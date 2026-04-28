@@ -588,33 +588,38 @@ export default function BookingWidget({
     setSlotsError('');
     setSlots([]);
     setNextAvailable(null);
+
+    const dateStr = toDateStr(selectedDate);
+    let primarySlots: TimeSlot[] = [];
     try {
-      const dateStr = toDateStr(selectedDate);
       const params = new URLSearchParams({ service_id: selectedService.id, date: dateStr });
       if (selectedStaff.id !== 'any') params.append('staff_id', selectedStaff.id);
       const res = await apiFetch(`/booking/${slug}/availability?${params.toString()}`);
-      setSlots((res.slots as TimeSlot[]) || []);
-
-      // If no slots found and a specific staff is selected, find next available
-      if ((res.slots ?? []).length === 0 && selectedStaff && selectedStaff.id !== 'any' && selectedDate) {
-        setNextAvailableLoading(true);
-        setNextAvailable(null);
-        try {
-          const nextParams = new URLSearchParams({ service_id: selectedService.id, after: dateStr });
-          nextParams.append('staff_id', selectedStaff.id);
-          const nextData = await apiFetch(`/booking/${slug}/next-available?${nextParams.toString()}`);
-          if (nextData.found) {
-            setNextAvailable({ date: nextData.date, firstSlot: nextData.firstSlot, slotsCount: nextData.slotsCount });
-          }
-        } catch { /* silent */ }
-        finally { setNextAvailableLoading(false); }
-      } else {
-        setNextAvailable(null);
-      }
+      primarySlots = (res.slots as TimeSlot[]) || [];
+      setSlots(primarySlots);
     } catch (err) {
       setSlotsError(err instanceof Error ? err.message : 'Failed to load availability');
-    } finally {
       setSlotsLoading(false);
+      return;
+    }
+    // Release the main spinner as soon as the primary call returns. The
+    // /next-available scan can take seconds (it sweeps up to 30 days) and
+    // the user shouldn't be blocked behind it — the "No availability on
+    // <date>" message and a small "Searching nearest dates…" pill below
+    // give immediate feedback while the scan runs in the background.
+    setSlotsLoading(false);
+
+    if (primarySlots.length === 0 && selectedStaff.id !== 'any') {
+      setNextAvailableLoading(true);
+      try {
+        const nextParams = new URLSearchParams({ service_id: selectedService.id, after: dateStr });
+        nextParams.append('staff_id', selectedStaff.id);
+        const nextData = await apiFetch(`/booking/${slug}/next-available?${nextParams.toString()}`);
+        if (nextData.found) {
+          setNextAvailable({ date: nextData.date, firstSlot: nextData.firstSlot, slotsCount: nextData.slotsCount });
+        }
+      } catch { /* silent */ }
+      finally { setNextAvailableLoading(false); }
     }
   }, [selectedService, selectedStaff, selectedDate, slug]);
 
