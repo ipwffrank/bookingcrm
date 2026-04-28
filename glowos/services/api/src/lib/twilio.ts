@@ -19,6 +19,30 @@ function normalizePhone(raw: string): string {
   return raw.trim().replace(/[\s\-()]/g, "");
 }
 
+// ─── Sandbox allowlist gate ────────────────────────────────────────────────────
+
+// Twilio's well-known WhatsApp Sandbox sender. When `twilioWhatsappFrom`
+// equals this, sends to non-joined recipients fail with error 63015 AND
+// count toward the sandbox's 50/day account-wide quota — burning budget
+// on guaranteed-failed sends. We pre-empt that by skipping the API call
+// and recording a clear `notification_log` entry instead.
+const TWILIO_WHATSAPP_SANDBOX_FROM = "+14155238886";
+
+function isSandboxModeEnabled(): boolean {
+  return config.twilioWhatsappFrom === TWILIO_WHATSAPP_SANDBOX_FROM;
+}
+
+/**
+ * Returns true when the recipient is allowed in the current Twilio
+ * configuration. In production (any `twilioWhatsappFrom` other than the
+ * sandbox number) this is always true. In sandbox mode it returns true
+ * only if the (normalized) phone is in `SANDBOX_JOINED_PHONES`.
+ */
+function isSandboxRecipientAllowed(normalized: string): boolean {
+  if (!isSandboxModeEnabled()) return true;
+  return config.sandboxJoinedPhones.includes(normalized);
+}
+
 // ─── Sender result type ────────────────────────────────────────────────────────
 
 export interface SendResult {
@@ -26,6 +50,11 @@ export interface SendResult {
   sid?: string;
   error?: string;
 }
+
+const SANDBOX_SKIP_REASON =
+  "Skipped: Twilio sandbox mode + recipient phone is not in SANDBOX_JOINED_PHONES. " +
+  "Either add the phone to the env (after they text 'join <keyword>' to +14155238886), " +
+  "or upgrade out of sandbox to a production WhatsApp Business sender.";
 
 // ─── sendWhatsApp ──────────────────────────────────────────────────────────────
 
@@ -47,6 +76,10 @@ export interface SendResult {
  */
 export async function sendWhatsApp(to: string, body: string): Promise<SendResult> {
   const normalized = normalizePhone(to);
+  if (!isSandboxRecipientAllowed(normalized)) {
+    console.log("[Twilio] Skipped sandbox WhatsApp (recipient not joined)", { to: normalized });
+    return { ok: false, error: SANDBOX_SKIP_REASON };
+  }
   try {
     const message = await twilioClient.messages.create({
       from: `whatsapp:${config.twilioWhatsappFrom}`,
@@ -81,6 +114,13 @@ export async function sendWhatsAppTemplate(params: {
   variables: Record<string, string>; // e.g. { "1": "123456" }
 }): Promise<SendResult> {
   const normalized = normalizePhone(params.to);
+  if (!isSandboxRecipientAllowed(normalized)) {
+    console.log("[Twilio] Skipped sandbox WhatsApp template (recipient not joined)", {
+      to: normalized,
+      contentSid: params.contentSid,
+    });
+    return { ok: false, error: SANDBOX_SKIP_REASON };
+  }
   try {
     const message = await twilioClient.messages.create({
       from: `whatsapp:${config.twilioWhatsappFrom}`,
