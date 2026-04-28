@@ -32,18 +32,31 @@ const analyticsDigestRouter = new Hono<{ Variables: AppVariables }>();
 // clear upgrade pointer. We check tier inside the handlers (not as
 // middleware) so the GET /config can still 200 with `feature_locked: true`
 // — that lets the frontend render the upsell card without an error toast.
+//
+// Unlock rules (any one is sufficient):
+//   - merchants.subscription_tier = 'multibranch'  (the actual paid tier
+//     name in this codebase; PR 1 originally checked 'multi'/'brand'
+//     which don't exist as values, so every merchant looked locked)
+//   - merchants.group_id IS NOT NULL               (member of a group →
+//     effectively multi-branch even if the per-branch tier field wasn't
+//     bumped; covers brand-invite legacy paths)
 
-async function loadMerchantTier(merchantId: string): Promise<string> {
+async function loadMerchantTierContext(
+  merchantId: string,
+): Promise<{ tier: string; inGroup: boolean }> {
   const [m] = await db
-    .select({ tier: merchants.subscriptionTier })
+    .select({
+      tier: merchants.subscriptionTier,
+      groupId: merchants.groupId,
+    })
     .from(merchants)
     .where(eq(merchants.id, merchantId))
     .limit(1);
-  return m?.tier ?? "starter";
+  return { tier: m?.tier ?? "starter", inGroup: m?.groupId != null };
 }
 
-function isPaidTier(tier: string): boolean {
-  return tier === "multi" || tier === "brand";
+function isFeatureUnlocked(ctx: { tier: string; inGroup: boolean }): boolean {
+  return ctx.tier === "multibranch" || ctx.inGroup;
 }
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -75,7 +88,7 @@ const addRecipientSchema = z.object({
 
 analyticsDigestRouter.get("/config", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
-  const tier = await loadMerchantTier(merchantId);
+  const ctx = await loadMerchantTierContext(merchantId);
 
   const [cfg] = await db
     .select()
@@ -89,8 +102,9 @@ analyticsDigestRouter.get("/config", requireMerchant, async (c) => {
     .limit(1);
 
   return c.json({
-    feature_locked: !isPaidTier(tier),
-    tier,
+    feature_locked: !isFeatureUnlocked(ctx),
+    tier: ctx.tier,
+    in_group: ctx.inGroup,
     config: cfg ?? null,
   });
 });
@@ -108,12 +122,12 @@ analyticsDigestRouter.put(
     const userId = c.get("userId")!;
     const body = c.get("body") as z.infer<typeof upsertConfigSchema>;
 
-    const tier = await loadMerchantTier(merchantId);
-    if (!isPaidTier(tier)) {
+    const ctx = await loadMerchantTierContext(merchantId);
+    if (!isFeatureUnlocked(ctx)) {
       return c.json(
         {
           error: "Forbidden",
-          message: "Analytics Digest requires the Multi or Brand subscription tier.",
+          message: "Analytics Digest requires the Multibranch tier or group membership.",
         },
         403,
       );
@@ -415,12 +429,12 @@ analyticsDigestRouter.post(
   async (c) => {
     const merchantId = c.get("merchantId")!;
 
-    const tier = await loadMerchantTier(merchantId);
-    if (!isPaidTier(tier)) {
+    const ctx = await loadMerchantTierContext(merchantId);
+    if (!isFeatureUnlocked(ctx)) {
       return c.json(
         {
           error: "Forbidden",
-          message: "Analytics Digest requires the Multi or Brand subscription tier.",
+          message: "Analytics Digest requires the Multibranch tier or group membership.",
         },
         403,
       );

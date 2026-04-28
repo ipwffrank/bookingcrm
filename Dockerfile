@@ -22,4 +22,9 @@ RUN pnpm --filter @glowos/api build
 EXPOSE 3001
 
 WORKDIR /app/glowos/services/api
-CMD ["npx", "tsx", "src/index.ts"]
+# Run pending Drizzle migrations against DATABASE_URL, then start the API.
+# A failed migration aborts the container so we never serve traffic against
+# a partially-migrated schema. Already-applied migrations are no-ops thanks
+# to Drizzle's internal __drizzle_migrations tracking table — re-deploys
+# without new migrations cost ~1 round-trip.
+CMD ["sh", "-c", "npx tsx src/migrate.ts && exec npx tsx src/index.ts"]
