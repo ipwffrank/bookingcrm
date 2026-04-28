@@ -17,6 +17,9 @@ type Merchant = {
   postalCode: string | null;
   category: string | null;
   cancellationPolicy: CancellationPolicy | null;
+  country: 'SG' | 'MY' | null;
+  paymentGateway: 'stripe' | 'ipay88' | null;
+  ipay88MerchantCode: string | null;
 };
 
 type Service = {
@@ -899,12 +902,23 @@ function Step3Staff({ staffList, services, onStaffChange, onNext, onBack }: Step
 
 // ─── Step 4: Payments ──────────────────────────────────────────────────────────
 
+type Gateway = 'stripe' | 'ipay88';
+
 type Step4Props = {
+  merchant: Merchant | null;
+  onMerchantChange: (m: Merchant) => void;
   onNext: () => void;
   onBack: () => void;
 };
 
-function Step4Payments({ onNext, onBack }: Step4Props) {
+function defaultGateway(merchant: Merchant | null): Gateway {
+  if (merchant?.paymentGateway) return merchant.paymentGateway;
+  return merchant?.country === 'MY' ? 'ipay88' : 'stripe';
+}
+
+function Step4Payments({ merchant, onMerchantChange, onNext, onBack }: Step4Props) {
+  const [gateway, setGateway] = useState<Gateway>(defaultGateway(merchant));
+  const [switching, setSwitching] = useState(false);
   const [status, setStatus] = useState<StripeStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connectLoading, setConnectLoading] = useState(false);
@@ -926,8 +940,29 @@ function Step4Payments({ onNext, onBack }: Step4Props) {
   }, []);
 
   useEffect(() => {
-    void fetchStatus();
-  }, [fetchStatus]);
+    if (gateway === 'stripe') void fetchStatus();
+  }, [fetchStatus, gateway]);
+
+  async function handleSwitchGateway(next: Gateway) {
+    if (next === gateway) return;
+    setGateway(next);
+    setSwitching(true);
+    setError('');
+    try {
+      const data = await apiFetch('/merchant/me', {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ paymentGateway: next }),
+      });
+      if (data?.merchant) onMerchantChange(data.merchant);
+    } catch (err) {
+      // Roll back the picker if the server rejects the switch
+      setGateway(gateway);
+      setError(err instanceof Error ? err.message : 'Failed to update payment gateway');
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   async function handleConnect() {
     setConnectLoading(true);
@@ -959,50 +994,143 @@ function Step4Payments({ onNext, onBack }: Step4Props) {
     return <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700">Pending verification</span>;
   }
 
+  function ipay88Badge() {
+    if (merchant?.ipay88MerchantCode) {
+      return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">Connected</span>;
+    }
+    return <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Not connected</span>;
+  }
+
   return (
     <div>
       <h2 className="text-xl font-bold text-gray-900 mb-1">Payment Setup</h2>
-      <p className="text-sm text-gray-500 mb-6">Connect Stripe to accept online payments. You can skip this and set it up later.</p>
+      <p className="text-sm text-gray-500 mb-6">
+        Choose how you&rsquo;d like to accept online payments. You can skip this and set it up later from Settings.
+      </p>
       {error && <ErrorBanner message={error} />}
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800">Stripe Connect</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Powered by Stripe — the safest way to accept payments in Singapore</p>
-          </div>
-          {statusBadge()}
-        </div>
-
-        {!loadingStatus && status && !status.charges_enabled && (
-          <button
-            onClick={handleConnect}
-            disabled={connectLoading}
-            className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-          >
-            {connectLoading ? 'Opening Stripe…' : 'Connect Stripe'}
-          </button>
-        )}
-
-        {!loadingStatus && status?.charges_enabled && (
-          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-            Your Stripe account is connected and ready to accept payments.
-          </div>
-        )}
-
-        {!loadingStatus && status?.connected && !status.charges_enabled && (
-          <div className="mt-3 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-700">
-            Your Stripe account is pending verification. Check your email from Stripe for next steps.
-          </div>
-        )}
-
+      {/* Gateway picker — defaults to merchant.paymentGateway, falls back to country
+          (MY → iPay88, otherwise Stripe). Switching here PATCHes /merchant/me; the
+          credential setup itself happens on the gateway-specific card below. */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
         <button
-          onClick={() => { void fetchStatus(); }}
-          className="mt-3 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+          type="button"
+          onClick={() => handleSwitchGateway('stripe')}
+          disabled={switching}
+          className={`text-left rounded-xl border-2 p-4 transition-colors ${
+            gateway === 'stripe'
+              ? 'border-indigo-600 bg-indigo-50/40'
+              : 'border-gray-200 hover:border-indigo-300'
+          }`}
         >
-          Refresh status
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-800">Stripe</span>
+            {gateway === 'stripe' && <span className="text-xs font-medium text-indigo-600">Selected</span>}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Cards, PayNow, GrabPay (SG &amp; international)</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSwitchGateway('ipay88')}
+          disabled={switching}
+          className={`text-left rounded-xl border-2 p-4 transition-colors ${
+            gateway === 'ipay88'
+              ? 'border-indigo-600 bg-indigo-50/40'
+              : 'border-gray-200 hover:border-indigo-300'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-800">iPay88</span>
+            {gateway === 'ipay88' && <span className="text-xs font-medium text-indigo-600">Selected</span>}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">FPX, Touch &lsquo;n Go, DuitNow, GrabPay (Malaysia)</p>
         </button>
       </div>
+
+      {gateway === 'stripe' ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">Stripe Connect</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Powered by Stripe — the safest way to accept payments online</p>
+            </div>
+            {statusBadge()}
+          </div>
+
+          {!loadingStatus && status && !status.charges_enabled && (
+            <button
+              onClick={handleConnect}
+              disabled={connectLoading}
+              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+            >
+              {connectLoading ? 'Opening Stripe…' : 'Connect Stripe'}
+            </button>
+          )}
+
+          {!loadingStatus && status?.charges_enabled && (
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+              Your Stripe account is connected and ready to accept payments.
+            </div>
+          )}
+
+          {!loadingStatus && status?.connected && !status.charges_enabled && (
+            <div className="mt-3 rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-700">
+              Your Stripe account is pending verification. Check your email from Stripe for next steps.
+            </div>
+          )}
+
+          <button
+            onClick={() => { void fetchStatus(); }}
+            className="mt-3 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            Refresh status
+          </button>
+        </div>
+      ) : (
+        // iPay88 has no inline OAuth — the merchant pastes their credentials
+        // into a dedicated form. Keep onboarding moving by pointing them to
+        // Settings → iPay88 after the wizard finishes.
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800">iPay88 (Malaysia)</h3>
+              <p className="text-xs text-gray-500 mt-0.5">FPX bank transfer, e-wallets, and cards via iPay88&rsquo;s hosted page</p>
+            </div>
+            {ipay88Badge()}
+          </div>
+
+          {merchant?.ipay88MerchantCode ? (
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+              Your iPay88 account is connected. Bookings will route through iPay88&rsquo;s payment page.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700">
+                You&rsquo;ll need your <strong>iPay88 Merchant Code</strong> and <strong>Merchant Key</strong> from your
+                iPay88 dashboard. Don&rsquo;t have an iPay88 account yet?{' '}
+                <a
+                  href="https://www.ipay88.com.my/sign-up/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 hover:underline font-medium"
+                >
+                  Sign up here
+                </a>
+                .
+              </div>
+              <Link
+                href="/dashboard/settings/ipay88"
+                className="block w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors text-center"
+              >
+                Set up iPay88 credentials
+              </Link>
+              <p className="text-xs text-gray-500 text-center">
+                Or skip for now and add them later from Settings → Payments.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-8 flex justify-between">
         <button onClick={onBack} className="rounded-xl border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
@@ -1279,6 +1407,8 @@ export default function OnboardingPage() {
 
           {step === 4 && (
             <Step4Payments
+              merchant={merchant}
+              onMerchantChange={setMerchant}
               onNext={() => setStep(5)}
               onBack={() => setStep(3)}
             />
