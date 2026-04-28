@@ -115,9 +115,15 @@ customerAuthRouter.post("/google", zValidator(googleAuthSchema), async (c) => {
   }
 
   if (!client) {
-    // Create new client — phone is empty string for now (will be filled at booking)
-    // Use a placeholder phone to satisfy the NOT NULL constraint
-    const placeholderPhone = `google_${googleId}`;
+    // Create new client — phone is empty for now (will be filled at booking).
+    // Use a placeholder to satisfy the NOT NULL + UNIQUE constraint on
+    // `clients.phone`. Google `sub` IDs are typically 21 digits, so the
+    // naive `google_<sub>` placeholder is ~28 chars — exceeds the
+    // varchar(20) phone column and causes a 500 (Postgres 22001 error).
+    // Take the last 13 digits of the sub (still effectively unique across
+    // ~10^13 IDs) and prefix with "g_" to produce a 15-char placeholder
+    // that fits and stays uniquely tied to the Google account.
+    const placeholderPhone = `g_${googleId.slice(-13)}`;
     const [created] = await db
       .insert(clients)
       .values({
