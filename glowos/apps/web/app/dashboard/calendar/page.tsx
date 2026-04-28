@@ -345,6 +345,21 @@ export default function CalendarPage() {
     const pct = denomMin > 0 ? clamp(Math.round((bookedMin / denomMin) * 100), 0, 100) : 0;
     return { bookedMin, denomMin, pct };
   }
+  // Revenue contribution per staff for the current day. Excludes only
+  // cancelled bookings — matches the day-total filter in dayStats so owners
+  // can mentally reconcile column totals against the day footer.
+  function staffRevenue(staffId: string): number {
+    return bookings
+      .filter(b => b.staffId === staffId && b.status !== 'cancelled')
+      .reduce((sum, b) => sum + parseFloat(b.priceSgd ?? '0'), 0);
+  }
+  // Compact currency for the column header. Uses $1.2k once we hit four
+  // digits so a busy column doesn't push the utilization bar off-screen.
+  function fmtRevenue(amount: number): string {
+    if (amount <= 0) return '$0';
+    if (amount >= 1000) return `$${(amount / 1000).toFixed(amount >= 10000 ? 0 : 1)}k`;
+    return `$${Math.round(amount)}`;
+  }
   function fmtHours(mins: number): string {
     if (mins <= 0) return '0h';
     const h = mins / 60;
@@ -1011,6 +1026,7 @@ export default function CalendarPage() {
           <div className="w-16 shrink-0 border-r border-grey-15" />
           {staffList.map((s, i) => {
             const { bookedMin, denomMin, pct } = occupancy(s.id);
+            const revenue = staffRevenue(s.id);
             const avatarBg = AVATAR_GREYS[i % AVATAR_GREYS.length]!;
             const dutyRostered = duties.some(d => d.staffId === s.id);
             return (
@@ -1022,7 +1038,7 @@ export default function CalendarPage() {
                   >
                     {s.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-tone-ink truncate">{s.name}</div>
                     <div className="flex items-center gap-1.5 mt-1">
                       <div className="h-1 w-14 rounded-full bg-grey-15 overflow-hidden">
@@ -1046,6 +1062,15 @@ export default function CalendarPage() {
                         {fmtHours(bookedMin)} / {fmtHours(denomMin)} · {pct}%
                       </span>
                     </div>
+                  </div>
+                  <div
+                    className="shrink-0 text-right tabular-nums"
+                    title={`Revenue today (excludes cancelled): $${revenue.toFixed(2)}`}
+                  >
+                    <div className={`text-sm font-bold leading-none ${revenue > 0 ? 'text-tone-sage' : 'text-grey-30'}`}>
+                      {fmtRevenue(revenue)}
+                    </div>
+                    <div className="text-[9px] text-grey-45 mt-0.5 uppercase tracking-wide">today</div>
                   </div>
                 </div>
               </div>
