@@ -64,7 +64,8 @@ async function sendAutomationMessage(params: {
 
   // WhatsApp
   if (phone) {
-    whatsappSid = await sendWhatsApp(phone, messageBody);
+    const whatsappResult = await sendWhatsApp(phone, messageBody);
+    whatsappSid = whatsappResult.sid ?? "";
     try {
       await db.insert(notificationLog).values({
         merchantId,
@@ -74,8 +75,9 @@ async function sendAutomationMessage(params: {
         channel: "whatsapp",
         recipient: phone,
         messageBody,
-        status: whatsappSid ? "sent" : "failed",
-        twilioSid: whatsappSid || undefined,
+        status: whatsappResult.ok ? "sent" : "failed",
+        twilioSid: whatsappResult.sid,
+        errorMessage: whatsappResult.error,
       });
     } catch (err) {
       console.error("[AutomationWorker] Failed to log WhatsApp notification", err);
@@ -84,11 +86,12 @@ async function sendAutomationMessage(params: {
 
   // Email
   if (email) {
-    emailOk = await sendEmail({
+    const emailResult = await sendEmail({
       to: email,
       subject: `A message from ${params.merchantName}`,
       html: `<p>${messageBody.replace(/\n/g, "<br>")}</p>`,
     });
+    emailOk = emailResult.ok;
     try {
       await db.insert(notificationLog).values({
         merchantId,
@@ -98,7 +101,8 @@ async function sendAutomationMessage(params: {
         channel: "email",
         recipient: email,
         messageBody,
-        status: emailOk ? "sent" : "failed",
+        status: emailResult.ok ? "sent" : "failed",
+        errorMessage: emailResult.error,
       });
     } catch (err) {
       console.error("[AutomationWorker] Failed to log email notification", err);

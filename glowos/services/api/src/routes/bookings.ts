@@ -860,6 +860,9 @@ merchantBookingsRouter.get(
         status: notificationLog.status,
         twilioSid: notificationLog.twilioSid,
         messageBody: notificationLog.messageBody,
+        // Surfaced in the booking detail Notifications panel so admins can
+        // self-diagnose Twilio/SendGrid failures (added 0017).
+        errorMessage: notificationLog.errorMessage,
         createdAt: notificationLog.sentAt,
       })
       .from(notificationLog)

@@ -21,6 +21,7 @@ import { config } from "../lib/config.js";
 import { generateBookingToken } from "../lib/jwt.js";
 import { sendEmail, bookingConfirmationEmail, postServiceReceiptEmail, rebookCtaEmail, rescheduleConfirmationEmail } from "../lib/email.js";
 import { addJob } from "../lib/queue.js";
+import { createShortLink } from "../lib/short-links.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ async function logNotification(params: {
   messageBody: string;
   status: string;
   twilioSid?: string;
+  errorMessage?: string;
 }): Promise<void> {
   try {
     await db.insert(notificationLog).values({
@@ -121,6 +123,7 @@ async function logNotification(params: {
       messageBody: params.messageBody,
       status: params.status,
       twilioSid: params.twilioSid,
+      errorMessage: params.errorMessage,
     });
   } catch (err) {
     console.error("[NotificationWorker] Failed to log notification", {
@@ -174,14 +177,14 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
   }
 
   const bookingToken = generateBookingToken(booking.id);
-  const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
+  const cancelUrl = await createShortLink(`${config.frontendUrl}/cancel/${bookingToken}`);
   // Pending pre-bookings have a confirmation token so the customer can
   // accept the appointment — that's the primary CTA. The signed
   // cancel/reschedule link is the secondary path. Walk-ins and already-
   // confirmed bookings skip the confirm URL entirely.
   const confirmUrl =
     booking.status === "pending" && booking.confirmationToken
-      ? `${config.frontendUrl}/confirm/${booking.confirmationToken}`
+      ? await createShortLink(`${config.frontendUrl}/confirm/${booking.confirmationToken}`)
       : null;
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
@@ -258,7 +261,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       : [`Reschedule or cancel? → ${cancelUrl}`]),
   ].join("\n");
 
-  const clientSid = await sendWhatsApp(client.phone, clientMessage);
+  const clientResult = await sendWhatsApp(client.phone, clientMessage);
 
   await logNotification({
     merchantId: merchant.id,
@@ -268,8 +271,9 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: clientMessage,
-    status: clientSid ? "sent" : "failed",
-    twilioSid: clientSid || undefined,
+    status: clientResult.ok ? "sent" : "failed",
+    twilioSid: clientResult.sid,
+    errorMessage: clientResult.error,
   });
 
   // Email confirmation (if client has email)
@@ -284,7 +288,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       priceSgd: net,
       cancelUrl,
     });
-    const emailSent = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Booking confirmed — ${service.name} at ${merchant.name}`,
       html,
@@ -297,7 +301,8 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `Booking confirmation email for ${service.name}`,
-      status: emailSent ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -310,7 +315,7 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       `💳 SGD ${net} (${source})`,
     ].join("\n");
 
-    const merchantSid = await sendWhatsApp(merchant.phone, merchantMessage);
+    const merchantResult = await sendWhatsApp(merchant.phone, merchantMessage);
 
     await logNotification({
       merchantId: merchant.id,
@@ -320,8 +325,9 @@ async function handleBookingConfirmation(bookingId: string): Promise<void> {
       channel: "whatsapp",
       recipient: merchant.phone,
       messageBody: merchantMessage,
-      status: merchantSid ? "sent" : "failed",
-      twilioSid: merchantSid || undefined,
+      status: merchantResult.ok ? "sent" : "failed",
+      twilioSid: merchantResult.sid,
+      errorMessage: merchantResult.error,
     });
   }
 
@@ -346,7 +352,7 @@ async function handleRescheduleConfirmation(
   }
 
   const bookingToken = generateBookingToken(booking.id);
-  const cancelUrl = `${config.frontendUrl}/cancel/${bookingToken}`;
+  const cancelUrl = await createShortLink(`${config.frontendUrl}/cancel/${bookingToken}`);
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
   const previousDateStr = previousStartTime ? formatDate(previousStartTime) : "previously scheduled";
@@ -359,7 +365,7 @@ async function handleRescheduleConfirmation(
     `Need to change again? → ${cancelUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -369,8 +375,9 @@ async function handleRescheduleConfirmation(
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   // Also notify merchant
@@ -392,7 +399,7 @@ async function handleRescheduleConfirmation(
       newTimeStr: timeStr,
       cancelUrl,
     });
-    const emailSent = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Appointment rescheduled — ${service.name} at ${merchant.name}`,
       html,
@@ -405,7 +412,8 @@ async function handleRescheduleConfirmation(
       channel: "email",
       recipient: client.email,
       messageBody: `Reschedule confirmation email for ${service.name}`,
-      status: emailSent ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   } else {
     console.warn("[NotificationWorker] reschedule_confirmation: client has no email, skipping email", { bookingId });
@@ -444,7 +452,7 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
   // Already-confirmed bookings get the original soft reminder.
   const isPending = booking.status === "pending" && !!booking.confirmationToken;
   const confirmUrl = isPending
-    ? `${config.frontendUrl}/confirm/${booking.confirmationToken}`
+    ? await createShortLink(`${config.frontendUrl}/confirm/${booking.confirmationToken}`)
     : null;
 
   const message = isPending
@@ -462,7 +470,7 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
         `See you there! 😊`,
       ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -472,8 +480,9 @@ async function handleAppointmentReminder(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] appointment_reminder handled", { bookingId, withConfirm: isPending });
@@ -504,7 +513,7 @@ async function handleAppointmentReminderFollowup(
 
   const dateStr = formatDate(booking.startTime);
   const timeStr = formatTime(booking.startTime);
-  const confirmUrl = `${config.frontendUrl}/confirm/${booking.confirmationToken}`;
+  const confirmUrl = await createShortLink(`${config.frontendUrl}/confirm/${booking.confirmationToken}`);
 
   const headline =
     windowLabel === "12h"
@@ -524,7 +533,7 @@ async function handleAppointmentReminderFollowup(
     cta,
   ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
   await logNotification({
     merchantId: merchant.id,
     clientId: client.id,
@@ -533,8 +542,9 @@ async function handleAppointmentReminderFollowup(
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
   console.log(`[NotificationWorker] appointment_reminder_${windowLabel} handled`, { bookingId });
 }
@@ -574,7 +584,7 @@ async function handleRebookCheckin(bookingId: string): Promise<void> {
   }
 
   const firstName = client.name ? client.name.split(" ")[0] : "there";
-  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+  const bookingUrl = await createShortLink(`${config.frontendUrl}/${merchant.slug}`);
 
   if (client.phone) {
     const msg = [
@@ -582,7 +592,7 @@ async function handleRebookCheckin(bookingId: string): Promise<void> {
       ``,
       `Time for your next visit? Book here → ${bookingUrl}`,
     ].join("\n");
-    const sid = await sendWhatsApp(client.phone, msg);
+    const result = await sendWhatsApp(client.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
@@ -591,8 +601,9 @@ async function handleRebookCheckin(bookingId: string): Promise<void> {
       channel: "whatsapp",
       recipient: client.phone,
       messageBody: msg,
-      status: sid ? "sent" : "failed",
-      twilioSid: sid || undefined,
+      status: result.ok ? "sent" : "failed",
+      twilioSid: result.sid,
+      errorMessage: result.error,
     });
   }
 
@@ -613,7 +624,7 @@ async function handleRebookCheckin(bookingId: string): Promise<void> {
         </div>
       </div>
     </body></html>`;
-    const ok = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Time for your next visit at ${merchant.name}?`,
       html,
@@ -626,7 +637,8 @@ async function handleRebookCheckin(bookingId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `30-day rebook check-in for ${service.name}`,
-      status: ok ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -650,7 +662,7 @@ async function handleBookingConfirmedByClient(bookingId: string): Promise<void> 
       `📅 ${dateStr} at ${timeStr}`,
       `✂️ ${service.name} with ${staffMember.name}`,
     ].join("\n");
-    const sid = await sendWhatsApp(merchant.phone, msg);
+    const result = await sendWhatsApp(merchant.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
@@ -659,8 +671,9 @@ async function handleBookingConfirmedByClient(bookingId: string): Promise<void> 
       channel: "whatsapp",
       recipient: merchant.phone,
       messageBody: msg,
-      status: sid ? "sent" : "failed",
-      twilioSid: sid || undefined,
+      status: result.ok ? "sent" : "failed",
+      twilioSid: result.sid,
+      errorMessage: result.error,
     });
   }
 
@@ -693,7 +706,7 @@ async function handleBookingConfirmedByClient(bookingId: string): Promise<void> 
         </div>
       </div>
     </body></html>`;
-    const ok = await sendEmail({
+    const emailResult = await sendEmail({
       to: merchant.email,
       subject: `Appointment confirmed by ${clientName}`,
       html,
@@ -706,7 +719,8 @@ async function handleBookingConfirmedByClient(bookingId: string): Promise<void> 
       channel: "email",
       recipient: merchant.email,
       messageBody: `Confirmation alert for ${clientName} — ${service.name}`,
-      status: ok ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -758,7 +772,7 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
       refundMessage,
     ].join("\n");
 
-    const clientSid = await sendWhatsApp(client.phone, clientMessage);
+    const clientResult = await sendWhatsApp(client.phone, clientMessage);
 
     await logNotification({
       merchantId: merchant.id,
@@ -768,8 +782,9 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
       channel: "whatsapp",
       recipient: client.phone,
       messageBody: clientMessage,
-      status: clientSid ? "sent" : "failed",
-      twilioSid: clientSid || undefined,
+      status: clientResult.ok ? "sent" : "failed",
+      twilioSid: clientResult.sid,
+      errorMessage: clientResult.error,
     });
   }
 
@@ -780,7 +795,7 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
       `Slot is now available.`,
     ].join("\n");
 
-    const merchantSid = await sendWhatsApp(merchant.phone, merchantMessage);
+    const merchantResult = await sendWhatsApp(merchant.phone, merchantMessage);
 
     await logNotification({
       merchantId: merchant.id,
@@ -790,8 +805,9 @@ async function handleCancellationNotification(bookingId: string): Promise<void> 
       channel: "whatsapp",
       recipient: merchant.phone,
       messageBody: merchantMessage,
-      status: merchantSid ? "sent" : "failed",
-      twilioSid: merchantSid || undefined,
+      status: merchantResult.ok ? "sent" : "failed",
+      twilioSid: merchantResult.sid,
+      errorMessage: merchantResult.error,
     });
   }
 
@@ -819,7 +835,7 @@ async function handleRefundConfirmation(bookingId: string): Promise<void> {
     `Expect it in 3–5 business days.`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -829,8 +845,9 @@ async function handleRefundConfirmation(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] refund_confirmation handled", { bookingId });
@@ -858,7 +875,7 @@ async function handleReviewRequest(bookingId: string): Promise<void> {
     return;
   }
 
-  const reviewUrl = `${config.frontendUrl}/review/${booking.id}`;
+  const reviewUrl = await createShortLink(`${config.frontendUrl}/review/${booking.id}`);
 
   const message = [
     `Thanks for visiting ${merchant.name}!`,
@@ -866,7 +883,7 @@ async function handleReviewRequest(bookingId: string): Promise<void> {
     `We'd love your feedback: ${reviewUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -876,8 +893,9 @@ async function handleReviewRequest(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] review_request handled", { bookingId });
@@ -897,7 +915,7 @@ async function handleNoShowReengagement(bookingId: string): Promise<void> {
     return;
   }
 
-  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+  const bookingUrl = await createShortLink(`${config.frontendUrl}/${merchant.slug}`);
 
   const message = [
     `We missed you at ${merchant.name} today!`,
@@ -905,7 +923,7 @@ async function handleNoShowReengagement(bookingId: string): Promise<void> {
     `→ ${bookingUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -915,8 +933,9 @@ async function handleNoShowReengagement(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] no_show_reengagement handled", { bookingId });
@@ -939,11 +958,11 @@ async function handleRebookingPrompt(
     return;
   }
 
-  const url = bookingUrl ?? `${config.frontendUrl}/${merchant.slug}`;
+  const url = await createShortLink(bookingUrl ?? `${config.frontendUrl}/${merchant.slug}`);
 
   const message = `Want to rebook at a different time? → ${url}`;
 
-  const sid = await sendWhatsApp(client.phone, message);
+  const result = await sendWhatsApp(client.phone, message);
 
   await logNotification({
     merchantId: merchant.id,
@@ -953,8 +972,9 @@ async function handleRebookingPrompt(
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] rebooking_prompt handled", { bookingId });
@@ -1019,7 +1039,7 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
     (loyaltyLine ? `\n${loyaltyLine}\n` : "") +
     `\nWe hope to see you again soon! 🌟`;
 
-  const sid = await sendWhatsApp(client.phone, receiptMessage);
+  const result = await sendWhatsApp(client.phone, receiptMessage);
 
   await logNotification({
     merchantId: merchant.id,
@@ -1029,12 +1049,13 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: receiptMessage,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   if (client.email) {
-    const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+    const bookingUrl = await createShortLink(`${config.frontendUrl}/${merchant.slug}`);
     const html = postServiceReceiptEmail({
       clientName: client.name ?? "there",
       merchantName: merchant.name,
@@ -1045,7 +1066,7 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
       priceSgd: net,
       bookingUrl,
     });
-    const emailSent = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Your visit receipt — ${merchant.name}`,
       html,
@@ -1058,7 +1079,8 @@ async function handlePostServiceReceipt(bookingId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `Post-service receipt email`,
-      status: emailSent ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -1079,14 +1101,14 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
     return;
   }
 
-  const bookingUrl = `${config.frontendUrl}/${merchant.slug}`;
+  const bookingUrl = await createShortLink(`${config.frontendUrl}/${merchant.slug}`);
   const rebookMessage =
     `💆 *Time for your next visit?*\n\n` +
     `Hi ${client.name ?? "there"}! It's been a couple of days since your *${service.name}* at ${merchant.name}.\n\n` +
     `Ready to book again? Tap the link below:\n${bookingUrl}\n\n` +
     `See you soon! ✨`;
 
-  const sid = await sendWhatsApp(client.phone, rebookMessage);
+  const result = await sendWhatsApp(client.phone, rebookMessage);
 
   await logNotification({
     merchantId: merchant.id,
@@ -1096,8 +1118,9 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: client.phone,
     messageBody: rebookMessage,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   if (client.email) {
@@ -1107,7 +1130,7 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
       serviceName: service.name,
       bookingUrl,
     });
-    const emailSent = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Time for your next visit at ${merchant.name}?`,
       html,
@@ -1120,7 +1143,8 @@ async function handlePostServiceRebook(bookingId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `Rebook CTA email`,
-      status: emailSent ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -1162,16 +1186,17 @@ async function handleLowRatingAlert(bookingId: string): Promise<void> {
 
   const commentLine = review.comment ? `"${review.comment}"` : "No comment left.";
 
+  const dashboardUrl = await createShortLink(`${config.frontendUrl}/dashboard/reviews`);
   const message = [
     `⚠️ New review needs attention`,
     ``,
     `${client.name} rated their ${service.name} appointment ${review.rating}/5 stars.`,
     commentLine,
     ``,
-    `Check your dashboard: ${config.frontendUrl}/dashboard/reviews`,
+    `Check your dashboard: ${dashboardUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(owner.phone, message);
+  const result = await sendWhatsApp(owner.phone, message);
 
   // Mark alert as sent
   await db
@@ -1187,8 +1212,9 @@ async function handleLowRatingAlert(bookingId: string): Promise<void> {
     channel: "whatsapp",
     recipient: owner.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: result.sid,
+    errorMessage: result.error,
   });
 
   console.log("[NotificationWorker] low_rating_alert handled", { bookingId, rating: review.rating });
@@ -1200,9 +1226,9 @@ async function handleOtpSend(data: OtpSendData): Promise<void> {
     // Prefer the pre-approved Content Template when configured. Required
     // for business-initiated OTPs outside Twilio's 24h session window —
     // freeform text returns Twilio error 63016 in that case.
-    let sid = "";
+    let sendResult;
     if (config.twilioOtpContentSid) {
-      sid = await sendWhatsAppTemplate({
+      sendResult = await sendWhatsAppTemplate({
         to: data.destination,
         contentSid: config.twilioOtpContentSid,
         variables: { "1": data.code },
@@ -1211,25 +1237,25 @@ async function handleOtpSend(data: OtpSendData): Promise<void> {
       // No template configured — fall back to freeform. This works only if
       // the recipient has an active 24h session; it WILL fail (Twilio 63016)
       // for most business-initiated OTPs.
-      sid = await sendWhatsApp(data.destination, body);
+      sendResult = await sendWhatsApp(data.destination, body);
     }
-    if (!sid) {
-      throw new Error(`WhatsApp OTP failed for ${data.destination}`);
+    if (!sendResult.ok) {
+      throw new Error(`WhatsApp OTP failed for ${data.destination}: ${sendResult.error ?? "unknown"}`);
     }
     console.log("[NotificationWorker] otp_send whatsapp ok", {
       destination: data.destination,
-      sid,
+      sid: sendResult.sid,
       via: config.twilioOtpContentSid ? "template" : "freeform",
     });
     return;
   }
-  const ok = await sendEmail({
+  const emailResult = await sendEmail({
     to: data.destination,
     subject: "Your verification code",
     html: `<p>Your GlowOS verification code is <strong>${data.code}</strong>.</p><p>It will expire in 10 minutes.</p>`,
   });
-  if (!ok) {
-    throw new Error(`Email OTP failed for ${data.destination}`);
+  if (!emailResult.ok) {
+    throw new Error(`Email OTP failed for ${data.destination}: ${emailResult.error ?? "unknown"}`);
   }
   console.log("[NotificationWorker] otp_send email ok", {
     destination: data.destination,
@@ -1383,7 +1409,9 @@ async function loadWaitlistWithDetails(id: string) {
 async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promise<void> {
   const row = await loadWaitlistWithDetails(data.waitlist_id);
   if (!row) return;
-  const cancelUrl = `${config.frontendUrl}/${row.merchant.slug}/waitlist/cancel?id=${row.w.id}&token=${row.w.cancelToken}`;
+  const cancelUrl = await createShortLink(
+    `${config.frontendUrl}/${row.merchant.slug}/waitlist/cancel?id=${row.w.id}&token=${row.w.cancelToken}`,
+  );
   const message = [
     `Hi ${row.client.name ?? "there"}! You're on the waitlist at ${row.merchant.name}.`,
     `${row.service.name} with ${row.staffMember.name}`,
@@ -1391,7 +1419,10 @@ async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promi
     `We'll WhatsApp you if a slot opens. Cancel: ${cancelUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  const result = await sendWhatsApp(row.client.phone, message).catch((err) => ({
+    ok: false as const,
+    error: err instanceof Error ? err.message : String(err),
+  }));
   await logNotification({
     merchantId: row.merchant.id,
     clientId: row.client.id,
@@ -1400,10 +1431,11 @@ async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promi
     channel: "whatsapp",
     recipient: row.client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: "sid" in result ? result.sid : undefined,
+    errorMessage: "error" in result ? result.error : undefined,
   });
-  if (!sid && row.client.email) {
+  if (!result.ok && row.client.email) {
     await sendEmail({
       to: row.client.email,
       subject: `You're on the waitlist at ${row.merchant.name}`,
@@ -1415,13 +1447,18 @@ async function handleWaitlistConfirmation(data: WaitlistConfirmationData): Promi
 async function handleWaitlistSlotOpened(data: WaitlistSlotOpenedData): Promise<void> {
   const row = await loadWaitlistWithDetails(data.waitlist_id);
   if (!row) return;
-  const confirmUrl = `${config.frontendUrl}/${row.merchant.slug}/confirm-waitlist?waitlist=${row.w.id}&token=${row.w.cancelToken}`;
+  const confirmUrl = await createShortLink(
+    `${config.frontendUrl}/${row.merchant.slug}/confirm-waitlist?waitlist=${row.w.id}&token=${row.w.cancelToken}`,
+  );
   const message = [
     `Slot opened! ${row.staffMember.name} has an opening on ${row.w.targetDate}.`,
     `Confirm within 10 min: ${confirmUrl}`,
   ].join("\n");
 
-  const sid = await sendWhatsApp(row.client.phone, message).catch(() => null);
+  const result = await sendWhatsApp(row.client.phone, message).catch((err) => ({
+    ok: false as const,
+    error: err instanceof Error ? err.message : String(err),
+  }));
   await logNotification({
     merchantId: row.merchant.id,
     clientId: row.client.id,
@@ -1430,10 +1467,11 @@ async function handleWaitlistSlotOpened(data: WaitlistSlotOpenedData): Promise<v
     channel: "whatsapp",
     recipient: row.client.phone,
     messageBody: message,
-    status: sid ? "sent" : "failed",
-    twilioSid: sid || undefined,
+    status: result.ok ? "sent" : "failed",
+    twilioSid: "sid" in result ? result.sid : undefined,
+    errorMessage: "error" in result ? result.error : undefined,
   });
-  if (!sid && row.client.email) {
+  if (!result.ok && row.client.email) {
     await sendEmail({
       to: row.client.email,
       subject: `A slot opened — confirm within 10 min`,
@@ -1473,7 +1511,7 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
   }
 
   const { quote, merchant, client } = row;
-  const acceptUrl = `${config.frontendUrl}/quote/${quote.acceptToken}`;
+  const acceptUrl = await createShortLink(`${config.frontendUrl}/quote/${quote.acceptToken}`);
   const price = parseFloat(String(quote.priceSgd)).toFixed(2);
   const validUntil = format(quote.validUntil, "d MMM yyyy");
   const firstName = client.name ? client.name.split(" ")[0] : "there";
@@ -1491,7 +1529,7 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
       ``,
       `This quote is valid for a limited time. Please accept before the expiry date to confirm your slot.`,
     ].join("\n");
-    const sid = await sendWhatsApp(client.phone, msg);
+    const result = await sendWhatsApp(client.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
@@ -1500,8 +1538,9 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
       channel: "whatsapp",
       recipient: client.phone,
       messageBody: msg,
-      status: sid ? "sent" : "failed",
-      twilioSid: sid || undefined,
+      status: result.ok ? "sent" : "failed",
+      twilioSid: result.sid,
+      errorMessage: result.error,
     });
   }
 
@@ -1543,7 +1582,7 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
         </div>
       </div>
     </body></html>`;
-    const ok = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Your treatment quote from ${merchant.name}`,
       html,
@@ -1556,7 +1595,8 @@ async function handleTreatmentQuoteIssued(quoteId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `Treatment quote email for ${quote.serviceName}`,
-      status: ok ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 
@@ -1616,7 +1656,7 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
   if (!row) return;
 
   const { quote, merchant, client } = row;
-  const acceptUrl = `${config.frontendUrl}/quote/${quote.acceptToken}`;
+  const acceptUrl = await createShortLink(`${config.frontendUrl}/quote/${quote.acceptToken}`);
   const price = parseFloat(String(quote.priceSgd)).toFixed(2);
   const validUntil = format(quote.validUntil, "d MMM yyyy");
   const firstName = client.name ? client.name.split(" ")[0] : "there";
@@ -1630,7 +1670,7 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
       ``,
       `Accept before it expires: ${acceptUrl}`,
     ].join("\n");
-    const sid = await sendWhatsApp(client.phone, msg);
+    const result = await sendWhatsApp(client.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
@@ -1639,8 +1679,9 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
       channel: "whatsapp",
       recipient: client.phone,
       messageBody: msg,
-      status: sid ? "sent" : "failed",
-      twilioSid: sid || undefined,
+      status: result.ok ? "sent" : "failed",
+      twilioSid: result.sid,
+      errorMessage: result.error,
     });
   }
 
@@ -1673,7 +1714,7 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
         </div>
       </div>
     </body></html>`;
-    const ok = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `Reminder: your treatment quote from ${merchant.name} expires ${validUntil}`,
       html,
@@ -1686,7 +1727,8 @@ async function sendTreatmentQuoteReminder(quoteId: string): Promise<void> {
       channel: "email",
       recipient: client.email,
       messageBody: `Treatment quote reminder for ${quote.serviceName}`,
-      status: ok ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 }
@@ -1763,7 +1805,7 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
       // Same signed-token cancel/reschedule link the booking_confirmation
       // handler uses, so package customers get the same self-service flow.
       const bookingToken = generateBookingToken(b.booking.id);
-      firstBookingCancelLine = `${config.frontendUrl}/cancel/${bookingToken}`;
+      firstBookingCancelLine = await createShortLink(`${config.frontendUrl}/cancel/${bookingToken}`);
     }
   }
 
@@ -1785,7 +1827,7 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
     }
     lines.push(``, `See you soon!`);
     const msg = lines.join("\n");
-    const sid = await sendWhatsApp(client.phone, msg);
+    const result = await sendWhatsApp(client.phone, msg);
     await logNotification({
       merchantId: merchant.id,
       clientId: client.id,
@@ -1794,8 +1836,9 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
       channel: "whatsapp",
       recipient: client.phone,
       messageBody: msg,
-      status: sid ? "sent" : "failed",
-      twilioSid: sid || undefined,
+      status: result.ok ? "sent" : "failed",
+      twilioSid: result.sid,
+      errorMessage: result.error,
     });
   }
 
@@ -1831,7 +1874,7 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
         </div>
       </div>
     </body></html>`;
-    const ok = await sendEmail({
+    const emailResult = await sendEmail({
       to: client.email,
       subject: `${pkg.name} confirmed at ${merchant.name}`,
       html,
@@ -1844,7 +1887,8 @@ async function handlePackagePurchased(data: PackagePurchasedData): Promise<void>
       channel: "email",
       recipient: client.email,
       messageBody: `Package confirmation for ${pkg.name}`,
-      status: ok ? "sent" : "failed",
+      status: emailResult.ok ? "sent" : "failed",
+      errorMessage: emailResult.error,
     });
   }
 

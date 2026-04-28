@@ -22,5 +22,8 @@ export const notificationLog = pgTable("notification_log", {
   messageBody: text("message_body").notNull(),
   status: varchar("status", { length: 20 }).notNull(),
   twilioSid: varchar("twilio_sid", { length: 255 }),
+  // Verbatim Twilio/SendGrid error string when status='failed'. Surfaced in
+  // the booking detail Notifications panel so admins can self-diagnose.
+  errorMessage: text("error_message"),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 });

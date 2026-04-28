@@ -120,6 +120,20 @@
       "when": 1777948800000,
       "tag": "0016_add_buffer_split_and_secondary_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1777996800000,
+      "tag": "0017_add_notification_log_error_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1777996800001,
+      "tag": "0018_add_short_links",
+      "breakpoints": true
     }
   ]
 }

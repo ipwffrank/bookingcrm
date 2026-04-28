@@ -60,6 +60,7 @@ interface NotificationLogRow {
   status: string;
   twilioSid: string | null;
   messageBody: string | null;
+  errorMessage: string | null;
   createdAt: string;
 }
 
@@ -1201,6 +1202,9 @@ export function BookingForm(props: BookingFormProps) {
                         })}
                         {n.status !== 'sent' ? ` · ${n.status}` : ''}
                       </p>
+                      {n.status !== 'sent' && n.errorMessage && (
+                        <p className="mt-1 text-grey-60">⚠ {n.errorMessage}</p>
+                      )}
                     </div>
                   </li>
                 ))}

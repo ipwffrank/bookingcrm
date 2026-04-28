@@ -33,6 +33,7 @@ import { waitlistRouter, merchantWaitlistRouter } from "./routes/waitlist.js";
 import { superRouter } from "./routes/super.js";
 import { merchantIpay88Router, publicIpay88Router } from "./routes/ipay88.js";
 import { merchantQuotesRouter, publicQuotesRouter } from "./routes/quotes.js";
+import { shortLinksRouter } from "./routes/short-links.js";
 import { auditImpersonatedWrites } from "./middleware/impersonation-audit.js";
 import type { AppVariables } from "./lib/types.js";
 import { config } from "./lib/config.js";
@@ -113,6 +114,10 @@ app.route("/merchant/packages", packagesRouter);
 app.route("/booking", publicPackagesRouter);
 app.route("/waitlist", waitlistRouter);
 app.route("/merchant/waitlist", merchantWaitlistRouter);
+
+// Internal URL shortener — public, no auth. Resolves codes minted by
+// services/api/src/lib/short-links.ts; called by the Next.js /s/[code] proxy.
+app.route("/s", shortLinksRouter);
 
 // Health check
 app.get("/health", (c) => {
