@@ -25,3 +25,4 @@ export * from "./brand-invites.js";
 export * from "./clinical-records.js";
 export * from "./automations.js";
 export * from "./loyalty.js";
+export * from "./short-links.js";

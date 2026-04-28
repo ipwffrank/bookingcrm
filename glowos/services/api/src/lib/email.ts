@@ -5,19 +5,25 @@ if (config.sendgridApiKey) {
   sgMail.setApiKey(config.sendgridApiKey);
 }
 
+export interface EmailResult {
+  ok: boolean;
+  error?: string;
+}
+
 /**
  * Send a transactional email via SendGrid.
  * Silently no-ops if SENDGRID_API_KEY is not configured (dev environments).
- * Returns true on success, false on error.
+ * Returns `{ ok, error? }` so callers can persist the actual SendGrid error
+ * message into `notification_log.error_message` for debugging.
  */
 export async function sendEmail(params: {
   to: string;
   subject: string;
   html: string;
-}): Promise<boolean> {
+}): Promise<EmailResult> {
   if (!config.sendgridApiKey) {
     console.log("[Email] Skipped — SENDGRID_API_KEY not set", { to: params.to, subject: params.subject });
-    return false;
+    return { ok: false, error: "SENDGRID_API_KEY not configured" };
   }
 
   try {
@@ -29,13 +35,11 @@ export async function sendEmail(params: {
       text: params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
     });
     console.log("[Email] Sent", { to: params.to, subject: params.subject });
-    return true;
+    return { ok: true };
   } catch (err) {
-    console.error("[Email] Failed to send", {
-      to: params.to,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
+    const error = err instanceof Error ? err.message : String(err);
+    console.error("[Email] Failed to send", { to: params.to, error });
+    return { ok: false, error };
   }
 }
 
