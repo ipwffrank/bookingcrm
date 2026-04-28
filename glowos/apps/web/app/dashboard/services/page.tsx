@@ -14,7 +14,6 @@ interface Service {
   description: string;
   category: Category;
   durationMinutes: number;
-  bufferMinutes: number;
   preBufferMinutes: number;
   postBufferMinutes: number;
   priceSgd: string;
@@ -35,7 +34,6 @@ interface ServiceForm {
   description: string;
   category: Category;
   duration_minutes: string;
-  buffer_minutes: string;
   pre_buffer_minutes: string;
   post_buffer_minutes: string;
   price_sgd: string;
@@ -84,7 +82,7 @@ function Spinner() {
 }
 
 function blankForm(): ServiceForm {
-  return { name: '', description: '', category: 'hair', duration_minutes: '60', buffer_minutes: '0', pre_buffer_minutes: '0', post_buffer_minutes: '0', price_sgd: '', booking_mode: 'standard', consult_service_id: '', visible_on_booking_page: true, discount_pct: '', discount_show_online: false, first_timer_discount_pct: '', first_timer_discount_enabled: false };
+  return { name: '', description: '', category: 'hair', duration_minutes: '60', pre_buffer_minutes: '0', post_buffer_minutes: '0', price_sgd: '', booking_mode: 'standard', consult_service_id: '', visible_on_booking_page: true, discount_pct: '', discount_show_online: false, first_timer_discount_pct: '', first_timer_discount_enabled: false };
 }
 
 type FormErrors = Partial<Record<keyof ServiceForm, string>>;
@@ -95,8 +93,6 @@ function validateForm(form: ServiceForm): FormErrors {
   if (!form.description.trim()) e.description = 'Description is required';
   const dur = parseInt(form.duration_minutes, 10);
   if (isNaN(dur) || dur <= 0) e.duration_minutes = 'Duration must be a positive number';
-  const buf = parseInt(form.buffer_minutes, 10);
-  if (isNaN(buf) || buf < 0) e.buffer_minutes = 'Buffer must be 0 or more';
   const preBuf = parseInt(form.pre_buffer_minutes, 10);
   if (isNaN(preBuf) || preBuf < 0 || preBuf > 120) e.pre_buffer_minutes = 'Pre-buffer must be 0-120';
   const postBuf = parseInt(form.post_buffer_minutes, 10);
@@ -127,7 +123,6 @@ function ServiceModal({
           description: initial.description,
           category: initial.category,
           duration_minutes: String(initial.durationMinutes),
-          buffer_minutes: String(initial.bufferMinutes),
           pre_buffer_minutes: String(initial.preBufferMinutes ?? 0),
           post_buffer_minutes: String(initial.postBufferMinutes ?? 0),
           price_sgd: String(initial.priceSgd),
@@ -166,7 +161,6 @@ function ServiceModal({
         description: form.description.trim(),
         category: form.category,
         duration_minutes: parseInt(form.duration_minutes, 10),
-        buffer_minutes: parseInt(form.buffer_minutes, 10),
         pre_buffer_minutes: Number(form.pre_buffer_minutes) || 0,
         post_buffer_minutes: Number(form.post_buffer_minutes) || 0,
         price_sgd: parseFloat(form.price_sgd),
@@ -302,13 +296,10 @@ function ServiceModal({
             </div>
           </div>
 
-          {/* Pre/Post buffer (secondary-staff windows) and legacy buffer.
-              The split-buffer fields are owned by the secondary-staff workflow:
-              they free the primary during prep/cleanup so a clinician can see
-              another patient while a therapist preps the room. The legacy
-              single buffer still adds total slot length but blocks the primary
-              for the full window — kept for backwards compat. */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Pre/Post buffer (secondary-staff windows). These free the primary
+              during prep/cleanup so a clinician can see another patient while a
+              therapist preps the room. */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-grey-75 mb-1">Pre-buffer (min)</label>
               <input
@@ -334,22 +325,6 @@ function ServiceModal({
               />
               <p className="text-xs text-grey-60 mt-1">Time after treatment owned by secondary staff (e.g., cleanup)</p>
               {errors.post_buffer_minutes && <p className="text-xs text-semantic-danger mt-1">{errors.post_buffer_minutes}</p>}
-            </div>
-            <div>
-              <label
-                className="block text-sm font-medium text-grey-75 mb-1"
-                title="Adds time but doesn't free up staff. Use Pre-buffer / Post-buffer for split-role services."
-              >
-                Buffer (legacy)
-              </label>
-              <input
-                type="number"
-                min="0"
-                {...field('buffer_minutes')}
-                className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage"
-              />
-              <p className="text-xs text-grey-60 mt-1">Adds time but doesn&apos;t free up staff. Use Pre-/Post-buffer for split-role services.</p>
-              {errors.buffer_minutes && <p className="text-xs text-semantic-danger mt-1">{errors.buffer_minutes}</p>}
             </div>
           </div>
 
@@ -619,14 +594,10 @@ export default function ServicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="grid grid-cols-2 gap-2 mb-4">
                 <div className="bg-grey-5 rounded-lg p-2 text-center">
                   <p className="text-xs text-grey-60">Duration</p>
                   <p className="text-sm font-semibold text-tone-ink">{service.durationMinutes}m</p>
-                </div>
-                <div className="bg-grey-5 rounded-lg p-2 text-center">
-                  <p className="text-xs text-grey-60">Buffer</p>
-                  <p className="text-sm font-semibold text-tone-ink">{service.bufferMinutes}m</p>
                 </div>
                 <div className="bg-tone-sage/10 rounded-lg p-2 text-center">
                   <p className="text-xs text-tone-sage">Price</p>
