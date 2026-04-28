@@ -26,6 +26,8 @@ type Service = {
   category: string;
   durationMinutes: number;
   bufferMinutes: number;
+  preBufferMinutes: number;
+  postBufferMinutes: number;
   priceSgd: string;
 };
 
@@ -354,6 +356,8 @@ const EMPTY_SERVICE_FORM = {
   category: 'hair' as string,
   duration_minutes: 60,
   buffer_minutes: 0,
+  pre_buffer_minutes: 0,
+  post_buffer_minutes: 0,
   price_sgd: 0,
 };
 
@@ -426,6 +430,8 @@ function Step2Services({ services, onServicesChange, onNext, onBack }: Step2Prop
       category: svc.category,
       duration_minutes: svc.durationMinutes,
       buffer_minutes: svc.bufferMinutes,
+      pre_buffer_minutes: svc.preBufferMinutes ?? 0,
+      post_buffer_minutes: svc.postBufferMinutes ?? 0,
       price_sgd: parseFloat(svc.priceSgd),
     });
     setEditingId(svc.id);
@@ -531,7 +537,35 @@ function Step2Services({ services, onServicesChange, onNext, onBack }: Step2Prop
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Buffer (min)</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Pre-buffer (min)</label>
+              <input
+                type="number"
+                min={0}
+                max={120}
+                step={5}
+                value={form.pre_buffer_minutes}
+                onChange={(e) => setForm((p) => ({ ...p, pre_buffer_minutes: parseInt(e.target.value) || 0 }))}
+                className={inputClass()}
+              />
+              <p className="text-[10px] text-gray-500 mt-0.5">Time before treatment owned by secondary staff (e.g., prep)</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Post-buffer (min)</label>
+              <input
+                type="number"
+                min={0}
+                max={120}
+                step={5}
+                value={form.post_buffer_minutes}
+                onChange={(e) => setForm((p) => ({ ...p, post_buffer_minutes: parseInt(e.target.value) || 0 }))}
+                className={inputClass()}
+              />
+              <p className="text-[10px] text-gray-500 mt-0.5">Time after treatment owned by secondary staff (e.g., cleanup)</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1" title="Adds time but doesn't free up staff. Use Pre-buffer / Post-buffer for split-role services.">Buffer — legacy (min)</label>
               <input
                 type="number"
                 min={0}

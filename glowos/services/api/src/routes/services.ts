@@ -16,9 +16,13 @@ const servicesRouter = new Hono<{ Variables: AppVariables }>();
 const createServiceSchema = z.object({
   name: z.string().min(1, "Service name is required"),
   description: z.string().min(1, "Description is required"),
-  category: z.enum(["hair", "nails", "face", "body", "massage", "other"], {
+  // Keep this in sync with the SERVICE_CATEGORIES list shown in the
+  // dashboard service form and the onboarding wizard. If you add a new
+  // option there, add it here too — otherwise the API rejects what the
+  // form lets users pick.
+  category: z.enum(["hair", "nails", "face", "body", "massage", "dining", "medical", "other"], {
     errorMap: () => ({
-      message: "Category must be one of: hair, nails, face, body, massage, other",
+      message: "Category must be one of: hair, nails, face, body, massage, dining, medical, other",
     }),
   }),
   duration_minutes: z
