@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, desc, count, gte } from "drizzle-orm";
 import { z } from "zod";
+import type Stripe from "stripe";
 import { db, merchants, services, slotLeases, payouts, bookings, clients } from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -299,12 +300,13 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     return c.json({ error: "Not Found", message: "Salon not found" }, 404);
   }
 
-  if (!merchant.stripeAccountId) {
-    return c.json(
-      { error: "Bad Request", message: "This salon has not completed payment setup yet." },
-      400
-    );
-  }
+  // Stripe Connect is optional. When merchant.stripeAccountId is set, funds
+  // route to the merchant's connected account with a platform fee
+  // (`destination charges`). When null, funds go to the platform's Stripe
+  // account directly — useful for pilot merchants who haven't completed
+  // individual Connect onboarding yet. Either way, the booking is attributed
+  // to the merchant via PaymentIntent metadata.
+  const useConnect = Boolean(merchant.stripeAccountId);
 
   // 2. Load and validate the lease
   const now = new Date();
@@ -463,17 +465,14 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
     stripeCustomerId = stripeCustomer.id;
   }
 
-  // 6. Create Stripe PaymentIntent with Connect destination charges
-  const paymentIntent = await stripe.paymentIntents.create({
+  // 6. Create Stripe PaymentIntent — Connect destination charge when the
+  // merchant has a connected account, otherwise the platform account.
+  const baseParams: Stripe.PaymentIntentCreateParams = {
     amount: amountCents,
     currency: "sgd",
     customer: stripeCustomerId,
     description: `${service.name} at ${merchant.name}`,
     statement_descriptor_suffix: merchant.name.slice(0, 22),
-    application_fee_amount: commissionCents > 0 ? commissionCents : undefined,
-    transfer_data: {
-      destination: merchant.stripeAccountId,
-    },
     payment_method_types: ["card", "paynow", "grabpay"],
     metadata: {
       booking_source: body.booking_source,
@@ -485,8 +484,23 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
       client_phone: body.client_phone ?? "",
       client_id: body.client_id ?? "",
       first_timer_discount_applied: firstTimerDiscountApplied ? "true" : "false",
+      // Track whether this charge used Connect or the platform account so
+      // payouts/reconciliation can be done correctly later.
+      payment_routing: useConnect ? "connect_destination" : "platform_account",
     },
-  });
+  };
+
+  const paymentIntent = await stripe.paymentIntents.create(
+    useConnect
+      ? {
+          ...baseParams,
+          application_fee_amount: commissionCents > 0 ? commissionCents : undefined,
+          transfer_data: {
+            destination: merchant.stripeAccountId!,
+          },
+        }
+      : baseParams
+  );
 
   return c.json(
     {
