@@ -86,6 +86,11 @@ export function BookingForm(props: BookingFormProps) {
   const [operatingHours, setOperatingHoursState] = useState<
     Record<string, { open: string; close: string; closed: boolean }> | null
   >(props.operatingHours ?? null);
+  // Merchant timezone is needed alongside operatingHours for the gate —
+  // operating_hours are merchant-local clock times. Resolved from
+  // /merchant/me below; falls back to Asia/Singapore (matches the DB
+  // default) so we never mis-block due to a missing field.
+  const [merchantTimezone, setMerchantTimezone] = useState<string>('Asia/Singapore');
 
   // Sync props → state whenever the parent's services/staffList arrive or
   // change. useState only consumes the initial prop at mount, which was
@@ -119,10 +124,14 @@ export function BookingForm(props: BookingFormProps) {
         const res = d as {
           merchant?: {
             operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
+            timezone?: string | null;
           };
         };
         if (res.merchant?.operatingHours) {
           setOperatingHoursState(res.merchant.operatingHours);
+        }
+        if (res.merchant?.timezone) {
+          setMerchantTimezone(res.merchant.timezone);
         }
       })
       .catch(() => { /* if it fails, the gate sees null and lets the booking through */ });
@@ -605,7 +614,7 @@ export function BookingForm(props: BookingFormProps) {
     const outsideHoursViolations: Array<{ index: number; violation: 'closed' | 'outside' }> = [];
     if (operatingHours) {
       rows.forEach((r, i) => {
-        const v = outsideHoursViolation(r.startTime, operatingHours);
+        const v = outsideHoursViolation(r.startTime, operatingHours, merchantTimezone);
         if (v) outsideHoursViolations.push({ index: i, violation: v });
       });
     }
@@ -1486,33 +1495,59 @@ function isoDateOnly(iso: string): string {
 }
 
 /**
- * Returns the kind of operating-hours violation at the given moment, or null
- * if it falls inside open hours. Used by the create-booking submit guard so
- * non-owners can't schedule treatments outside the merchant's stated window.
+ * Operating-hours violation in the merchant's local timezone.
+ *
+ * operating_hours are merchant-local clock times (e.g. "09:00"–"19:00" means
+ * 9 AM – 7 PM in the merchant's tz). Browser .getDay() / .getHours() use the
+ * USER's tz, which is usually fine for SGT clinic + SGT staff but breaks
+ * when a non-SGT staff member is on the dashboard or the user has overridden
+ * their browser tz. We always extract weekday + HH:MM in the merchant's tz so
+ * the comparison is correct regardless of user environment. Mirrors the
+ * server-side helper of the same name in booking-groups.ts.
+ *
+ * Missing days in the operating_hours map are treated as "closed" — a
+ * merchant who configured Mon–Fri but not Sat/Sun should not silently allow
+ * Saturday bookings.
  */
 function outsideHoursViolation(
   iso: string,
   operatingHours: Record<string, { open: string; close: string; closed: boolean }>,
+  timezone: string,
 ): 'closed' | 'outside' | null {
   if (!iso) return null;
-  let d: Date;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+
+  let weekday: string;
+  let hour: number;
+  let minute: number;
   try {
-    d = new Date(iso);
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(d);
+    weekday = (parts.find((p) => p.type === 'weekday')?.value ?? '').toLowerCase();
+    hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '', 10);
+    minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '', 10);
   } catch {
     return null;
   }
-  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayKey = dayNames[d.getDay()];
-  if (!dayKey) return null;
-  const day = operatingHours[dayKey];
-  if (!day) return null;
-  if (day.closed) return 'closed';
+  if (!weekday || Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  if (hour === 24) hour = 0;
+
+  const day = operatingHours[weekday];
+  if (!day || day.closed) return 'closed';
+
   const [oh, om] = day.open.split(':').map((n) => parseInt(n, 10));
   const [ch, cm] = day.close.split(':').map((n) => parseInt(n, 10));
   if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return null;
   const open = oh * 60 + om;
   const close = ch * 60 + cm;
-  const min = d.getHours() * 60 + d.getMinutes();
+  const min = hour * 60 + minute;
   if (min < open || min > close) return 'outside';
   return null;
 }
