@@ -2149,33 +2149,42 @@ bookingsRouter.get("/:slug/next-available", async (c) => {
     return c.json({ error: "Bad Request", message: "service_id and after are required" }, 400);
   }
 
-  // Search up to 30 days forward
+  // Search up to 30 days forward. Done in parallel batches so a fully
+  // empty search (the worst case — solo merchant who hasn't set up hours
+  // yet) doesn't block the booking widget for 30 sequential DB round-trips.
   const maxDays = 30;
+  const batchSize = 5;
   const startDate = new Date(afterDate + "T00:00:00");
 
+  const dateStrings: string[] = [];
   for (let i = 1; i <= maxDays; i++) {
     const checkDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
-    const dateStr = checkDate.toISOString().slice(0, 10);
+    dateStrings.push(checkDate.toISOString().slice(0, 10));
+  }
 
-    try {
-      const slots = await getAvailability({
-        merchantSlug: slug,
-        serviceId,
-        staffId: staffId || "any",
-        date: dateStr,
-      });
-
-      if (slots.length > 0) {
+  for (let batchStart = 0; batchStart < dateStrings.length; batchStart += batchSize) {
+    const batch = dateStrings.slice(batchStart, batchStart + batchSize);
+    const results = await Promise.all(
+      batch.map((dateStr) =>
+        getAvailability({
+          merchantSlug: slug,
+          serviceId,
+          staffId: staffId || "any",
+          date: dateStr,
+        }).catch(() => [] as Awaited<ReturnType<typeof getAvailability>>),
+      ),
+    );
+    // Pick the EARLIEST date in this batch with slots so callers always
+    // see the soonest match, never a later date from a parallel race.
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].length > 0) {
         return c.json({
           found: true,
-          date: dateStr,
-          firstSlot: slots[0].start_time,
-          slotsCount: slots.length,
+          date: batch[i],
+          firstSlot: results[i][0].start_time,
+          slotsCount: results[i].length,
         });
       }
-    } catch {
-      // Skip dates that error (e.g. invalid)
-      continue;
     }
   }
 

@@ -465,7 +465,19 @@ export async function getAvailability(params: {
           chosenSecondaryName = sec.name;
           break;
         }
-        if (!chosenSecondaryId) continue; // no secondary available -> drop
+        if (!chosenSecondaryId) {
+          // For merchants with no other publicly-visible staff (solo
+          // practitioner), fall back to single-staff behavior: keep the
+          // slot with secondary=null. getStaffBlockedWindows already
+          // handles secondaryStaffId=null by blocking the primary for
+          // the full span, so future availability stays correct.
+          // For multi-staff merchants where every secondary was busy,
+          // keep the strict drop.
+          const hasAnyOtherStaff = candidateSecondaryPool.some(
+            (s) => s.id !== member.id,
+          );
+          if (hasAnyOtherStaff) continue;
+        }
       }
 
       allSlots.push({
