@@ -25,15 +25,6 @@ export const churnQueue = new Queue("churn", { connection, prefix: QUEUE_PREFIX 
 
 export const automationsQueue = new Queue("automations", { connection, prefix: QUEUE_PREFIX });
 
-// Reports queue handles the Analytics Digest pipeline. Two job types:
-//   - "tick"     fires every 15 min via a BullMQ repeatable job; the
-//                processor evaluates which configs are due in their
-//                merchant's local timezone and enqueues "generate" jobs
-//                idempotently per (config, period_start, period_end).
-//   - "generate" computes metrics, renders the email, and sends to all
-//                active recipients for one config + period.
-export const reportsQueue = new Queue("reports", { connection, prefix: QUEUE_PREFIX });
-
 // ─── Queue registry for addJob ─────────────────────────────────────────────────
 
 const queues: Record<string, Queue> = {
@@ -42,7 +33,6 @@ const queues: Record<string, Queue> = {
   vip: vipQueue,
   churn: churnQueue,
   automations: automationsQueue,
-  reports: reportsQueue,
 };
 
 // ─── Default retry options ─────────────────────────────────────────────────────
