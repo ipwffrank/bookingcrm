@@ -1550,6 +1550,149 @@ merchantBookingsRouter.put("/:id/no-show", requireMerchant, async (c) => {
   return c.json({ booking: updated });
 });
 
+// ─── Protected: PUT /merchant/bookings/:id/cancel ─────────────────────────────
+// Merchant-initiated cancellation, used when staff cancel on a customer's
+// behalf (phone-in, walk-out, etc.). Mirrors the public /cancel/:token flow:
+// applies the merchant's cancellation policy by default, processes any
+// refund, restores redeemed loyalty points, fires cancellation notifications,
+// schedules a rebooking prompt, and triggers waitlist matching for the
+// freed slot. The merchant can override policy with waive_policy=true,
+// which forces a full refund regardless of how close to start time we are.
+
+const cancelSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+  waive_policy: z.boolean().optional().default(false),
+});
+
+merchantBookingsRouter.put(
+  "/:id/cancel",
+  requireMerchant,
+  zValidator(cancelSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const bookingId = c.req.param("id")!;
+    const body = c.get("body") as z.infer<typeof cancelSchema>;
+
+    const [row] = await db
+      .select({ booking: bookings, merchant: merchants })
+      .from(bookings)
+      .innerJoin(merchants, eq(bookings.merchantId, merchants.id))
+      .where(and(eq(bookings.id, bookingId), eq(bookings.merchantId, merchantId)))
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: "Not Found", message: "Booking not found" }, 404);
+    }
+
+    const { booking, merchant } = row;
+
+    if (booking.status === "cancelled") {
+      return c.json(
+        { error: "Conflict", message: "Booking is already cancelled" },
+        409,
+      );
+    }
+
+    if (booking.status === "completed" || booking.status === "no_show") {
+      return c.json(
+        {
+          error: "Conflict",
+          message: `Cannot cancel a booking with status: ${booking.status}`,
+        },
+        409,
+      );
+    }
+
+    // Refund decision. Mirrors the public-cancel logic so column totals and
+    // accounting stay consistent regardless of who initiated the cancel.
+    let refundType: "full" | "partial" | "none" = "none";
+    let refundPercentage = 0;
+
+    if (body.waive_policy) {
+      refundType = "full";
+      refundPercentage = 100;
+    } else {
+      const policy = merchant.cancellationPolicy as {
+        free_cancellation_hours?: number;
+        late_cancellation_refund_pct?: number;
+      } | null;
+
+      const hoursUntilBooking =
+        (booking.startTime.getTime() - Date.now()) / (1000 * 60 * 60);
+
+      if (!policy) {
+        refundType = "full";
+        refundPercentage = 100;
+      } else if (
+        policy.free_cancellation_hours !== undefined &&
+        hoursUntilBooking >= policy.free_cancellation_hours
+      ) {
+        refundType = "full";
+        refundPercentage = 100;
+      } else if (
+        policy.late_cancellation_refund_pct !== undefined &&
+        policy.late_cancellation_refund_pct > 0
+      ) {
+        refundType = "partial";
+        refundPercentage = policy.late_cancellation_refund_pct;
+      }
+    }
+
+    if (booking.paymentMethod === "card" && booking.paymentStatus === "paid") {
+      // processRefund handles the Stripe refund AND sets status=cancelled.
+      await processRefund(bookingId, refundType, refundPercentage);
+      await db
+        .update(bookings)
+        .set({
+          cancelledBy: "merchant",
+          ...(body.reason ? { cancellationReason: body.reason } : {}),
+        })
+        .where(eq(bookings.id, bookingId));
+    } else {
+      await db
+        .update(bookings)
+        .set({
+          status: "cancelled",
+          cancelledAt: new Date(),
+          cancelledBy: "merchant",
+          ...(body.reason ? { cancellationReason: body.reason } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(bookings.id, bookingId));
+    }
+
+    await restoreLoyaltyOnCancel(bookingId, null);
+    await invalidateAvailabilityCacheByMerchantId(merchantId);
+
+    await addJob("notifications", "cancellation_notification", {
+      booking_id: bookingId,
+    });
+    await scheduleRebookingPrompt(bookingId);
+    await scheduleWaitlistMatchJob({
+      merchant_id: booking.merchantId,
+      staff_id: booking.staffId,
+      service_id: booking.serviceId,
+      freed_start: booking.startTime.toISOString(),
+      freed_end: booking.endTime.toISOString(),
+      notified_booking_slot_id: booking.id,
+    });
+
+    const [updated] = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, bookingId))
+      .limit(1);
+
+    return c.json({
+      booking: updated,
+      refund: {
+        type: refundType,
+        percentage: refundPercentage,
+      },
+    });
+  },
+);
+
 // ─── Protected: PATCH /merchant/bookings/:id/reschedule ──────────────────────
 
 merchantBookingsRouter.patch(
