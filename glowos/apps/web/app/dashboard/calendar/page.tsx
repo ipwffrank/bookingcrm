@@ -167,6 +167,14 @@ export default function CalendarPage() {
   const [rescheduleForm,   setRescheduleForm]   = useState({ date: '', time: '' });
   const [rescheduleSaving, setRescheduleSaving] = useState(false);
   const [rescheduleError,  setRescheduleError]  = useState<string | null>(null);
+  // Cancellation flow — inline confirm block under the drawer's action row.
+  // Mirrors the reschedule pattern so the drawer doesn't lose the user's
+  // place by opening another modal layer.
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelWaivePolicy, setCancelWaivePolicy] = useState(false);
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [showDutyModal, setShowDutyModal] = useState(false);
   const [editDuty,      setEditDuty]      = useState<Duty | null>(null);
   const [dutyForm,      setDutyForm]      = useState({ staffId: '', date: '', startTime: '09:00', endTime: '17:00', notes: '' });
@@ -490,12 +498,51 @@ export default function CalendarPage() {
     }
   }
 
+  // ── Cancel ────────────────────────────────────────────────────────────────────
+  async function handleCancel() {
+    if (!selBooking) return;
+    setCancelSaving(true);
+    setCancelError(null);
+    try {
+      const res = await apiFetch(`/merchant/bookings/${selBooking.id}/cancel`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...(cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
+          waive_policy: cancelWaivePolicy,
+        }),
+      });
+      // Surface the policy outcome in the toast so the merchant knows
+      // exactly what refund the customer will receive.
+      const refundText =
+        res?.refund?.type === 'full'
+          ? 'Full refund issued.'
+          : res?.refund?.type === 'partial'
+            ? `${res.refund.percentage}% refund issued.`
+            : 'No refund per policy.';
+      setToast({ message: `Booking cancelled. ${refundText}`, type: 'success' });
+      setShowCancelConfirm(false);
+      setCancelReason('');
+      setCancelWaivePolicy(false);
+      setSelBooking(null);
+      setClientSnippet(null);
+      await load();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Failed to cancel');
+    } finally {
+      setCancelSaving(false);
+    }
+  }
+
   // ── Client snippet fetch ──────────────────────────────────────────────────────
   async function openBooking(b: Booking) {
     setSelBooking(b);
     setClientSnippet(null);
     setShowReschedule(false);
     setRescheduleError(null);
+    setShowCancelConfirm(false);
+    setCancelError(null);
+    setCancelReason('');
+    setCancelWaivePolicy(false);
     if (!b.clientId) return;
     setSnippetLoading(true);
     try {
@@ -1532,7 +1579,7 @@ export default function CalendarPage() {
       {selBooking && (
         <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
-          <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} />
+          <div className="flex-1 bg-black/30" onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); setShowCancelConfirm(false); setCancelError(null); }} />
           {/* Panel */}
           <div className="w-full max-w-sm bg-tone-surface shadow-2xl flex flex-col font-manrope overflow-hidden">
 
@@ -1553,7 +1600,7 @@ export default function CalendarPage() {
                 {selBooking.priceSgd && (
                   <span className="text-sm font-semibold text-[#1a2313]">${parseFloat(selBooking.priceSgd).toFixed(2)}</span>
                 )}
-                <button onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }} className="p-1 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors">
+                <button onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); setShowCancelConfirm(false); setCancelError(null); }} className="p-1 rounded-lg text-grey-45 hover:text-grey-75 hover:bg-grey-15 transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -1771,7 +1818,7 @@ export default function CalendarPage() {
               )}
 
               {/* Reschedule trigger button */}
-              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showReschedule && (
+              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showReschedule && !showCancelConfirm && (
                 <button
                   onClick={() => {
                     const d = new Date(selBooking.startTime);
@@ -1789,8 +1836,79 @@ export default function CalendarPage() {
                 </button>
               )}
 
+              {/* Cancel trigger button — same lifecycle gate as reschedule
+                  (confirmed/in_progress only). Hidden while either inline
+                  form is open so the drawer footer doesn't get crowded. */}
+              {(selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && !showCancelConfirm && !showReschedule && (
+                <button
+                  onClick={() => {
+                    setShowCancelConfirm(true);
+                    setCancelError(null);
+                    setCancelReason('');
+                    setCancelWaivePolicy(false);
+                  }}
+                  className="w-full py-2 border border-semantic-danger/30 text-semantic-danger text-xs font-medium rounded-lg hover:bg-semantic-danger/5 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  Cancel Appointment
+                </button>
+              )}
+
+              {/* Cancel confirm block — applies the merchant's cancellation
+                  policy by default; the waive checkbox forces a full refund.
+                  Reason is optional and stored on bookings.cancellation_reason. */}
+              {showCancelConfirm && (selBooking.status === 'confirmed' || selBooking.status === 'in_progress') && (
+                <div className="rounded-lg border border-semantic-danger/30 bg-semantic-danger/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-semantic-danger">Cancel this appointment?</p>
+                  <p className="text-[11px] text-grey-60 leading-snug">
+                    The customer will be notified. Refund follows your cancellation policy unless waived below.
+                  </p>
+                  <div>
+                    <label className="block text-[10px] font-medium text-grey-60 uppercase tracking-wide mb-1">Reason (optional)</label>
+                    <input
+                      type="text"
+                      value={cancelReason}
+                      onChange={e => setCancelReason(e.target.value)}
+                      placeholder="e.g. Customer requested via phone"
+                      maxLength={500}
+                      className="w-full px-2 py-1.5 text-xs rounded border border-grey-30 bg-tone-surface focus:outline-none focus:ring-1 focus:ring-tone-sage"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cancelWaivePolicy}
+                      onChange={e => setCancelWaivePolicy(e.target.checked)}
+                      className="mt-0.5 rounded border-grey-30"
+                    />
+                    <span className="text-[11px] text-grey-75 leading-snug">
+                      Waive cancellation policy — issue full refund
+                    </span>
+                  </label>
+                  {cancelError && (
+                    <p className="text-[11px] text-semantic-danger">{cancelError}</p>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleCancel}
+                      disabled={cancelSaving}
+                      className="flex-1 py-1.5 px-3 bg-semantic-danger text-white text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-60 transition-colors"
+                    >
+                      {cancelSaving ? 'Cancelling…' : 'Confirm Cancellation'}
+                    </button>
+                    <button
+                      onClick={() => { setShowCancelConfirm(false); setCancelError(null); setCancelReason(''); setCancelWaivePolicy(false); }}
+                      disabled={cancelSaving}
+                      className="py-1.5 px-3 bg-grey-15 text-grey-75 text-xs font-medium rounded-lg hover:bg-grey-30 disabled:opacity-60 transition-colors"
+                    >
+                      Keep
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button
-                onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); }}
+                onClick={() => { setSelBooking(null); setClientSnippet(null); setShowReschedule(false); setRescheduleError(null); setShowCancelConfirm(false); setCancelError(null); }}
                 className="w-full py-2.5 bg-grey-15 text-grey-75 text-sm font-medium rounded-lg hover:bg-grey-15 transition-colors"
               >
                 Close
