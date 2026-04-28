@@ -19,6 +19,7 @@ interface SalonData {
     timezone: string;
     country?: 'SG' | 'MY' | null;
     paymentEnabled?: boolean;
+    paymentGateway?: 'stripe' | 'ipay88';
     operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
   };
   services: Array<{

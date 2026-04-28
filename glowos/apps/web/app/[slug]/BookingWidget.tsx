@@ -84,6 +84,7 @@ interface Merchant {
   timezone: string;
   country?: 'SG' | 'MY' | null;
   paymentEnabled?: boolean;
+  paymentGateway?: 'stripe' | 'ipay88';
   operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;
 }
 
@@ -757,6 +758,72 @@ export default function BookingWidget({
         setConfirmError(msg);
       }
     } finally {
+      setConfirmLoading(false);
+    }
+  }
+
+  async function handleIpay88Booking() {
+    if (!leaseId || !selectedService) return;
+    if (!clientName.trim()) {
+      setConfirmError('Please enter your name');
+      return;
+    }
+    if (!clientPhone.trim()) {
+      setConfirmError('Please enter your mobile number');
+      return;
+    }
+
+    setConfirmLoading(true);
+    setConfirmError('');
+    try {
+      const confirmRes = await apiFetch(`/booking/${slug}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({
+          lease_id: leaseId,
+          client_name: clientName.trim(),
+          client_phone: clientPhone.trim(),
+          client_email: clientEmail.trim() || undefined,
+          client_id: authClient?.id || undefined,
+          payment_method: 'ipay88',
+          verification_token: verificationToken ?? undefined,
+          booking_source: bookingSource,
+        }),
+      });
+      const bookingId = (confirmRes.booking as { id: string }).id;
+
+      const initiateRes = (await apiFetch(`/booking/${slug}/ipay88/initiate`, {
+        method: 'POST',
+        body: JSON.stringify({ booking_id: bookingId }),
+      })) as {
+        action: string;
+        method: string;
+        payload: Record<string, string>;
+      };
+
+      const form = document.createElement('form');
+      form.action = initiateRes.action;
+      form.method = initiateRes.method;
+      form.style.display = 'none';
+      for (const [name, value] of Object.entries(initiateRes.payload)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = String(value);
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Booking failed. Please try again.';
+      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('lease')) {
+        setLeaseId('');
+        setLeaseExpiry(null);
+        setSelectedSlot(null);
+        setStep(3);
+        setConfirmError('Your slot hold expired. Please select a new time.');
+      } else {
+        setConfirmError(msg);
+      }
       setConfirmLoading(false);
     }
   }
@@ -1443,7 +1510,9 @@ export default function BookingWidget({
                               Pay online now
                             </span>
                             <span className="block text-[11px] text-grey-60 mt-0.5">
-                              Card · PayNow · GrabPay — secures your slot instantly
+                              {merchant.paymentGateway === 'ipay88'
+                                ? 'Card · FPX · GrabPay — secures your slot instantly'
+                                : 'Card · PayNow · GrabPay — secures your slot instantly'}
                             </span>
                           </span>
                         </button>
@@ -1538,8 +1607,15 @@ export default function BookingWidget({
                         setClientActivePackages(pkgRes.packages ?? []);
                       } catch { /* ignore */ }
 
-                      // If paying by card, create PaymentIntent first
-                      if (paymentMethod === 'card' && merchant.paymentEnabled && selectedService) {
+                      // If paying by card, create PaymentIntent first.
+                      // iPay88 path skips PaymentIntent — booking + initiate
+                      // happen on the step-5 confirm click instead.
+                      if (
+                        paymentMethod === 'card' &&
+                        merchant.paymentEnabled &&
+                        merchant.paymentGateway !== 'ipay88' &&
+                        selectedService
+                      ) {
                         setConfirmLoading(true);
                         try {
                           const res = await apiFetch(`/booking/${slug}/create-payment-intent`, {
@@ -1861,7 +1937,32 @@ export default function BookingWidget({
             ) : (
               <>
             {/* Payment form (card) or confirm button (cash) */}
-            {paymentMethod === 'card' && clientSecret && stripePromise ? (
+            {paymentMethod === 'card' && merchant.paymentGateway === 'ipay88' ? (
+              <>
+                <button
+                  onClick={handleIpay88Booking}
+                  disabled={confirmLoading || countdown === 0}
+                  className="w-full rounded-2xl bg-tone-ink py-4 text-base font-bold text-white hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-lg shadow-md active:scale-[0.98]"
+                >
+                  {confirmLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Redirecting to iPay88…
+                    </span>
+                  ) : countdown === 0 ? (
+                    'Slot expired — please select a new time'
+                  ) : (
+                    `Pay ${merchant.country === 'MY' ? 'MYR' : 'SGD'} ${effectivePrice.toFixed(2)} via iPay88`
+                  )}
+                </button>
+                <p className="text-xs text-grey-45 text-center">
+                  You&apos;ll be redirected to iPay88 to choose Card, FPX or GrabPay.
+                </p>
+              </>
+            ) : paymentMethod === 'card' && clientSecret && stripePromise ? (
               <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe', variables: { colorPrimary: '#4f46e5', borderRadius: '12px' } } }}>
                 {(() => {
                   // Build the confirm URL once — used both as the redirect return_url
