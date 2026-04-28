@@ -33,6 +33,10 @@ const updateMerchantSchema = z.object({
       closed: z.boolean(),
     })
   ).optional(),
+  // Lets the merchant flip between Stripe and iPay88 from the onboarding
+  // wizard before any credentials are entered. Actual credentials still come
+  // through /merchant/payments/ipay88/connect or /payments/connect-account.
+  paymentGateway: z.enum(["stripe", "ipay88"]).optional(),
 });
 
 const upgradeToBrandSchema = z.object({
