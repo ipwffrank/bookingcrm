@@ -292,7 +292,7 @@ export function AnalyticsDigestTab({ onSaved, onError }: Props) {
           retention, and reviews — automatically.
         </p>
         <p className="text-xs text-grey-45 mt-4">
-          Available on the <strong>Multibranch</strong> plan or for any branch in a group. Currently on <strong>{tier}</strong>.
+          Available on the <strong>Multi</strong> and <strong>Brand</strong> plans. Currently on <strong>{tier}</strong>.
         </p>
       </div>
     );
