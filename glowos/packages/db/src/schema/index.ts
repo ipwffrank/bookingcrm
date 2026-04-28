@@ -26,3 +26,4 @@ export * from "./clinical-records.js";
 export * from "./automations.js";
 export * from "./loyalty.js";
 export * from "./short-links.js";
+export * from "./analytics-digest.js";
