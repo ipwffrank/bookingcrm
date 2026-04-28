@@ -97,33 +97,44 @@ bookingGroupsRouter.post(
     // operating hours first, then books.)
     {
       const ctx = await loadMerchantHoursContext(merchantId);
-      if (ctx.operatingHours) {
-        for (let i = 0; i < body.services.length; i++) {
-          const row = body.services[i];
-          if (!row.start_time) continue;
-          const violation = outsideHoursViolation(
-            row.start_time,
-            ctx.operatingHours,
-            ctx.timezone,
+      // Fail-secure: if operatingHours is null/empty, we block. The merchant
+      // hasn't told us when they're open, so we can't verify the booking is
+      // valid — refuse rather than silently allow.
+      if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+          },
+          403,
+        );
+      }
+      for (let i = 0; i < body.services.length; i++) {
+        const row = body.services[i];
+        if (!row.start_time) continue;
+        const violation = outsideHoursViolation(
+          row.start_time,
+          ctx.operatingHours,
+          ctx.timezone,
+        );
+        if (violation === "closed") {
+          return c.json(
+            {
+              error: "Forbidden",
+              message: `Service ${i + 1} falls on a day the merchant is closed.`,
+            },
+            403,
           );
-          if (violation === "closed") {
-            return c.json(
-              {
-                error: "Forbidden",
-                message: `Service ${i + 1} falls on a day the merchant is closed.`,
-              },
-              403,
-            );
-          }
-          if (violation === "outside") {
-            return c.json(
-              {
-                error: "Forbidden",
-                message: `Service ${i + 1} is outside operating hours.`,
-              },
-              403,
-            );
-          }
+        }
+        if (violation === "outside") {
+          return c.json(
+            {
+              error: "Forbidden",
+              message: `Service ${i + 1} is outside operating hours.`,
+            },
+            403,
+          );
         }
       }
     }
@@ -583,33 +594,44 @@ bookingGroupsRouter.patch(
     // patch would land outside hours, reject before we even try to mutate.
     {
       const ctx = await loadMerchantHoursContext(merchantId);
-      if (ctx.operatingHours) {
-        for (let i = 0; i < body.services.length; i++) {
-          const row = body.services[i];
-          if (!row.start_time) continue;
-          const violation = outsideHoursViolation(
-            row.start_time,
-            ctx.operatingHours,
-            ctx.timezone,
+      // Fail-secure: if operatingHours is null/empty, we block. The merchant
+      // hasn't told us when they're open, so we can't verify the booking is
+      // valid — refuse rather than silently allow.
+      if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+          },
+          403,
+        );
+      }
+      for (let i = 0; i < body.services.length; i++) {
+        const row = body.services[i];
+        if (!row.start_time) continue;
+        const violation = outsideHoursViolation(
+          row.start_time,
+          ctx.operatingHours,
+          ctx.timezone,
+        );
+        if (violation === "closed") {
+          return c.json(
+            {
+              error: "Forbidden",
+              message: `Service ${i + 1} falls on a day the merchant is closed.`,
+            },
+            403,
           );
-          if (violation === "closed") {
-            return c.json(
-              {
-                error: "Forbidden",
-                message: `Service ${i + 1} falls on a day the merchant is closed.`,
-              },
-              403,
-            );
-          }
-          if (violation === "outside") {
-            return c.json(
-              {
-                error: "Forbidden",
-                message: `Service ${i + 1} is outside operating hours.`,
-              },
-              403,
-            );
-          }
+        }
+        if (violation === "outside") {
+          return c.json(
+            {
+              error: "Forbidden",
+              message: `Service ${i + 1} is outside operating hours.`,
+            },
+            403,
+          );
         }
       }
     }

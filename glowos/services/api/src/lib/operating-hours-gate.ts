@@ -95,13 +95,25 @@ export function outsideHoursViolation(
 /**
  * Helper for endpoints to assert a single start_time is within hours. Returns
  * a 403 response payload when the time is out, or null when it's fine.
+ *
+ * Fail-secure: if operatingHours is null/empty (merchant never configured),
+ * we treat it as a hard block. The merchant has to set hours explicitly
+ * before any booking can be created. Previously this returned null (allow),
+ * which meant a misconfigured merchant could book any time and the user
+ * couldn't tell why the gate wasn't firing.
  */
 export function buildHoursViolationResponse(
   startTimeIso: string,
   ctx: MerchantHoursContext,
   serviceLabel: string = "Booking",
 ): { error: string; message: string } | null {
-  if (!ctx.operatingHours) return null;
+  if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+    return {
+      error: "Forbidden",
+      message:
+        "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+    };
+  }
   const v = outsideHoursViolation(startTimeIso, ctx.operatingHours, ctx.timezone);
   if (v === "closed") {
     return {

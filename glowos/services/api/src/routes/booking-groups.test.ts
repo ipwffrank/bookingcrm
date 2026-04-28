@@ -190,10 +190,24 @@ describe("POST /merchant/bookings/group — secondary staff validation", () => {
     const PRIMARY_ID = "22222222-2222-2222-2222-222222222222";
     const SECONDARY_ID = "33333333-3333-3333-3333-333333333333";
 
-    // Operating-hours gate runs first now (universal — no owner exemption).
-    // Push a row with operatingHours=null so the gate sees nothing to enforce
-    // and falls through to the rest of the handler.
-    _selectQueue.push([{ operatingHours: null }]);
+    // Operating-hours gate runs first now (universal — no owner exemption,
+    // and fail-secure if hours are null). Push a configured 24-hour window
+    // for the booking's day so the gate passes and the test can reach the
+    // secondary-staff validation it's actually checking.
+    _selectQueue.push([
+      {
+        operatingHours: {
+          monday: { open: "00:00", close: "23:59", closed: false },
+          tuesday: { open: "00:00", close: "23:59", closed: false },
+          wednesday: { open: "00:00", close: "23:59", closed: false },
+          thursday: { open: "00:00", close: "23:59", closed: false },
+          friday: { open: "00:00", close: "23:59", closed: false },
+          saturday: { open: "00:00", close: "23:59", closed: false },
+          sunday: { open: "00:00", close: "23:59", closed: false },
+        },
+        timezone: "Asia/Singapore",
+      },
+    ]);
     // Service rows lookup: returns one service with no pre/post buffer
     _selectQueue.push([
       {

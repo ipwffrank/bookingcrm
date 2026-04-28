@@ -891,22 +891,30 @@ merchantBookingsRouter.post(
     // Operating-hours gate — same rule as the group create path. Single-
     // booking and group-booking endpoints both write into the same bookings
     // table; both need to enforce the same constraint.
-    {
+    if (body.start_time) {
       const ctx = await loadMerchantHoursContext(merchantId);
-      if (ctx.operatingHours && body.start_time) {
-        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
-        if (v === "closed") {
-          return c.json(
-            { error: "Forbidden", message: "Booking falls on a day the merchant is closed." },
-            403,
-          );
-        }
-        if (v === "outside") {
-          return c.json(
-            { error: "Forbidden", message: "Booking is outside operating hours." },
-            403,
-          );
-        }
+      if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+          },
+          403,
+        );
+      }
+      const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+      if (v === "closed") {
+        return c.json(
+          { error: "Forbidden", message: "Booking falls on a day the merchant is closed." },
+          403,
+        );
+      }
+      if (v === "outside") {
+        return c.json(
+          { error: "Forbidden", message: "Booking is outside operating hours." },
+          403,
+        );
       }
     }
 
@@ -1558,20 +1566,28 @@ merchantBookingsRouter.patch(
     // to still fall inside hours.
     if (body.start_time) {
       const ctx = await loadMerchantHoursContext(merchantId);
-      if (ctx.operatingHours) {
-        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
-        if (v === "closed") {
-          return c.json(
-            { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
-            403,
-          );
-        }
-        if (v === "outside") {
-          return c.json(
-            { error: "Forbidden", message: "New time is outside operating hours." },
-            403,
-          );
-        }
+      if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+          },
+          403,
+        );
+      }
+      const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+      if (v === "closed") {
+        return c.json(
+          { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
+          403,
+        );
+      }
+      if (v === "outside") {
+        return c.json(
+          { error: "Forbidden", message: "New time is outside operating hours." },
+          403,
+        );
       }
     }
 
@@ -1718,20 +1734,28 @@ merchantBookingsRouter.patch(
     // create-then-edit-to-out-of-hours bypass.
     if (body.start_time) {
       const ctx = await loadMerchantHoursContext(merchantId);
-      if (ctx.operatingHours) {
-        const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
-        if (v === "closed") {
-          return c.json(
-            { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
-            403,
-          );
-        }
-        if (v === "outside") {
-          return c.json(
-            { error: "Forbidden", message: "New time is outside operating hours." },
-            403,
-          );
-        }
+      if (!ctx.operatingHours || Object.keys(ctx.operatingHours).length === 0) {
+        return c.json(
+          {
+            error: "Forbidden",
+            message:
+              "Operating hours are not configured for this merchant. Set them in Settings → Operating Hours first.",
+          },
+          403,
+        );
+      }
+      const v = outsideHoursViolation(body.start_time, ctx.operatingHours, ctx.timezone);
+      if (v === "closed") {
+        return c.json(
+          { error: "Forbidden", message: "New time falls on a day the merchant is closed." },
+          403,
+        );
+      }
+      if (v === "outside") {
+        return c.json(
+          { error: "Forbidden", message: "New time is outside operating hours." },
+          403,
+        );
       }
     }
 
