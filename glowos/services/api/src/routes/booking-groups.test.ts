@@ -73,6 +73,10 @@ vi.mock("@glowos/db", () => ({
   clientPackages: {},
   packageSessions: {},
   servicePackages: {},
+  // merchants is read by the operating-hours gate that runs at the top of
+  // the create handler. Tests don't model hours so the gate must see null
+  // and skip — push an empty row at the head of the select queue per test.
+  merchants: { id: "merchants.id", operatingHours: "merchants.operatingHours" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -186,6 +190,10 @@ describe("POST /merchant/bookings/group — secondary staff validation", () => {
     const PRIMARY_ID = "22222222-2222-2222-2222-222222222222";
     const SECONDARY_ID = "33333333-3333-3333-3333-333333333333";
 
+    // Operating-hours gate runs first now (universal — no owner exemption).
+    // Push a row with operatingHours=null so the gate sees nothing to enforce
+    // and falls through to the rest of the handler.
+    _selectQueue.push([{ operatingHours: null }]);
     // Service rows lookup: returns one service with no pre/post buffer
     _selectQueue.push([
       {

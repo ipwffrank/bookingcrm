@@ -84,26 +84,14 @@ bookingGroupsRouter.post(
   async (c) => {
     const merchantId = c.get("merchantId")!;
     const userId = c.get("userId")!;
-    const userRole = c.get("userRole") as
-      | "owner"
-      | "manager"
-      | "clinician"
-      | "staff"
-      | undefined;
-    // Brand admins viewing another branch get a synthetic userRole='owner'
-    // from the auth middleware (they hold owner-equivalent authority within
-    // their group), but they're not the *local* signup owner of the viewed
-    // branch. For the operating-hours override specifically, only the local
-    // owner gets that authority — other branches' owners are bound to the
-    // viewed branch's stated hours just like a manager would be.
-    const viewingMerchantId = c.get("viewingMerchantId");
-    const isLocalOwner = userRole === "owner" && !viewingMerchantId;
     const body = c.get("body") as z.infer<typeof createGroupSchema>;
 
-    // Operating-hours gate. Only the local owner can override; managers,
-    // clinicians, staff, and brand admins viewing this branch are all bound
-    // to the merchant's stated hours.
-    if (!isLocalOwner) {
+    // Operating-hours gate — applies to EVERYONE, owner included. Operating
+    // hours represent when the merchant is actually open; there's no
+    // legitimate runtime case for booking outside them. (If a clinic genuinely
+    // wants to take an after-hours appointment, the owner extends the
+    // operating hours first, then books.)
+    {
       const [merchantRow] = await db
         .select({ operatingHours: merchants.operatingHours })
         .from(merchants)
@@ -119,7 +107,7 @@ bookingGroupsRouter.post(
             return c.json(
               {
                 error: "Forbidden",
-                message: `Service ${i + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`,
+                message: `Service ${i + 1} falls on a day the merchant is closed.`,
               },
               403,
             );
@@ -128,7 +116,7 @@ bookingGroupsRouter.post(
             return c.json(
               {
                 error: "Forbidden",
-                message: `Service ${i + 1} is outside operating hours. Only the owner can book outside operating hours.`,
+                message: `Service ${i + 1} is outside operating hours.`,
               },
               403,
             );

@@ -597,28 +597,6 @@ export function BookingForm(props: BookingFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientPhone, mode]);
 
-  // Current user's role for the purpose of the operating-hours override.
-  // Only the *local* owner of THIS merchant can override after-hours. A brand
-  // admin viewing another branch (brandViewing=true) is owner-equivalent for
-  // most RBAC purposes but is intentionally NOT treated as the local owner
-  // here — the local merchant's actual signup owner is the only authority on
-  // out-of-hours appointments at that location.
-  const currentRole = (() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const u = JSON.parse(localStorage.getItem('user') ?? '{}');
-      const isBrandViewing = localStorage.getItem('brandViewing') === 'true';
-      const role = (u.role ?? null) as 'owner' | 'manager' | 'clinician' | 'staff' | null;
-      // When viewing-as-branch, downgrade owner→manager for hours-gate purposes.
-      // Other RBAC checks elsewhere already use the synthetic owner role from
-      // the JWT and stay unchanged.
-      if (isBrandViewing && role === 'owner') return 'manager';
-      return role;
-    } catch {
-      return null;
-    }
-  })();
-
   // Pre-submit guard summary. Drives both the warning banner above the
   // form and the early-return checks in handleSubmit. Computing it here
   // (vs. inside handleSubmit) means the user sees the violation before
@@ -662,14 +640,15 @@ export function BookingForm(props: BookingFormProps) {
       }
     });
 
-    const blocksOwner = staffBusyViolations.length > 0;
-    const blocksNonOwner = blocksOwner || outsideHoursViolations.length > 0;
+    // Both classes of violation block submit for everyone, owner included.
+    // Operating hours and double-bookings reflect real-world constraints
+    // (the merchant isn't open / the staff isn't free) — there's no
+    // legitimate scenario where overriding the alert at runtime helps.
+    const blocks = staffBusyViolations.length > 0 || outsideHoursViolations.length > 0;
     return {
       outsideHoursViolations,
       staffBusyViolations,
-      blocksOwner,
-      blocksNonOwner,
-      blocks: currentRole === 'owner' ? blocksOwner : blocksNonOwner,
+      blocks,
     };
   })();
 
@@ -693,23 +672,21 @@ export function BookingForm(props: BookingFormProps) {
       return;
     }
 
-    // Block out-of-hours bookings for non-owners. The owner can still
-    // override — sometimes a clinic genuinely runs an after-hours
-    // appointment and only the boss should authorise it. We surface
-    // the same violations as a banner above the form (see
-    // submitGuard) so the user sees the warning before they click.
-    if (currentRole !== 'owner' && submitGuard.outsideHoursViolations.length > 0) {
+    // Block out-of-hours bookings for everyone — operating hours reflect
+    // when the merchant is actually open. We surface the same violations
+    // as a banner above the form (see submitGuard) so the user sees the
+    // alert before they click.
+    if (submitGuard.outsideHoursViolations.length > 0) {
       const first = submitGuard.outsideHoursViolations[0];
       setApiError(
         first.violation === 'closed'
-          ? `Service ${first.index + 1} falls on a day the merchant is closed. Only the owner can book outside operating hours.`
-          : `Service ${first.index + 1} is outside operating hours. Only the owner can book outside operating hours.`,
+          ? `Service ${first.index + 1} falls on a day the merchant is closed.`
+          : `Service ${first.index + 1} is outside operating hours.`,
       );
       return;
     }
 
-    // Block double-booking. Even an owner can't intentionally double-book
-    // a real staff member — the backend rejects it too, this just gives
+    // Block double-booking. The backend rejects it too — this just gives
     // earlier, friendlier feedback.
     if (submitGuard.staffBusyViolations.length > 0) {
       const first = submitGuard.staffBusyViolations[0];
@@ -841,24 +818,25 @@ export function BookingForm(props: BookingFormProps) {
             {apiError}
           </div>
         )}
-        {/* Pre-submit warning banner — surfaces every operating-hours / staff-
-            conflict violation in one place so the user sees it before clicking
-            save. The same conditions also disable the submit button. */}
+        {/* Pre-submit alert banner — same visual treatment as the inline
+            "Selected staff is busy" warning ServiceRow shows under each
+            row, just aggregated at the top so the user sees ALL violations
+            (operating-hours + staff conflicts) in one place. The same
+            conditions also disable the submit button. */}
         {(submitGuard.outsideHoursViolations.length > 0 || submitGuard.staffBusyViolations.length > 0) && (
           <div className="mb-4 rounded-lg bg-semantic-warn/5 border border-semantic-warn/40 px-4 py-3 text-sm text-semantic-warn">
-            <p className="font-semibold mb-1">⚠ Cannot save yet — resolve below:</p>
+            <p className="font-semibold mb-1">⚠ Cannot save — resolve the issues below first.</p>
             <ul className="list-disc pl-5 space-y-0.5 text-xs">
               {submitGuard.outsideHoursViolations.map((v) => (
                 <li key={`oh-${v.index}`}>
                   Service {v.index + 1} — {v.violation === 'closed'
                     ? 'falls on a day the merchant is closed'
-                    : 'is outside operating hours'}
-                  {currentRole !== 'owner' ? ' (only the owner can override)' : ''}
+                    : 'is outside operating hours'}.
                 </li>
               ))}
               {submitGuard.staffBusyViolations.map((v) => (
                 <li key={`sb-${v.index}`}>
-                  Service {v.index + 1} — selected staff is already booked at that time (busy until {v.busyUntil})
+                  Service {v.index + 1} — selected staff is already booked at that time (busy until {v.busyUntil}).
                 </li>
               ))}
             </ul>
