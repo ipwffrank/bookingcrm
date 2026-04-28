@@ -1604,7 +1604,7 @@ export default function BookingWidget({
                       : paymentMethod === 'card'
                       ? 'Continue to Payment'
                       : paymentMethod === 'cash'
-                      ? 'Continue to Review'
+                      ? 'Continue to Booking'
                       : 'Choose a payment method above'}
                   </button>
                 </>
