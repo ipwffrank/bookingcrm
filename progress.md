@@ -1,5 +1,79 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 27 April 2026 (Session 20)**
+**Last updated: 28 April 2026 (Session 21)**
+
+---
+
+## What's Completed (Session 21 — 28 April 2026)
+
+A long, productive day capped by an incident. Thirteen PRs — six clean feature ships, four boot-hang chase PRs (later reverted), the emergency revert, plus two recovery PRs that brought the digest feature in cleanly the second time. One Neon migration (`0019_add_analytics_digest`), applied once via auto-migrate (which crashed prod) and again via a one-shot manual SQL block on Neon's SQL Editor (clean). Working again by end of day.
+
+### Pre-pilot bug sweep (clean ships)
+
+#### Service-form cleanup ✅ (PR #50)
+Removed the legacy `Buffer (legacy)` input from both the dashboard service modal (`app/dashboard/services/page.tsx`) and the onboarding wizard's Step 2 (`app/onboarding/page.tsx`). Pre-buffer + Post-buffer remain — they own the secondary-staff prep/cleanup windows. The `services.buffer_minutes` DB column is preserved so existing values survive; the UI just no longer surfaces or edits them.
+
+#### Onboarding payment-gateway picker ✅ (PR #51)
+Step 4 of the onboarding wizard now opens with a Stripe / iPay88 picker that defaults to `merchant.paymentGateway`, falling back to country (`MY` → iPay88, otherwise Stripe). Picker writes through `PUT /merchant/me` (added `paymentGateway` to the existing zod schema). iPay88 path shows an explainer + button to `/dashboard/settings/ipay88` since iPay88 has no inline OAuth like Stripe. Closes the gap from PR #48 where the MY default was wired into signup + dashboard settings + super console but the onboarding wizard still hard-coded the Stripe Connect card.
+
+#### Availability — solo-staff bug + perf ✅ (PR #52)
+Three related fixes. **Root cause** for K-Dentistry's "long spinner → no availability": when a service has pre/post buffer, the slot algorithm tries to assign a secondary staff to own the prep/cleanup window. For merchants with only one publicly-visible staff there's no candidate secondary, so every slot was being dropped. Now: when the candidate secondary pool is empty after excluding the primary, fall back to single-staff behaviour (slot kept with `secondary=null`; `getStaffBlockedWindows` already handles that by blocking the primary for the full pre+service+post span). Multi-staff merchants where every secondary happens to be busy still see the strict drop. **Perf:** `/next-available` was 30 sequential DB round-trips on a fully-empty search (10–30 s). Now parallel batches of 5; earliest match wins within each batch. **UX:** widget releases the main "Loading available times…" spinner as soon as `/availability` returns; the existing "Searching for next available slot…" pill takes over while the background sweep runs.
+
+#### Calendar day-view: per-staff revenue ✅ (PR #53)
+Right-aligned daily revenue figure on each staff column header in the day view, paired with the existing utilization bar. Excludes cancelled bookings (matches the day-footer total filter). Compact format $0 · $123 · $1.2k · $12k. Sage tint when revenue > 0, grey otherwise. `title` attribute carries the unrounded value for hover precision.
+
+#### Merchant-side cancel button ✅ (PR #54 + #55)
+Two surface drops for one feature. **Backend** (PR #54): `PUT /merchant/bookings/:id/cancel` mirrors the public `/cancel/:token` flow — applies the merchant's cancellation policy by default, processes Stripe refund where applicable, restores redeemed loyalty points, fires customer notification, schedules rebooking prompt, triggers waitlist matcher. Sets `cancelled_by='merchant'` and stores optional `cancellation_reason`. `waive_policy: true` flag forces a full refund. **Frontend** (PR #54): inline confirm block in the calendar drawer. **Frontend** (PR #55): same flow on the dashboard appointments list (`BookingCard`) and the client profile's Upcoming section, both via a new shared `CancelBookingDialog` component (modal pattern fits list views; the calendar drawer's inline pattern fits the drawer-as-workspace UX).
+
+### Analytics Digest — multi-agent brainstorm + PR 1 (the long arc)
+
+#### Design pass via three specialist agents ✅
+Frank framed the feature: scheduled AI-generated email reports for owners and managers, owner-controlled recipients, weekly / monthly / yearly cadence, group-owner sees consolidated rollups on top of standalone branches. I dispatched three parallel agents — `backend-architect`, `frontend-architect`, `business-panel-experts` — and synthesised their output into a four-PR roadmap:
+- **PR 1** — schema + recipient mgmt UI + scheduler + numeric email template (no AI). ✅ Done today.
+- **PR 2** — Gemini 1.5 Flash AI prose suggestions (free tier, ~10 calls/day at pilot scale, well under 1500/day limit).
+- **PR 3** — group-scope rollup reports (per-branch comparison + outliers).
+- **PR 4** — Add utilization / cohort retention / rebook-lag metrics to the analytics page (also strengthens future AI suggestions). Business panel flagged these as the most missing analytics — they let the AI say "you have capacity" vs "you're constrained."
+
+#### PR 1 — first attempt ❌→✅ (#56 → #57 → #58 → #59 → reverted via #60 → re-landed via #62)
+**What landed in #56:** Migration 0019 (4 tables — `analytics_digest_configs / recipients / runs / deliveries`), `analytics-aggregator.ts` (5 KPIs + prior-period deltas + tactical highlights), `analytics-digest-email.ts` (phone-first inline-styled HTML, three cadence variants), routes `/merchant/analytics-digest/{config,recipients,runs,test-send,eligible-users}` with owner-only mutation gate, BullMQ `reports` queue + `report.worker.ts` (15-min `tick` repeatable + idempotent `generate` jobs), Settings → Analytics Digest tab (9th tab) with three views (owner edit / non-owner read-only / Starter-tier upsell), auto-seed of every active owner to recipients on first config save.
+
+**What broke:** PR #57 added a `migrate.ts` script wired into the Dockerfile to auto-run migrations on container start. Crashed initially because the path to `migrations/` was wrong (off-by-one in `..` segments → fixed in #58). Then crashed again because `__drizzle_migrations` was empty on prod (drizzle never tracked the migrations Frank had previously applied via `pnpm db:migrate`'s reset in Session 18) and the migrator tried to re-apply 0015's `ALTER TABLE merchants ADD COLUMN is_pilot` against an existing column. PR #59 added a "bootstrap" path: when the tracking table is empty AND `merchants` has ≥ 20 columns (mature schema), insert hashes for every prior migration so only the newest actually runs.
+
+**The hang:** PR #59 deployed, bootstrap inserted 18 hashes, drizzle's `migrate()` ran 0019 cleanly… and then the API never came up. TLS handshake completed but no HTTP response. **Root cause (post-mortem):** my `migrate.ts` had `await pool.end()` in the `finally` block and no explicit `process.exit(0)` on success. On Neon serverless `pool.end()` can hang indefinitely with a half-closed connection; the shell's `&&` kept waiting for `migrate.ts` to exit, so `exec npx tsx src/index.ts` never ran. Container alive (shell), no HTTP listener.
+
+**Recovery:** PR #60 reverted #56–#59 to restore the old container; login worked again within minutes.
+
+#### Recovery + clean re-land ✅ (#61 + manual SQL + #62)
+- **One-shot SQL block** applied to prod via Neon SQL Editor: dropped the orphan `analytics_digest_*` tables created by the broken deploy, recreated `drizzle.__drizzle_migrations` from scratch, applied migration 0019, then INSERT'd hashes for all 20 migrations (sha256 of each `.sql` file, computed locally) so future drizzle migrate runs see a consistent state. Verified: `migration_count: 20`, four `analytics_digest_*` tables present.
+- **PR #61** — hardened standalone `migrate.ts`. **Dormant by design** (no Dockerfile change). Hardening: explicit `process.exit(0)` on success, 60-second hard wall-clock timeout, fire-and-forget `pool.end()`. Runnable via `pnpm --filter @glowos/api migrate`. Plan: burn it in via manual invocation for a few migrations before re-introducing the Dockerfile auto-call.
+- **PR #62** — re-landed the digest code with two fixes layered on top: (1) tier check uses `multibranch` (the actual paid tier value) AND unlocks for any merchant with non-null `group_id` (covers brand-invite legacy paths like Aura Orchard); (2) `report.worker.ts` gained the same `retryStrategy: (times) => Math.min(times * 2000, 30000)` connection option that the existing notification / crm / vip / automation workers all have.
+
+### Operational lessons logged
+- **Auto-migrate on container boot is high-risk.** A successful migration that doesn't exit cleanly stops the API from ever starting, but Railway's edge keeps accepting TCP connections — looks like a hang, not a crash, so deploy doesn't get marked failed and old container can be evicted. Mitigations now in place: explicit `process.exit(0)`, hard timeout, dormant for now until manually validated.
+- **Drizzle migration tracking can drift from actual schema** when migrations are applied outside drizzle-kit (Session 18 reset is the canonical example). The bootstrap pattern handles this for first-time recovery; long-term we just keep using drizzle-kit consistently and avoid the drift.
+- **Decouple schema migrations from code deploys** for paid-feature rollouts. The schema can be applied independently via Neon SQL Editor with full visibility, and the code deploy stays a pure code change with a clean rollback path.
+
+### Schema migrations applied to prod Neon
+- `0019_add_analytics_digest.sql` — 4 new tables (configs / recipients / runs / deliveries). Applied manually via Neon SQL Editor after the auto-migrate path was abandoned. `drizzle.__drizzle_migrations` now populated with all 20 hashes (0000–0019).
+
+### Roadmap — next slots
+
+**AI analytics digest follow-ups:**
+- **PR 2** — Gemini 1.5 Flash integration for AI prose suggestions in the email body. Numeric values stay in the template (no LLM hallucination on numbers); LLM only fills the "Strategy suggestions" prose section. Anti-pattern guards: no specific pricing changes, no staffing decisions, no medical claims, no suggestions when the underlying KPI has < 30 bookings.
+- **PR 3** — Group-scope rollup reports. Configs schema already supports `scope='group'` so no migration needed. Per-branch comparison table, outlier flagging (>1.5σ from group mean), cross-branch pattern detection ("Tuesday weakness across 4 of 5 branches").
+- **PR 4** — Add utilization / cohort retention / rebook lag distribution to the analytics page. Strengthens both the analytics page itself AND the AI suggestion quality (Patterns B/C/D from the business-panel framework all need these to produce non-generic recommendations).
+
+**Auto-migrate (decoupled):**
+- After PR #61's hardened script burns in via a few manual invocations, a small follow-up PR can re-introduce the Dockerfile auto-call — but with a Railway healthcheck on `/health` so any future hang gets caught and rolled back automatically within ~30 s.
+
+**Operationally urgent (carried from Session 20):**
+- Tests + CI gating merges. PR #56–#59 shipped without integration tests for the digest pipeline; the boot-hang would have been caught by a smoke test of the API container before merge.
+- `.gitignore` cleanup — `.superpowers/` brainstorm artifacts and worktree leftovers occasionally sneak in.
+
+**Product depth (clinic ICP):**
+- Photo-during-record-creation drag-and-drop (carried from Session 20).
+- Granular RBAC: clinician role separate from manager (carried from Session 20).
+- Photo attachment storage migration to private bucket + signed URLs (carried).
+- Encryption at rest for `clinical_records.body` via `pgcrypto` (carried).
 
 ---
 
