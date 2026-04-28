@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import type {
@@ -611,8 +612,14 @@ export function BookingForm(props: BookingFormProps) {
   // (vs. inside handleSubmit) means the user sees the violation before
   // they click, not after.
   const submitGuard = (() => {
+    // Hours-not-configured is its own violation type. Without configured
+    // hours we can't enforce anything — the gate must fail-secure here so
+    // the user gets a clear instruction (configure hours first) rather
+    // than silently allowing every booking through.
+    const hoursMissing =
+      !operatingHours || Object.keys(operatingHours).length === 0;
     const outsideHoursViolations: Array<{ index: number; violation: 'closed' | 'outside' }> = [];
-    if (operatingHours) {
+    if (operatingHours && !hoursMissing) {
       rows.forEach((r, i) => {
         const v = outsideHoursViolation(r.startTime, operatingHours, merchantTimezone);
         if (v) outsideHoursViolations.push({ index: i, violation: v });
@@ -649,12 +656,15 @@ export function BookingForm(props: BookingFormProps) {
       }
     });
 
-    // Both classes of violation block submit for everyone, owner included.
-    // Operating hours and double-bookings reflect real-world constraints
-    // (the merchant isn't open / the staff isn't free) — there's no
-    // legitimate scenario where overriding the alert at runtime helps.
-    const blocks = staffBusyViolations.length > 0 || outsideHoursViolations.length > 0;
+    // All three classes of violation block submit for everyone. Operating
+    // hours and double-bookings reflect real-world constraints; missing
+    // hours = misconfiguration that the user has to resolve in Settings.
+    const blocks =
+      hoursMissing ||
+      staffBusyViolations.length > 0 ||
+      outsideHoursViolations.length > 0;
     return {
+      hoursMissing,
       outsideHoursViolations,
       staffBusyViolations,
       blocks,
@@ -685,6 +695,12 @@ export function BookingForm(props: BookingFormProps) {
     // when the merchant is actually open. We surface the same violations
     // as a banner above the form (see submitGuard) so the user sees the
     // alert before they click.
+    if (submitGuard.hoursMissing) {
+      setApiError(
+        'Operating hours are not configured. Set them in Settings → Operating Hours before creating a booking.',
+      );
+      return;
+    }
     if (submitGuard.outsideHoursViolations.length > 0) {
       const first = submitGuard.outsideHoursViolations[0];
       setApiError(
@@ -832,7 +848,19 @@ export function BookingForm(props: BookingFormProps) {
             row, just aggregated at the top so the user sees ALL violations
             (operating-hours + staff conflicts) in one place. The same
             conditions also disable the submit button. */}
-        {(submitGuard.outsideHoursViolations.length > 0 || submitGuard.staffBusyViolations.length > 0) && (
+        {submitGuard.hoursMissing && (
+          <div className="mb-4 rounded-lg bg-semantic-danger/5 border border-semantic-danger/40 px-4 py-3 text-sm text-semantic-danger">
+            <p className="font-semibold mb-1">⚠ Operating hours not configured.</p>
+            <p className="text-xs">
+              No bookings can be created until you set operating hours.{' '}
+              <Link href="/dashboard/settings?tab=hours" className="underline font-semibold">
+                Configure in Settings → Operating Hours
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+        {!submitGuard.hoursMissing && (submitGuard.outsideHoursViolations.length > 0 || submitGuard.staffBusyViolations.length > 0) && (
           <div className="mb-4 rounded-lg bg-semantic-warn/5 border border-semantic-warn/40 px-4 py-3 text-sm text-semantic-warn">
             <p className="font-semibold mb-1">⚠ Cannot save — resolve the issues below first.</p>
             <ul className="list-disc pl-5 space-y-0.5 text-xs">
