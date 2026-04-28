@@ -93,16 +93,20 @@ bookingGroupsRouter.post(
     // operating hours first, then books.)
     {
       const [merchantRow] = await db
-        .select({ operatingHours: merchants.operatingHours })
+        .select({
+          operatingHours: merchants.operatingHours,
+          timezone: merchants.timezone,
+        })
         .from(merchants)
         .where(eq(merchants.id, merchantId))
         .limit(1);
       const ohours = merchantRow?.operatingHours ?? null;
+      const tz = merchantRow?.timezone ?? "Asia/Singapore";
       if (ohours) {
         for (let i = 0; i < body.services.length; i++) {
           const row = body.services[i];
           if (!row.start_time) continue;
-          const violation = outsideHoursViolation(row.start_time, ohours);
+          const violation = outsideHoursViolation(row.start_time, ohours, tz);
           if (violation === "closed") {
             return c.json(
               {
@@ -976,30 +980,62 @@ bookingGroupsRouter.patch(
  * if it falls inside open hours. Mirrors the frontend guard so non-owners
  * can't bypass the UI block by hitting the API directly.
  */
+/**
+ * Operating-hours violation check, in the merchant's timezone.
+ *
+ * Critical: operating_hours are merchant-local clock times (e.g. "09:00"–"19:00"
+ * means 9 AM – 7 PM in the merchant's tz). This server runs in UTC, so naive
+ * `d.getDay()` / `d.getHours()` returns UTC values — for a 6 AM SGT booking
+ * those would be the previous day's UTC hour, leading to wrong-day or wrong-
+ * window comparisons that previously let bookings slip through. We use
+ * Intl.DateTimeFormat with the merchant's timezone to extract weekday + HH:MM
+ * in the right frame.
+ *
+ * Missing days in operating_hours map → treated as "closed". A merchant who
+ * configured Mon–Fri but not Sat/Sun should not silently allow Saturday
+ * bookings.
+ */
 function outsideHoursViolation(
   iso: string,
   operatingHours: Record<string, { open: string; close: string; closed: boolean }>,
+  timezone: string,
 ): "closed" | "outside" | null {
   if (!iso) return null;
-  let d: Date;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+
+  let weekday: string;
+  let hour: number;
+  let minute: number;
   try {
-    d = new Date(iso);
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(d);
+    weekday = (parts.find((p) => p.type === "weekday")?.value ?? "").toLowerCase();
+    hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "", 10);
+    minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "", 10);
   } catch {
     return null;
   }
-  if (Number.isNaN(d.getTime())) return null;
-  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const dayKey = dayNames[d.getDay()];
-  if (!dayKey) return null;
-  const day = operatingHours[dayKey];
-  if (!day) return null;
-  if (day.closed) return "closed";
+  if (!weekday || Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  // Intl returns "24" for midnight in some locales — clamp.
+  if (hour === 24) hour = 0;
+
+  const day = operatingHours[weekday];
+  // Missing day = closed. Explicit closed flag = closed.
+  if (!day || day.closed) return "closed";
+
   const [oh, om] = day.open.split(":").map((n) => parseInt(n, 10));
   const [ch, cm] = day.close.split(":").map((n) => parseInt(n, 10));
   if ([oh, om, ch, cm].some((n) => Number.isNaN(n))) return null;
   const open = oh * 60 + om;
   const close = ch * 60 + cm;
-  const min = d.getHours() * 60 + d.getMinutes();
+  const min = hour * 60 + minute;
   if (min < open || min > close) return "outside";
   return null;
 }
