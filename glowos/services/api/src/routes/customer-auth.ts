@@ -167,7 +167,7 @@ customerAuthRouter.post("/google", zValidator(googleAuthSchema), async (c) => {
   // Return client info for the frontend to auto-fill the form
   const verificationToken = generateVerificationToken(
     {
-      phone: client.phone?.startsWith("google_") ? null : client.phone,
+      phone: client.phone?.startsWith("g_") ? null : client.phone,
       email: client.email,
       google_id: client.googleId,
       purpose: "google_verify",
@@ -181,7 +181,7 @@ customerAuthRouter.post("/google", zValidator(googleAuthSchema), async (c) => {
       id: client.id,
       name: client.name,
       email: client.email,
-      phone: client.phone?.startsWith("google_") ? "" : client.phone,
+      phone: client.phone?.startsWith("g_") ? "" : client.phone,
       avatarUrl: client.avatarUrl ?? googleAvatar,
       googleId: client.googleId,
     },
@@ -211,7 +211,7 @@ customerAuthRouter.post("/lookup", zValidator(lookupSchema), async (c) => {
       id: client.id,
       name: client.name,
       email: client.email,
-      phone: client.phone?.startsWith("google_") ? "" : client.phone,
+      phone: client.phone?.startsWith("g_") ? "" : client.phone,
       avatarUrl: client.avatarUrl,
       googleId: client.googleId,
     },
