@@ -31,6 +31,18 @@ export const config = {
   // Create in Twilio Console → Content Template Builder, submit for
   // WhatsApp approval, copy the ContentSid (starts with "HX").
   twilioOtpContentSid: process.env.TWILIO_OTP_CONTENT_SID ?? "",
+  // Comma-separated allowlist of E.164 phones that have joined the Twilio
+  // WhatsApp Sandbox (texted "join <keyword>" to +14155238886). When the
+  // configured `twilioWhatsappFrom` is the well-known sandbox number,
+  // outbound WhatsApp sends to phones NOT in this list are skipped before
+  // the Twilio API call — they would fail with error 63015 anyway and
+  // burn the sandbox's 50/day quota. Skipped sends are logged with
+  // status='failed' and a clear `error_message` explaining why.
+  // In production (non-sandbox `twilioWhatsappFrom`), this list is ignored.
+  sandboxJoinedPhones: (process.env.SANDBOX_JOINED_PHONES ?? "")
+    .split(",")
+    .map((s) => s.trim().replace(/[\s\-()]/g, ""))
+    .filter(Boolean),
 
   sendgridApiKey: process.env.SENDGRID_API_KEY ?? "",
   fromEmail: process.env.FROM_EMAIL ?? "noreply@glowos.sg",
