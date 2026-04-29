@@ -459,9 +459,18 @@ analyticsDigestRouter.post(
       );
     }
 
-    // Rate-limit: 1 successful test-send per hour per config. We piggyback
-    // on the runs table — a recent row with status='sent' AND a synthetic
-    // 'test' marker in error_message blocks further test sends.
+    // Rate-limit: 1 SUCCESSFUL test-send per hour per config.
+    //
+    // We piggyback on the runs table — a recent row with the TEST_SEND
+    // marker AND a terminal-success status (sent / partial) blocks further
+    // test sends within the hour.
+    //
+    // CRUCIAL: only completed sends rate-limit. A previous test that
+    // crashed mid-flight leaves a row with status='generating' or
+    // 'failed' — those should NOT lock the owner out for an hour just
+    // because the first attempt blew up. Frank hit this on the PR #66
+    // 23505 chase: a 500 left a 'generating' row behind, then the next
+    // attempt was 429'd for an hour. Now only the completed states gate.
     const [recentTest] = await db
       .select({ id: analyticsDigestRuns.id, scheduledFor: analyticsDigestRuns.scheduledFor })
       .from(analyticsDigestRuns)
@@ -469,6 +478,7 @@ analyticsDigestRouter.post(
         and(
           eq(analyticsDigestRuns.configId, cfg.id),
           sql`${analyticsDigestRuns.errorMessage} = 'TEST_SEND'`,
+          sql`${analyticsDigestRuns.status} IN ('sent', 'partial')`,
           sql`${analyticsDigestRuns.scheduledFor} > now() - interval '1 hour'`,
         ),
       )
