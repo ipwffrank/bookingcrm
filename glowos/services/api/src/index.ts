@@ -37,7 +37,6 @@ import { merchantQuotesRouter, publicQuotesRouter } from "./routes/quotes.js";
 import { shortLinksRouter } from "./routes/short-links.js";
 import { auditImpersonatedWrites } from "./middleware/impersonation-audit.js";
 import type { AppVariables } from "./lib/types.js";
-import { config } from "./lib/config.js";
 import { startWorkers } from "./workers/index.js";
 
 const app = new Hono<{ Variables: AppVariables }>();
