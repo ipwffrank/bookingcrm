@@ -480,7 +480,7 @@ analyticsDigestRouter.post(
           eq(analyticsDigestRuns.configId, cfg.id),
           sql`${analyticsDigestRuns.errorMessage} = 'TEST_SEND'`,
           sql`${analyticsDigestRuns.status} IN ('sent', 'partial')`,
-          sql`${analyticsDigestRuns.scheduledFor} > now() - interval '1 hour'`,
+          sql`${analyticsDigestRuns.scheduledFor} > now() - interval '2 minutes'`,
         ),
       )
       .limit(1);
@@ -489,7 +489,7 @@ analyticsDigestRouter.post(
       return c.json(
         {
           error: "Too Many Requests",
-          message: "Test send already used this hour. Wait before retrying.",
+          message: "Test sent recently. Wait 2 minutes before retrying.",
         },
         429,
       );
