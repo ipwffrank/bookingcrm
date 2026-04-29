@@ -1,5 +1,78 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 28 April 2026 (Session 21)**
+**Last updated: 29 April 2026 (Session 22)**
+
+---
+
+## What's Completed (Session 22 — 29 April 2026)
+
+Pilot smoke-test pass + Analytics Digest PR 2 (AI prose) shipped + PR 3 (PDF attachment) opened. Eight PRs through the day, two rounds of small bug fixes after the smoke test surfaced regressions, then the AI integration arc — which uncovered a Railway env-var quirk that took three deploys to diagnose.
+
+### Pilot smoke-test fixes (clean ships)
+
+#### Settings page role gating ✅ (PR #63 + #64)
+Smoke-testing as Therapist Kavitha (clinician role) hit a 403 on Operating Hours save with a generic "Failed to save operating hours" alert. Every write endpoint behind Settings is `requireRole("owner")` on the API side — clinicians, staff, AND managers all hit the same trap.
+
+PR #63 added a page-level role gate blocking clinicians + staff with a polite "Owner / manager access only" card. PR #64 tightened it further to **owner-only** after Frank then hit the same 403 as a manager. Trade-off: managers lose read access to settings entirely; per-tab read-only views are a future fix if needed.
+
+### Analytics Digest PR 2 — AI prose suggestions ✅ (PR #65)
+Gemini 1.5 Flash integration via the official `@google/generative-ai` SDK. Numbers stay in the deterministic email template (no LLM hallucination on KPIs); the model only generates a "Suggestions for the week ahead / Strategy questions for the month / Themes for the year ahead" prose block between the highlights and the dashboard CTA.
+
+- **Hash-based caching** — sha256 of (metrics + frequency + period + prompt version) lets the worker reuse the same AI output for identical re-runs within 24h
+- **Output validation** — regex guardrails reject responses with `$/RM` amounts, raise/cut price phrasing, `X% off` patterns, fire/hire/schedule-cut words, medical claims (cures/treats/heals/effective for). Failed validation = no AI section, full numeric email goes through
+- **Prompt embeds business panel framework** — tactical levers for weekly, structural questions for monthly, themes for yearly. Hard constraints baked in (no pricing, no staffing, no medical, suppress KPIs with sample < 30 bookings or < 10 reviews)
+- **Graceful degradation everywhere** — missing API key, API error, timeout (>30s), or guardrail rejection all log and fall back to numeric-only email. Never break a digest because of AI
+
+### Test-send chase (PRs #66, #67, #68, #69, #70)
+A four-PR debugging chain triggered when Frank clicked Send test report now after PR #65 deployed:
+
+- **#66** — Postgres `23505` unique violation on the runs table when test-sending twice for the same calendar period. Fixed via `ON CONFLICT DO UPDATE` on `(config_id, period_start, period_end)`.
+- **#67** — `42P10` ("no unique constraint matching ON CONFLICT specification") because the deliveries table's unique index is **partial** (`WHERE recipient_id IS NOT NULL`). Replaced with delete-then-insert pattern that doesn't depend on partial-index ON CONFLICT semantics.
+- **#68** — Stale `status='generating'` rows from crashed test-sends were rate-limiting subsequent retries for an hour. Tightened the rate-limit predicate to only count `status IN ('sent', 'partial')`.
+- **#69** — Dropped the rate-limit cooldown from 1 hour to 2 minutes. 1 hour was too restrictive for iterating on AI output.
+- **#70** — Added `[Boot] env presence check` log line at API startup to definitively diagnose why `GEMINI_API_KEY` showed in Railway's Variables tab but `process.env.GEMINI_API_KEY` was empty inside the container. Names + booleans only, no values exposed (safe in prod).
+
+### The Gemini key mystery
+After PR #70 deployed and confirmed `"GEMINI_API_KEY":false` in the boot log, root cause turned out to be **hidden Unicode in the variable name** from copy-paste (Railway UI showed `GEMINI_API_KEY` but the actual stored bytes had a zero-width character). Fix: delete the variable, re-add it with the name **typed manually** instead of pasted. Boot log then showed `"GEMINI_API_KEY":true` and AI started working.
+
+### Analytics Digest PR 3 — PDF attachment 🚧 (PR #71, open)
+Attaches a PDF version of the digest to every send. Renders the same content as the HTML email — header, hero KPIs, mini grid, highlights, AI suggestions, dashboard CTA, footer — using **pdfkit** (Node-native, ~5MB) over puppeteer (~150MB Chromium). Trade-off taken for smaller deploy + no cold-start hit on Railway.
+
+Output isn't pixel-identical to the HTML email but is a clean structured document. Layout caught a few pdfkit gotchas during local preview:
+- Bundled Helvetica doesn't ship with `▲▼` Unicode triangles → switched to ASCII `+/-` delta indicators
+- Absolute-positioned helpers (drawHeroCard, drawGridRow) leave `doc.x` at the right edge → all subsequent flow helpers reset `doc.x = PAGE_LEFT` first; otherwise text wraps one character per line
+- Cancellations row had value/delta column overlap → repositioned columns with explicit gap
+
+Filename pattern: `<merchant-slug>-digest-<period-slug>.pdf`. PDF render failure is non-fatal — email still goes out without the attachment.
+
+### Pilot data seed (Neon SQL block)
+Hand-rolled SQL block to seed 30 bookings across 20–26 Apr 2026 for Aura Aesthetic - Orchard so the digest had real-shaped data: 27 completed, 3 no-show, 1 cancelled, $5,873 revenue, 90% first-timer return rate (10 first-timers all returned). Applied via Neon SQL Editor.
+
+### Cleanup
+- Pruned 13 stale worktrees + 25 squash-merged local branches (sessions 11–22 detritus). Repo down to 2 worktrees (main + active PR #71) and 2 branches.
+- Removed unused `config` import from `services/api/src/index.ts` (leftover from PR #70's diagnostic refactor).
+- Filed (mental) tech debt note: ~24 unused imports across ~13 unrelated files — pre-existing across past sessions, candidate for a focused tech-debt PR if appetite arises.
+
+### Memories saved
+- `project_glowos_pending_sendgrid_domain_auth.md` — Frank deferred SendGrid sender authentication until he registers a domain. Surface this when he mentions DNS / domain / deliverability so we can walk through the DKIM/SPF setup and unblock the spam-folder problem (digest emails currently land in spam due to no domain auth).
+
+### Operational lessons logged
+- **Hidden Unicode in pasted env-var names is a real prod issue.** Railway's UI doesn't visually distinguish them. Fix: type the name manually, only paste the value. The `[Boot] env presence check` log line is the diagnostic that finally caught it after three deploys of guessing.
+- **Partial unique indexes break Drizzle's `onConflictDoUpdate({ target })`** in v0.30 — Postgres needs the partial-index WHERE in the ON CONFLICT clause to match, but the bare `target` form doesn't emit it. Workarounds: pass `targetWhere`, or use delete-then-insert when the row's contents are entirely re-derivable.
+- **Crashed work shouldn't gate retries.** A rate limit that counts non-completed runs as "already done" locks out the user when their first attempt fails. Always gate on terminal-success status, not just row presence.
+- **Test-send rate limits should be measured in minutes, not hours.** Owners iterate on AI output by clicking Send Test repeatedly; an hour-long cooldown is anti-pattern. 2 minutes is plenty.
+
+### Roadmap — next slots
+
+**Analytics digest PR 4 (still pending):** add utilization / cohort retention / rebook lag distribution metrics to the analytics page (and feed into the AI prompt for stronger Pattern B/C/D suggestions).
+
+**Group-scope rollups (PR 5):** per-branch comparison table + outlier flagging + cross-branch pattern detection. Schema already supports `scope='group'`.
+
+**Carried from Session 21:**
+- Tests + CI gating merges
+- Photo-during-record-creation drag-and-drop
+- Granular RBAC: clinician role separate from manager
+- Photo attachment storage migration to private bucket + signed URLs
+- Encryption at rest for `clinical_records.body` via `pgcrypto`
 
 ---
 
