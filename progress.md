@@ -5,7 +5,7 @@
 
 ## What's Completed (Session 22 — 29 April 2026)
 
-Pilot smoke-test pass + Analytics Digest PR 2 (AI prose) shipped + PR 3 (PDF attachment) opened. Eight PRs through the day, two rounds of small bug fixes after the smoke test surfaced regressions, then the AI integration arc — which uncovered a Railway env-var quirk that took three deploys to diagnose.
+Pilot smoke-test pass + Analytics Digest PR 2 (AI prose) shipped + PR 3 (PDF attachment) merged + four-layer Gemini debugging arc that finally got AI digest working end-to-end. **Eleven PRs** through the day: smoke-test fixes (#63–#64), AI prose integration (#65), test-send chase (#66–#70), PDF attachment (#71), and the late-day Gemini chain (#72 model migration, then #73 second model migration after billing-link revealed it, then #74 dropping a guardrail false positive). Two-billed-project Cloud Console exercise to unstick the API quota. End of day: AI digest renders prose + PDF + emails three recipients cleanly.
 
 ### Pilot smoke-test fixes (clean ships)
 
@@ -34,7 +34,7 @@ A four-PR debugging chain triggered when Frank clicked Send test report now afte
 ### The Gemini key mystery
 After PR #70 deployed and confirmed `"GEMINI_API_KEY":false` in the boot log, root cause turned out to be **hidden Unicode in the variable name** from copy-paste (Railway UI showed `GEMINI_API_KEY` but the actual stored bytes had a zero-width character). Fix: delete the variable, re-add it with the name **typed manually** instead of pasted. Boot log then showed `"GEMINI_API_KEY":true` and AI started working.
 
-### Analytics Digest PR 3 — PDF attachment 🚧 (PR #71, open)
+### Analytics Digest PR 3 — PDF attachment ✅ (PR #71)
 Attaches a PDF version of the digest to every send. Renders the same content as the HTML email — header, hero KPIs, mini grid, highlights, AI suggestions, dashboard CTA, footer — using **pdfkit** (Node-native, ~5MB) over puppeteer (~150MB Chromium). Trade-off taken for smaller deploy + no cold-start hit on Railway.
 
 Output isn't pixel-identical to the HTML email but is a clean structured document. Layout caught a few pdfkit gotchas during local preview:
@@ -43,6 +43,19 @@ Output isn't pixel-identical to the HTML email but is a clean structured documen
 - Cancellations row had value/delta column overlap → repositioned columns with explicit gap
 
 Filename pattern: `<merchant-slug>-digest-<period-slug>.pdf`. PDF render failure is non-fatal — email still goes out without the attachment.
+
+### After-action: AI digest end-to-end (PRs #72, #73, #74)
+Smoke-test of the merged digest stack revealed a four-layer failure chain on the Gemini path. Each layer surfaced only after the previous was fixed.
+
+**Layer 1 — `[404] models/gemini-1.5-flash is not found for v1beta` (PR #72).** Google removed `gemini-1.5-flash` from v1beta. Swapped to `gemini-2.0-flash`. Comment added in `gemini.ts` documenting the migration so the next swap is centralised.
+
+**Layer 2 — `[429] Quota exceeded ... limit: 0`.** Test-send fails with all three `free_tier_*` metrics showing `limit: 0`. Diagnosis: Google now requires Cloud Billing to be linked on a project even to use the free tier on newer Gemini models. The bookingcrm AI Studio key (`projects/468896836798`) had no billing account attached, while a separate "Default Gemini API Key" on a different project already showed `Tier 1 · Postpay`. Fix: linked existing "My Billing Account" to project `468896836798` via the Cloud Console billing page. Propagation took ~15 min.
+
+**Layer 3 — `[404] gemini-2.0-flash is no longer available to new users` (PR #73).** Once billing was active, the next call returned a different 404: `gemini-2.0-flash` is gated for projects activated later in 2026 (the bookingcrm project, freshly billing-enabled today, was in this group). Swapped `MODEL_NAME` to `gemini-2.5-flash`. The comment in `gemini.ts` now records both deprecations and notes that 2.5-flash is the current id available across all billed projects.
+
+**Layer 4 — `[gemini] guardrail tripped: specific-price` (PR #74).** Gemini now answered correctly, but the validator's `specific-price` regex `/\b(?:S\$|RM)\s?\d/` matched any currency mention — and the prompt itself feeds the model revenue figures (`Revenue: S$5,873`, `Top service: ... (S$3,880)`). The model echoed `S$3,880` in its first suggestion as a data reference; regex flagged it; whole AI section dropped. Fix: removed the bare-currency regex entirely. The prompt's CONSTRAINT block already forbids price changes; `raise-price` and `discount-depth` still cover the verb-form violations that matter. False-negative cost (one slipped specific-price suggestion) is much lower than false-positive cost (every digest stripped of AI prose).
+
+End state: AI digest now ships end-to-end. Aura Aesthetic - Orchard's weekly digest renders ✓ HTML body with AI Suggestions / Wins blocks ✓ PDF attachment ✓ delivered to all three recipients.
 
 ### Pilot data seed (Neon SQL block)
 Hand-rolled SQL block to seed 30 bookings across 20–26 Apr 2026 for Aura Aesthetic - Orchard so the digest had real-shaped data: 27 completed, 3 no-show, 1 cancelled, $5,873 revenue, 90% first-timer return rate (10 first-timers all returned). Applied via Neon SQL Editor.
@@ -60,6 +73,9 @@ Hand-rolled SQL block to seed 30 bookings across 20–26 Apr 2026 for Aura Aesth
 - **Partial unique indexes break Drizzle's `onConflictDoUpdate({ target })`** in v0.30 — Postgres needs the partial-index WHERE in the ON CONFLICT clause to match, but the bare `target` form doesn't emit it. Workarounds: pass `targetWhere`, or use delete-then-insert when the row's contents are entirely re-derivable.
 - **Crashed work shouldn't gate retries.** A rate limit that counts non-completed runs as "already done" locks out the user when their first attempt fails. Always gate on terminal-success status, not just row presence.
 - **Test-send rate limits should be measured in minutes, not hours.** Owners iterate on AI output by clicking Send Test repeatedly; an hour-long cooldown is anti-pattern. 2 minutes is plenty.
+- **Gemini `limit: 0` errors are a project-level billing gate, not a model-level quota.** Even free-tier usage on newer models requires Cloud Billing to be linked on the project. Free tier behaviour is unchanged once linked; you only pay if you exceed the daily request quota. Check via AI Studio key list — billed projects show `Tier 1 · Postpay`; unbilled show blank or "Set up billing".
+- **Google rolls Gemini default models more aggressively than the docs suggest.** `gemini-1.5-flash` was retired from v1beta first, then `gemini-2.0-flash` became "no longer available to new users" for projects activated later in 2026. Pinned model ids decay; centralise the constant so swaps are one line. Symptom: `404 [model] is no longer available to new users` on the `generateContent` endpoint.
+- **LLM output validators that scan for raw values must whitelist what the prompt itself feeds in.** Our `specific-price` regex caught any `S$\d` — but the prompt feeds revenue figures to the model, and the model legitimately echoes them in suggestions / wins. Same risk applies to any future validator that looks for raw values, names, dates, etc. Validators should target verb-led patterns (suggested actions), not bare values (which are often data references).
 
 ### Roadmap — next slots
 
