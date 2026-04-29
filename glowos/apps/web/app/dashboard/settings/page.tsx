@@ -2034,6 +2034,23 @@ function SettingsContent() {
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  // Page-level role gate. Settings is owner/manager territory — every tab
+  // here calls a write endpoint that the API guards with requireAdmin or
+  // requireRole("owner"). Without this gate clinicians + staff could
+  // reach the forms, fill them in, and discover the 403 only on Save —
+  // confusing UX (Frank hit this on Operating Hours during smoke test).
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      const payload = JSON.parse(atob(token.split('.')[1] ?? ''));
+      setUserRole((payload as { role?: string }).role ?? null);
+    } catch {
+      setUserRole(null);
+    }
+  }, []);
 
   // Sync tab from URL (e.g. redirect back from Stripe with ?tab=payments)
   useEffect(() => {
@@ -2080,6 +2097,34 @@ function SettingsContent() {
   }
 
   if (!merchant) return null;
+
+  // Role gate: anything below clinician sees a polite block-out instead of
+  // the editable forms. Owners/managers proceed normally.
+  if (userRole !== null && userRole !== 'owner' && userRole !== 'manager') {
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-tone-ink">Settings</h1>
+        </div>
+        <div className="bg-tone-surface rounded-xl border border-grey-15 p-8 text-center max-w-xl mx-auto">
+          <div className="text-4xl mb-3">🔒</div>
+          <h2 className="text-base font-semibold text-tone-ink">Owner / manager access only</h2>
+          <p className="text-sm text-grey-60 mt-2 leading-relaxed">
+            Settings — operating hours, cancellation policy, payments, booking page,
+            account, and integrations — are managed by an owner or manager. Ask one
+            of them if anything here needs changing.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="mt-5 rounded-lg bg-tone-ink px-4 py-2 text-sm font-semibold text-tone-surface hover:opacity-90 transition-opacity"
+          >
+            Back to dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
