@@ -542,6 +542,19 @@ analyticsDigestRouter.post(
     });
 
     // Persist a run row marked as TEST_SEND for rate-limiting + audit.
+    //
+    // The (config_id, period_start, period_end) UNIQUE index exists for
+    // scheduled-fire idempotency — a real worker should never produce two
+    // runs for the same period. But test-sends repeatedly target the
+    // SAME period (e.g. last full week) until the calendar advances, so
+    // a second test-send within the same week would violate the
+    // constraint with a raw INSERT (Postgres 23505).
+    //
+    // Use ON CONFLICT DO UPDATE: if a run already exists for this period
+    // we refresh its `scheduled_for` / `status` / TEST_SEND marker and
+    // continue. The 1-hour rate limit above already prevents test-spam,
+    // so this path is reached only when the rate limit has already
+    // expired but the calendar period hasn't rolled over yet.
     const [run] = await db
       .insert(analyticsDigestRuns)
       .values({
@@ -555,20 +568,54 @@ analyticsDigestRouter.post(
         startedAt: new Date(),
         errorMessage: "TEST_SEND",
       })
+      .onConflictDoUpdate({
+        target: [
+          analyticsDigestRuns.configId,
+          analyticsDigestRuns.periodStart,
+          analyticsDigestRuns.periodEnd,
+        ],
+        set: {
+          scheduledFor: new Date(),
+          frequencySnapshot: frequency,
+          status: "generating",
+          numericPayload: metrics as unknown as Record<string, unknown>,
+          startedAt: new Date(),
+          completedAt: null,
+          errorMessage: "TEST_SEND",
+        },
+      })
       .returning();
 
     let okCount = 0;
     let failCount = 0;
     for (const r of recipients) {
       const result = await sendEmail({ to: r.email, subject, html });
-      await db.insert(analyticsDigestDeliveries).values({
-        runId: run!.id,
-        recipientId: r.id,
-        email: r.email,
-        status: result.ok ? "sent" : "failed",
-        sentAt: result.ok ? new Date() : null,
-        errorMessage: result.error ?? null,
-      });
+      // ON CONFLICT pairs with the run-row reuse above: when an earlier
+      // test send already produced delivery rows for this same run, we
+      // overwrite their status with this attempt's outcome instead of
+      // colliding on the (run_id, recipient_id) UNIQUE index.
+      await db
+        .insert(analyticsDigestDeliveries)
+        .values({
+          runId: run!.id,
+          recipientId: r.id,
+          email: r.email,
+          status: result.ok ? "sent" : "failed",
+          sentAt: result.ok ? new Date() : null,
+          errorMessage: result.error ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            analyticsDigestDeliveries.runId,
+            analyticsDigestDeliveries.recipientId,
+          ],
+          set: {
+            email: r.email,
+            status: result.ok ? "sent" : "failed",
+            sentAt: result.ok ? new Date() : null,
+            errorMessage: result.error ?? null,
+          },
+        });
       if (result.ok) okCount += 1;
       else failCount += 1;
     }
