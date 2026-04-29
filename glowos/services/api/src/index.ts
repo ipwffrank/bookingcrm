@@ -163,6 +163,33 @@ app.notFound((c) => {
 
 const port = Number(process.env.PORT ?? 3001);
 
+// ─── Boot-time env presence check ────────────────────────────────────────
+// Logs which expected env vars are present inside this container's
+// process.env. Names only — never values, so it's safe to keep in prod.
+// Useful when an integration silently degrades because a var didn't make
+// it into the runtime (e.g. Railway scoping, hidden Unicode in name,
+// reference-variable interpolation failing). Compare with the values
+// shown in Railway's Variables tab.
+const envCheck = {
+  DATABASE_URL: !!process.env.DATABASE_URL,
+  REDIS_URL: !!process.env.REDIS_URL,
+  JWT_SECRET: !!process.env.JWT_SECRET,
+  SENDGRID_API_KEY: !!process.env.SENDGRID_API_KEY,
+  TWILIO_ACCOUNT_SID: !!process.env.TWILIO_ACCOUNT_SID,
+  STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,
+  GOOGLE_CLIENT_ID: !!process.env.GOOGLE_CLIENT_ID,
+  GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+  BLOB_READ_WRITE_TOKEN: !!process.env.BLOB_READ_WRITE_TOKEN,
+  FRONTEND_URL: !!process.env.FRONTEND_URL,
+  APP_URL: !!process.env.APP_URL,
+  FROM_EMAIL: !!process.env.FROM_EMAIL,
+  NODE_ENV: process.env.NODE_ENV ?? "(unset)",
+  // Total var count gives one more sanity check — if it's < 5, something
+  // is clearly wrong with how vars are reaching the container.
+  total_env_keys: Object.keys(process.env).length,
+};
+console.log("[Boot] env presence check:", JSON.stringify(envCheck));
+
 console.log(`GlowOS API running on http://localhost:${port}`);
 
 serve({
