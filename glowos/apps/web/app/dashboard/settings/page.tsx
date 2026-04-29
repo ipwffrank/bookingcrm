@@ -2098,9 +2098,13 @@ function SettingsContent() {
 
   if (!merchant) return null;
 
-  // Role gate: anything below clinician sees a polite block-out instead of
-  // the editable forms. Owners/managers proceed normally.
-  if (userRole !== null && userRole !== 'owner' && userRole !== 'manager') {
+  // Role gate: Settings is owner-only. Every write endpoint behind these
+  // tabs (PUT /merchant/me, /settings/cancellation-policy, etc.) is
+  // requireRole("owner") on the API. Managers + clinicians + staff get
+  // a 403 on Save with a generic alert — Frank hit this twice during
+  // smoke testing (once as clinician, then as manager). Block all
+  // non-owners up front so the trap goes away entirely.
+  if (userRole !== null && userRole !== 'owner') {
     return (
       <div>
         <div className="mb-6">
@@ -2108,11 +2112,11 @@ function SettingsContent() {
         </div>
         <div className="bg-tone-surface rounded-xl border border-grey-15 p-8 text-center max-w-xl mx-auto">
           <div className="text-4xl mb-3">🔒</div>
-          <h2 className="text-base font-semibold text-tone-ink">Owner / manager access only</h2>
+          <h2 className="text-base font-semibold text-tone-ink">Owner access only</h2>
           <p className="text-sm text-grey-60 mt-2 leading-relaxed">
             Settings — operating hours, cancellation policy, payments, booking page,
-            account, and integrations — are managed by an owner or manager. Ask one
-            of them if anything here needs changing.
+            account, and integrations — are owner-only. Ask the merchant&rsquo;s owner
+            if anything here needs changing.
           </p>
           <button
             type="button"
