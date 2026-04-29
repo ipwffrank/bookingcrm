@@ -222,8 +222,17 @@ function validateOutput(raw: string): string | null {
 
   // Forbidden patterns. These regexes lean strict to err on the side of
   // dropping AI output rather than letting a violation through.
+  //
+  // No bare-currency regex here. The prompt feeds revenue figures to the
+  // model (`Revenue: S$5,873`, `Top service: ... (S$3,880)`), and the
+  // model legitimately echoes them in Suggestions / Wins. A `(S\$|RM)\d`
+  // regex catches those data echoes and drops the whole AI section every
+  // time. The prompt's CONSTRAINT block already forbids price changes;
+  // `raise-price` + `discount-depth` cover the verb-form violations that
+  // matter (raise/cut/drop/X% off). Pure new-price introductions slipping
+  // through is acceptable at pilot stage — Frank sees every digest and
+  // can iterate the prompt if it surfaces.
   const forbidden: Array<{ name: string; re: RegExp }> = [
-    { name: "specific-price", re: /\b(?:S\$|RM)\s?\d/ }, // "S$50", "RM 30"
     { name: "raise-price", re: /\b(?:raise|increase|cut|drop|lower)\s+(?:the\s+)?price/i },
     { name: "discount-depth", re: /\b\d{1,2}\s?%\s+(?:off|discount)/i }, // "20% off", "15 % discount"
     { name: "fire-staff", re: /\b(?:fire|let\s+go|terminate|sack|dismiss)\b/i },
