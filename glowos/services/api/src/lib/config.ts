@@ -50,6 +50,13 @@ export const config = {
 
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
 
+  // Gemini API key for Analytics Digest AI prose suggestions. Optional —
+  // when unset the digest gracefully degrades to numeric-only emails.
+  // Free tier (Gemini 1.5 Flash): 1500 RPD, 15 RPM, 1M-token context. At
+  // pilot scale (~50 merchants × weekly = ~50 calls/week) we sit far
+  // under any limit.
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+
   // Comma-separated allowlist of emails granted superadmin at login.
   // See docs/superpowers/specs/2026-04-22-superadmin-design.md.
   superAdminEmails: (process.env.SUPER_ADMIN_EMAILS ?? "")

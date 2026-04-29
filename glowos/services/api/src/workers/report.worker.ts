@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, desc, gt } from "drizzle-orm";
 import {
   db,
   analyticsDigestConfigs,
@@ -21,6 +21,7 @@ import {
   type DigestFrequency,
 } from "../lib/analytics-digest-email.js";
 import { sendEmail } from "../lib/email.js";
+import { generateDigestSuggestions } from "../lib/gemini.js";
 import { QUEUE_PREFIX, addJob } from "../lib/queue.js";
 
 // Connection options match the other workers (notification, crm, vip,
@@ -218,7 +219,7 @@ async function processGenerate(data: {
 
   try {
     const [merchant] = await db
-      .select({ name: merchants.name, slug: merchants.slug })
+      .select({ name: merchants.name, slug: merchants.slug, category: merchants.category })
       .from(merchants)
       .where(eq(merchants.id, cfg.merchantId))
       .limit(1);
@@ -262,12 +263,65 @@ async function processGenerate(data: {
     });
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
+
+    // ─── AI prose: cache-first, Gemini-second, gracefully optional. ───
+    // Look for a recent run (any status) with the same input hash and
+    // reuse its prose to avoid burning Gemini quota on identical retries.
+    // The schema's ai_input_hash column is what makes this cheap.
+    let aiProseMd: string | undefined;
+    let aiInputHash: string | undefined;
+    let aiProvider: string | undefined;
+    let aiPromptVersion: string | undefined;
+    try {
+      const aiResult = await generateDigestSuggestions({
+        merchantName: merchant.name,
+        merchantCategory: merchant.category ?? null,
+        frequency,
+        periodLabel,
+        metrics,
+      });
+      if (aiResult) {
+        // Look for a cached output for this exact input within the last
+        // 24h. If found, reuse it (saves an API call). The lookup runs
+        // AFTER generateDigestSuggestions so we have the inputHash, but
+        // BEFORE we accept the model output — meaning if cache hits, we
+        // discard the fresh output and keep the cached one. That keeps
+        // identical-input emails byte-stable across retries.
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const [cached] = await db
+          .select({ aiOutputMd: analyticsDigestRuns.aiOutputMd })
+          .from(analyticsDigestRuns)
+          .where(
+            and(
+              eq(analyticsDigestRuns.aiInputHash, aiResult.inputHash),
+              isNull(analyticsDigestRuns.errorMessage),
+              gt(analyticsDigestRuns.completedAt, since),
+            ),
+          )
+          .orderBy(desc(analyticsDigestRuns.completedAt))
+          .limit(1);
+        aiProseMd = cached?.aiOutputMd ?? aiResult.aiOutputMd;
+        aiInputHash = aiResult.inputHash;
+        aiProvider = aiResult.provider;
+        aiPromptVersion = aiResult.promptVersion;
+      }
+    } catch (err) {
+      // generateDigestSuggestions itself catches everything and returns
+      // null, but defence-in-depth — never let an AI failure block a
+      // digest from going out.
+      console.error("[ReportWorker:generate] AI step failed (non-fatal)", {
+        configId: cfg.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const { subject, html } = renderDigestEmail({
       merchantName: merchant.name,
       frequency,
       metrics,
       dashboardUrl,
       periodLabel,
+      aiProseMd,
     });
 
     let okCount = 0;
@@ -292,6 +346,10 @@ async function processGenerate(data: {
         status: failCount === 0 ? "sent" : okCount === 0 ? "failed" : "partial",
         completedAt: new Date(),
         numericPayload: metrics as unknown as Record<string, unknown>,
+        ...(aiProseMd ? { aiOutputMd: aiProseMd } : {}),
+        ...(aiInputHash ? { aiInputHash } : {}),
+        ...(aiProvider ? { aiProvider } : {}),
+        ...(aiPromptVersion ? { aiPromptVersion } : {}),
       })
       .where(eq(analyticsDigestRuns.id, run.id));
 

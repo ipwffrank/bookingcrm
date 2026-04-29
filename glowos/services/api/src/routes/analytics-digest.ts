@@ -22,6 +22,7 @@ import {
   type DigestFrequency,
 } from "../lib/analytics-digest-email.js";
 import { sendEmail } from "../lib/email.js";
+import { generateDigestSuggestions } from "../lib/gemini.js";
 import { config } from "../lib/config.js";
 import type { AppVariables } from "../lib/types.js";
 
@@ -495,7 +496,7 @@ analyticsDigestRouter.post(
     }
 
     const [merchant] = await db
-      .select({ name: merchants.name, slug: merchants.slug })
+      .select({ name: merchants.name, slug: merchants.slug, category: merchants.category })
       .from(merchants)
       .where(eq(merchants.id, merchantId))
       .limit(1);
@@ -543,12 +544,42 @@ analyticsDigestRouter.post(
     });
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
+
+    // Test sends always call Gemini fresh (no cache lookup) so the owner
+    // sees the latest prompt output. Production scheduled fires use the
+    // cache via the worker. Failures degrade silently to numeric-only.
+    let aiProseMd: string | undefined;
+    let aiInputHash: string | undefined;
+    let aiProvider: string | undefined;
+    let aiPromptVersion: string | undefined;
+    try {
+      const aiResult = await generateDigestSuggestions({
+        merchantName: merchant.name,
+        merchantCategory: merchant.category ?? null,
+        frequency,
+        periodLabel,
+        metrics,
+      });
+      if (aiResult) {
+        aiProseMd = aiResult.aiOutputMd;
+        aiInputHash = aiResult.inputHash;
+        aiProvider = aiResult.provider;
+        aiPromptVersion = aiResult.promptVersion;
+      }
+    } catch (err) {
+      console.error("[test-send] AI step failed (non-fatal)", {
+        merchantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const { subject, html } = renderDigestEmail({
       merchantName: merchant.name,
       frequency,
       metrics,
       dashboardUrl,
       periodLabel,
+      aiProseMd,
     });
 
     // Persist a run row marked as TEST_SEND for rate-limiting + audit.
@@ -577,6 +608,10 @@ analyticsDigestRouter.post(
         numericPayload: metrics as unknown as Record<string, unknown>,
         startedAt: new Date(),
         errorMessage: "TEST_SEND",
+        ...(aiProseMd ? { aiOutputMd: aiProseMd } : {}),
+        ...(aiInputHash ? { aiInputHash } : {}),
+        ...(aiProvider ? { aiProvider } : {}),
+        ...(aiPromptVersion ? { aiPromptVersion } : {}),
       })
       .onConflictDoUpdate({
         target: [
