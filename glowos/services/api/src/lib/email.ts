@@ -11,15 +11,29 @@ export interface EmailResult {
 }
 
 /**
+ * Optional attachment payload. SendGrid expects base64-encoded content;
+ * this helper handles encoding internally so callers can pass raw Buffers.
+ */
+export interface EmailAttachment {
+  filename: string;
+  contentType: string;
+  content: Buffer;
+}
+
+/**
  * Send a transactional email via SendGrid.
  * Silently no-ops if SENDGRID_API_KEY is not configured (dev environments).
  * Returns `{ ok, error? }` so callers can persist the actual SendGrid error
  * message into `notification_log.error_message` for debugging.
+ *
+ * `attachments` is optional — used by the Analytics Digest to include a
+ * PDF version of the report alongside the HTML body.
  */
 export async function sendEmail(params: {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }): Promise<EmailResult> {
   if (!config.sendgridApiKey) {
     console.log("[Email] Skipped — SENDGRID_API_KEY not set", { to: params.to, subject: params.subject });
@@ -33,8 +47,22 @@ export async function sendEmail(params: {
       subject: params.subject,
       html: params.html,
       text: params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+      ...(params.attachments && params.attachments.length > 0
+        ? {
+            attachments: params.attachments.map((a) => ({
+              filename: a.filename,
+              type: a.contentType,
+              disposition: "attachment",
+              content: a.content.toString("base64"),
+            })),
+          }
+        : {}),
     });
-    console.log("[Email] Sent", { to: params.to, subject: params.subject });
+    console.log("[Email] Sent", {
+      to: params.to,
+      subject: params.subject,
+      attachments: params.attachments?.length ?? 0,
+    });
     return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);

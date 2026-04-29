@@ -21,6 +21,10 @@ import {
   renderDigestEmail,
   type DigestFrequency,
 } from "../lib/analytics-digest-email.js";
+import {
+  renderDigestPdf,
+  digestPdfFilename,
+} from "../lib/analytics-digest-pdf.js";
 import { sendEmail } from "../lib/email.js";
 import { generateDigestSuggestions } from "../lib/gemini.js";
 import { config } from "../lib/config.js";
@@ -582,6 +586,28 @@ analyticsDigestRouter.post(
       aiProseMd,
     });
 
+    // PDF attachment — non-fatal: if rendering fails the email still
+    // goes out, just without the attachment. Same pdf body for every
+    // recipient so we render once.
+    let pdfBuffer: Buffer | null = null;
+    let pdfFilename: string | null = null;
+    try {
+      pdfBuffer = await renderDigestPdf({
+        merchantName: merchant.name,
+        frequency,
+        periodLabel,
+        metrics,
+        aiProseMd,
+        dashboardUrl,
+      });
+      pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
+    } catch (err) {
+      console.error("[test-send] PDF render failed (non-fatal)", {
+        merchantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Persist a run row marked as TEST_SEND for rate-limiting + audit.
     //
     // The (config_id, period_start, period_end) UNIQUE index exists for
@@ -647,7 +673,22 @@ analyticsDigestRouter.post(
     let okCount = 0;
     let failCount = 0;
     for (const r of recipients) {
-      const result = await sendEmail({ to: r.email, subject, html });
+      const result = await sendEmail({
+        to: r.email,
+        subject,
+        html,
+        ...(pdfBuffer && pdfFilename
+          ? {
+              attachments: [
+                {
+                  filename: pdfFilename,
+                  contentType: "application/pdf",
+                  content: pdfBuffer,
+                },
+              ],
+            }
+          : {}),
+      });
       await db.insert(analyticsDigestDeliveries).values({
         runId: run!.id,
         recipientId: r.id,

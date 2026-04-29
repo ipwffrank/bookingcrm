@@ -20,6 +20,10 @@ import {
   renderDigestEmail,
   type DigestFrequency,
 } from "../lib/analytics-digest-email.js";
+import {
+  renderDigestPdf,
+  digestPdfFilename,
+} from "../lib/analytics-digest-pdf.js";
 import { sendEmail } from "../lib/email.js";
 import { generateDigestSuggestions } from "../lib/gemini.js";
 import { QUEUE_PREFIX, addJob } from "../lib/queue.js";
@@ -324,10 +328,47 @@ async function processGenerate(data: {
       aiProseMd,
     });
 
+    // PDF attachment — generate once for all recipients (the Buffer is the
+    // same for everyone). PDF render is non-fatal: if it fails the email
+    // still goes out without the attachment.
+    let pdfBuffer: Buffer | null = null;
+    let pdfFilename: string | null = null;
+    try {
+      pdfBuffer = await renderDigestPdf({
+        merchantName: merchant.name,
+        frequency,
+        periodLabel,
+        metrics,
+        aiProseMd,
+        dashboardUrl,
+      });
+      pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
+    } catch (err) {
+      console.error("[ReportWorker:generate] PDF render failed (non-fatal)", {
+        configId: cfg.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     let okCount = 0;
     let failCount = 0;
     for (const r of recipients) {
-      const result = await sendEmail({ to: r.email, subject, html });
+      const result = await sendEmail({
+        to: r.email,
+        subject,
+        html,
+        ...(pdfBuffer && pdfFilename
+          ? {
+              attachments: [
+                {
+                  filename: pdfFilename,
+                  contentType: "application/pdf",
+                  content: pdfBuffer,
+                },
+              ],
+            }
+          : {}),
+      });
       await db.insert(analyticsDigestDeliveries).values({
         runId: run.id,
         recipientId: r.id,
