@@ -23,12 +23,12 @@ import type { DigestFrequency } from "./analytics-digest-email.js";
  */
 
 const PROMPT_VERSION = "digest-prose-v1";
-// Google deprecated `gemini-1.5-flash` on the v1beta endpoint in early
-// 2026 — the API returns 404 for that model id. `gemini-2.0-flash` is
-// the stable replacement: similar latency, broader context, current SDK
-// support. Frank's prod surfaced the deprecation as
-// `models/gemini-1.5-flash is not found for API version v1beta`.
-const MODEL_NAME = "gemini-2.0-flash";
+// Google has rolled the default lineage twice in 2026: `gemini-1.5-flash`
+// was removed from v1beta first, then `gemini-2.0-flash` became "no longer
+// available to new users" for projects enabled later in the year (404 on
+// generateContent for those projects). `gemini-2.5-flash` is the current
+// stable id available to all billed projects.
+const MODEL_NAME = "gemini-2.5-flash";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 // Lazy singleton — constructed on first call so the SDK doesn't sit in
@@ -45,7 +45,7 @@ export interface DigestAiResult {
   aiOutputMd: string;
   /** sha256 of the input — used by callers to dedupe identical reruns. */
   inputHash: string;
-  /** "gemini-2.0-flash" today; future model upgrades land under new ids. */
+  /** "gemini-2.5-flash" today; future model upgrades land under new ids. */
   provider: string;
   /** Bumped whenever the prompt template changes. Lets future migrations
    *  invalidate stale cached output if the prompt evolves. */
