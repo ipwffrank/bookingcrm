@@ -586,36 +586,31 @@ analyticsDigestRouter.post(
       })
       .returning();
 
+    // Clear any delivery rows from a previous test send for THIS run.
+    // PR #66 tried ON CONFLICT DO UPDATE here but the
+    // analytics_digest_deliveries_run_recipient_unique index is PARTIAL
+    // (`WHERE recipient_id IS NOT NULL`), and Postgres requires the
+    // ON CONFLICT predicate to match the partial index — Drizzle's
+    // raw target without a WHERE produced 42P10 ("no unique constraint
+    // matching the ON CONFLICT specification"). Delete-then-insert is
+    // the simpler, partial-index-safe alternative: each test send gets
+    // a fresh slate of delivery rows tied to the same run id.
+    await db
+      .delete(analyticsDigestDeliveries)
+      .where(eq(analyticsDigestDeliveries.runId, run!.id));
+
     let okCount = 0;
     let failCount = 0;
     for (const r of recipients) {
       const result = await sendEmail({ to: r.email, subject, html });
-      // ON CONFLICT pairs with the run-row reuse above: when an earlier
-      // test send already produced delivery rows for this same run, we
-      // overwrite their status with this attempt's outcome instead of
-      // colliding on the (run_id, recipient_id) UNIQUE index.
-      await db
-        .insert(analyticsDigestDeliveries)
-        .values({
-          runId: run!.id,
-          recipientId: r.id,
-          email: r.email,
-          status: result.ok ? "sent" : "failed",
-          sentAt: result.ok ? new Date() : null,
-          errorMessage: result.error ?? null,
-        })
-        .onConflictDoUpdate({
-          target: [
-            analyticsDigestDeliveries.runId,
-            analyticsDigestDeliveries.recipientId,
-          ],
-          set: {
-            email: r.email,
-            status: result.ok ? "sent" : "failed",
-            sentAt: result.ok ? new Date() : null,
-            errorMessage: result.error ?? null,
-          },
-        });
+      await db.insert(analyticsDigestDeliveries).values({
+        runId: run!.id,
+        recipientId: r.id,
+        email: r.email,
+        status: result.ok ? "sent" : "failed",
+        sentAt: result.ok ? new Date() : null,
+        errorMessage: result.error ?? null,
+      });
       if (result.ok) okCount += 1;
       else failCount += 1;
     }
