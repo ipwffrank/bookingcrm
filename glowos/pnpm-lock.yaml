@@ -205,6 +205,9 @@ importers:
       '@glowos/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@google/generative-ai':
+        specifier: ^0.21.0
+        version: 0.21.0
       '@hono/node-server':
         specifier: ^1.11.1
         version: 1.19.13(hono@4.12.12)
@@ -857,6 +860,10 @@ packages:
     resolution: {integrity: sha512-4H+/MWbz3ntA50lrPif+7TsvMeX3R1GSYjiLULz0+zEJ7/Yfd9pupZmAwUs/PBpA6aAcFmeRr0laWfcz1a9V1A==}
     peerDependencies:
       '@fullcalendar/core': ~6.1.20
+
+  '@google/generative-ai@0.21.0':
+    resolution: {integrity: sha512-7XhUbtnlkSEZK15kN3t+tzIMxsbKm/dSkKBFalj+20NvPKe1kBY7mR2P7vuijEn+f06z5+A8bVGKO0v39cr6Wg==}
+    engines: {node: '>=18.0.0'}
 
   '@hono/node-server@1.19.13':
     resolution: {integrity: sha512-TsQLe4i2gvoTtrHje625ngThGBySOgSK3Xo2XRYOdqGN1teR8+I7vchQC46uLJi8OF62YTYA3AhSpumtkhsaKQ==}
@@ -3061,6 +3068,8 @@ snapshots:
     dependencies:
       '@fullcalendar/core': 6.1.20
       '@fullcalendar/daygrid': 6.1.20(@fullcalendar/core@6.1.20)
+
+  '@google/generative-ai@0.21.0': {}
 
   '@hono/node-server@1.19.13(hono@4.12.12)':
     dependencies:

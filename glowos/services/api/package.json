@@ -15,6 +15,7 @@
   "dependencies": {
     "@glowos/db": "workspace:*",
     "@glowos/types": "workspace:*",
+    "@google/generative-ai": "^0.21.0",
     "@hono/node-server": "^1.11.1",
     "@sendgrid/mail": "^8.1.6",
     "@vercel/blob": "^2.3.3",
