@@ -16,6 +16,12 @@ import {
   computeRetentionPct as computeCohortRetentionPct,
   assembleResult as assembleCohortResult,
 } from "./cohort-retention.js";
+import {
+  type RebookLagResult,
+  LOOKFORWARD_DAYS as REBOOK_LOOKFORWARD_DAYS,
+  computeMedian as computeRebookLagMedian,
+  assembleResult as assembleRebookLagResult,
+} from "./rebook-lag.js";
 
 /**
  * Numeric aggregator for the Analytics Digest email reports. Returns the
@@ -778,5 +784,142 @@ async function queryCohort(args: {
   return {
     sampleSize: Number(row.sample_size ?? 0),
     returned: Number(row.returned ?? 0),
+  };
+}
+
+// ─── Rebook lag aggregator ────────────────────────────────────────────────
+//
+// Issues two SQL queries (current cohort + prior cohort) — same cohort
+// definition as PR 6, but returns per-cohort-member lag-days instead of
+// just a returned/not-returned bit. Wrapped in try/catch so a digest
+// never fails because of rebook-lag compute.
+
+export async function aggregateRebookLag(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<RebookLagResult> {
+  try {
+    return await aggregateRebookLagInner(args);
+  } catch (err) {
+    console.error("[rebook-lag] aggregation failed — returning null result", {
+      merchantId: args.merchantId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    const cohortWindow = computeCohortWindow({
+      periodStart: args.periodStart,
+      periodEnd: args.periodEnd,
+    });
+    return {
+      lookforwardDays: REBOOK_LOOKFORWARD_DAYS,
+      cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: 0 },
+      headline: null,
+      bins: [],
+      guards: { lowSample: true, medianSuppressed: false },
+    };
+  }
+}
+
+async function aggregateRebookLagInner(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<RebookLagResult> {
+  const cohortWindow = computeCohortWindow({
+    periodStart: args.periodStart,
+    periodEnd: args.periodEnd,
+  });
+
+  const periodLenMs = args.periodEnd.getTime() - args.periodStart.getTime();
+  const priorCohortStart = new Date(cohortWindow.windowStart.getTime() - periodLenMs);
+  const priorCohortEnd = new Date(cohortWindow.windowEnd.getTime() - periodLenMs);
+
+  // Run both queries in parallel.
+  const [current, prior] = await Promise.all([
+    queryRebookLagCohort({
+      merchantId: args.merchantId,
+      cohortStart: cohortWindow.windowStart,
+      cohortEnd: cohortWindow.windowEnd,
+    }),
+    queryRebookLagCohort({
+      merchantId: args.merchantId,
+      cohortStart: priorCohortStart,
+      cohortEnd: priorCohortEnd,
+    }),
+  ]);
+
+  // Prior median (for delta only — no bins needed for prior).
+  const priorReturnerLags = prior.lagDaysPerMember.filter(
+    (l): l is number => l !== null && l <= 60,
+  );
+  const priorMedianDays = computeRebookLagMedian(priorReturnerLags);
+
+  return assembleRebookLagResult({
+    cohort: {
+      windowStart: cohortWindow.windowStart,
+      windowEnd: cohortWindow.windowEnd,
+      size: current.lagDaysPerMember.length,
+    },
+    lagDaysPerMember: current.lagDaysPerMember,
+    priorMedianDays,
+  });
+}
+
+/**
+ * Cohort + lag-days query — finds first-timers whose earliest 'completed'
+ * booking fell in [cohortStart, cohortEnd] AND whose lookforward window
+ * has elapsed. For each cohort member, returns the lag (in days) to
+ * their second 'completed' booking within 60 days of the first, or NULL
+ * if no such booking exists.
+ */
+async function queryRebookLagCohort(args: {
+  merchantId: string;
+  cohortStart: Date;
+  cohortEnd: Date;
+}): Promise<{ lagDaysPerMember: Array<number | null> }> {
+  const rows = await db.execute<{ lag_days: number | null }>(sql`
+    WITH first_visits AS (
+      SELECT
+        client_id,
+        MIN(start_time) AS first_at
+      FROM bookings
+      WHERE merchant_id = ${args.merchantId}
+        AND status = 'completed'
+      GROUP BY client_id
+    ),
+    cohort AS (
+      SELECT client_id, first_at
+      FROM first_visits
+      WHERE first_at >= ${args.cohortStart}
+        AND first_at <= ${args.cohortEnd}
+        AND first_at + (${REBOOK_LOOKFORWARD_DAYS} * INTERVAL '1 day') <= NOW()
+    ),
+    second_visits AS (
+      SELECT
+        c.client_id,
+        c.first_at,
+        (
+          SELECT MIN(b2.start_time)
+          FROM bookings b2
+          WHERE b2.merchant_id = ${args.merchantId}
+            AND b2.client_id = c.client_id
+            AND b2.status = 'completed'
+            AND b2.start_time > c.first_at
+            AND b2.start_time <= c.first_at + (${REBOOK_LOOKFORWARD_DAYS} * INTERVAL '1 day')
+        ) AS second_at
+      FROM cohort c
+    )
+    SELECT
+      CASE
+        WHEN second_at IS NULL THEN NULL
+        ELSE FLOOR(EXTRACT(EPOCH FROM (second_at - first_at)) / 86400)::int
+      END AS lag_days
+    FROM second_visits
+  `);
+
+  return {
+    lagDaysPerMember: rows.rows.map((r) =>
+      r.lag_days === null || r.lag_days === undefined ? null : Number(r.lag_days),
+    ),
   };
 }

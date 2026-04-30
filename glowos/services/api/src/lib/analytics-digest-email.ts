@@ -1,6 +1,7 @@
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
+import type { RebookLagResult } from "./rebook-lag.js";
 
 /**
  * Renders the Analytics Digest email body. PR 1 ships numeric content
@@ -38,6 +39,8 @@ interface Args {
   // 60-day cohort retention. When the headline is null (cohort below
   // sample-size threshold) the row is omitted.
   cohortRetention?: CohortRetentionResult;
+  // Rebook lag distribution. Row omitted when headline is null.
+  rebookLag?: RebookLagResult;
 }
 
 interface Delta {
@@ -225,6 +228,24 @@ function renderAiBlock(markdown: string, frequency: DigestFrequency): string {
   `;
 }
 
+function rebookLagValueHtml(headline: NonNullable<RebookLagResult["headline"]>): string {
+  if (headline.medianDays === null) {
+    return `— <span style="color:${COLOURS.grey45};font-weight:400;font-size:11px">(${headline.returnedCount} returners)</span>`;
+  }
+  return `${headline.medianDays} days <span style="color:${COLOURS.grey45};font-weight:400;font-size:11px">(${headline.returnedCount} of ${headline.cohortSize})</span>`;
+}
+
+function rebookLagDeltaHtml(days: number | null): string {
+  if (days === null) return "";
+  if (Math.abs(days) < 1) return deltaCell({ pct: "—", arrow: "—" }, true);
+  // Negative days = faster rebook = good (sage). Positive >= 7 days = slipping (warn).
+  const arrow: "▲" | "▼" = days < 0 ? "▼" : "▲";
+  return deltaCell(
+    { pct: `${Math.abs(days)}d`, arrow },
+    /* goodIfUp */ false, // for rebook lag, smaller (down) is better
+  );
+}
+
 function cohortRetentionValueHtml(headline: NonNullable<CohortRetentionResult["headline"]>): string {
   const pct = headline.retentionPct.toFixed(1);
   return `${pct}% <span style="color:${COLOURS.grey45};font-weight:400;font-size:11px">(cohort: ${headline.cohortSize})</span>`;
@@ -324,6 +345,11 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
         "60-day cohort retention",
         cohortRetentionValueHtml(args.cohortRetention.headline),
         cohortRetentionDeltaHtml(args.cohortRetention.headline.deltaVsPriorCohortPp),
+      ) : ""}
+      ${args.rebookLag?.headline ? gridRow(
+        "Rebook lag (median)",
+        rebookLagValueHtml(args.rebookLag.headline),
+        rebookLagDeltaHtml(args.rebookLag.headline.deltaVsPriorCohortDays),
       ) : ""}
       ${gridRow(
         "Reviews",

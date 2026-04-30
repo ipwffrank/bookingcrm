@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { UtilizationSection } from './UtilizationSection';
 import { CohortRetentionSection } from './CohortRetentionSection';
+import { RebookLagSection } from './RebookLagSection';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1419,6 +1420,11 @@ export default function AnalyticsPage() {
       {/* 60-day cohort retention */}
       <div className="mb-6">
         <CohortRetentionSection windowQuery={buildWindowQuery(windowState)} />
+      </div>
+
+      {/* Rebook lag distribution */}
+      <div className="mb-6">
+        <RebookLagSection windowQuery={buildWindowQuery(windowState)} />
       </div>
 
       {/* Revenue Chart */}

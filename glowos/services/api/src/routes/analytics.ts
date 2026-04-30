@@ -6,6 +6,7 @@ import type { AppVariables } from "../lib/types.js";
 import {
   aggregateUtilization,
   aggregateCohortRetention,
+  aggregateRebookLag,
 } from "../lib/analytics-aggregator.js";
 
 const analyticsRouter = new Hono<{ Variables: AppVariables }>();
@@ -999,6 +1000,39 @@ analyticsRouter.get("/cohort-retention", requireMerchant, async (c) => {
     lookforwardDays: result.lookforwardDays,
     cohort: result.cohort,
     headline: result.headline,
+    guards: result.guards,
+  });
+});
+
+// ─── Rebook lag ────────────────────────────────────────────────────────────
+//
+// Returns 60-day rebook lag distribution for a trailing cohort. Same
+// cohort definition as cohort-retention; the 60d+ bin is exactly the
+// non-returners. `headline: null` signals "insufficient sample"
+// (cohort < 5).
+
+analyticsRouter.get("/rebook-lag", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const period = c.req.query("period") ?? "30d";
+  const customStart = c.req.query("start");
+  const customEnd = c.req.query("end");
+
+  const bounds = customStart && customEnd
+    ? customRangeBounds(customStart, customEnd)
+    : getPeriodBounds(getPeriodDays(period));
+
+  const result = await aggregateRebookLag({
+    merchantId,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+  });
+
+  return c.json({
+    period: { start: bounds.start, end: bounds.end, label: period },
+    lookforwardDays: result.lookforwardDays,
+    cohort: result.cohort,
+    headline: result.headline,
+    bins: result.bins,
     guards: result.guards,
   });
 });

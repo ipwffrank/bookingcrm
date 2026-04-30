@@ -5,6 +5,7 @@ import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
+import type { RebookLagResult } from "./rebook-lag.js";
 
 /**
  * Gemini integration for the Analytics Digest email.
@@ -24,7 +25,7 @@ import type { CohortRetentionResult } from "./cohort-retention.js";
  * AI prose this round" and falls back to numeric-only.
  */
 
-const PROMPT_VERSION = "digest-prose-v3"; // v3: adds 60-day cohort retention block to INPUT
+const PROMPT_VERSION = "digest-prose-v4"; // v4: adds rebook lag distribution block to INPUT
 // Google has rolled the default lineage twice in 2026: `gemini-1.5-flash`
 // was removed from v1beta first, then `gemini-2.0-flash` became "no longer
 // available to new users" for projects enabled later in the year (404 on
@@ -67,6 +68,7 @@ export async function generateDigestSuggestions(args: {
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
+  rebookLag?: RebookLagResult;
 }): Promise<DigestAiResult | null> {
   const client = getClient();
   if (!client) {
@@ -125,10 +127,12 @@ function hashInput(args: {
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
+  rebookLag?: RebookLagResult;
 }): string {
   const m = args.metrics;
   const u = args.utilization;
   const cr = args.cohortRetention;
+  const rl = args.rebookLag;
   // Stable JSON serialization — pin specific fields rather than
   // JSON.stringify-ing the whole object so future metric additions don't
   // silently invalidate every cached entry.
@@ -155,6 +159,11 @@ function hashInput(args: {
     cr?.headline?.retentionPct ?? null,
     cr?.headline?.cohortSize ?? null,
     cr?.headline?.deltaVsPriorCohortPp ?? null,
+    rl?.headline?.medianDays ?? null,
+    rl?.headline?.cohortSize ?? null,
+    rl?.headline?.returnedCount ?? null,
+    rl?.headline?.deltaVsPriorCohortDays ?? null,
+    rl?.bins?.map((b) => [b.id, b.count, b.pct]) ?? null,
   ]);
   return crypto.createHash("sha256").update(stable).digest("hex");
 }
@@ -169,6 +178,7 @@ function buildPrompt(args: {
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
+  rebookLag?: RebookLagResult;
 }): string {
   const m = args.metrics;
   const cat = args.merchantCategory ?? "appointment-based service";
@@ -225,6 +235,28 @@ function buildPrompt(args: {
         return `\n- 60-day cohort retention: ${h.retentionPct.toFixed(1)}% (cohort: ${h.cohortSize} first-timers from ${cohortStartLabel}-${cohortEndLabel})${deltaPhrase}`;
       })();
 
+  // Rebook lag block — suppressed entirely when headline is null
+  // (cohort below sample threshold). When the cohort meets threshold
+  // but median is suppressed (returners < 5), surface only the
+  // distribution line.
+  const rebookLagBlock = !args.rebookLag?.headline
+    ? ""
+    : (() => {
+        const h = args.rebookLag!.headline!;
+        const distribution = args.rebookLag!.bins
+          .map((b) => `${b.id} ${b.pct.toFixed(1)}%`)
+          .join(", ");
+        const medianLine = h.medianDays === null
+          ? "" // suppressed when returners < 5
+          : (() => {
+              const deltaPhrase = h.deltaVsPriorCohortDays === null
+                ? ""
+                : ` (${h.deltaVsPriorCohortDays >= 0 ? "+" : ""}${h.deltaVsPriorCohortDays} days vs prior cohort)`;
+              return `\n- Median rebook lag: ${h.medianDays} days${deltaPhrase}`;
+            })();
+        return `${medianLine}\n- Rebook lag distribution: ${distribution}`;
+      })();
+
   return `You are an operations analyst writing a ${args.frequency} digest for a ${cat} business in Singapore/Malaysia. Output ${horizon}.
 
 CONSTRAINTS — these are absolute, do not violate:
@@ -235,6 +267,7 @@ CONSTRAINTS — these are absolute, do not violate:
 - Reference specific days, services, or staff only if named in the data below.
 - Reference utilization only when it appears in INPUT — never invent a percentage. Do not make day-of-week claims about days listed in "Low-sample days".
 - Reference cohort retention only when it appears in INPUT. The cohort window is offset by 60 days — if you mention the cohort, frame it as "first-timers from N days ago" not "this period's first-timers" (those don't yet have full 60-day return data).
+- Reference rebook lag only when it appears in INPUT. The bins are aligned with common rebook intervals (1 week / 2 weeks / 1 month / 2 months) — feel free to recommend post-service rebook CTA timing relative to the modal bin (the bin with the largest %).
 - Plain ASCII markdown only. No headers (#), no horizontal rules. Use only the structure shown in the OUTPUT FORMAT.
 - Total length: 80-150 words. No preamble, no closing line.
 
@@ -249,7 +282,7 @@ INPUT:
 - Reviews this period: ${m.reviewsCount} ${m.averageRating === null ? "" : `(avg ${m.averageRating.toFixed(1)}★)`}
 - Busiest day: ${m.highlights.busiestDay ? `${m.highlights.busiestDay.date} (${m.highlights.busiestDay.bookings} bookings)` : "n/a"}
 - Quietest day: ${m.highlights.quietestDay ? `${m.highlights.quietestDay.date} (${m.highlights.quietestDay.bookings} bookings)` : "n/a"}
-- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}${cohortBlock}
+- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}${cohortBlock}${rebookLagBlock}
 
 OUTPUT FORMAT (exactly):
 Suggestions:
