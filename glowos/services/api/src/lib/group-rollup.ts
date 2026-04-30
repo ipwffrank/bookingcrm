@@ -8,6 +8,7 @@
  * mean of per-branch rates (that gives the wrong answer when branches
  * have different sizes).
  */
+import { type RebookLagBin, BIN_DEFINITIONS } from "./rebook-lag.js";
 
 export interface BranchInfo {
   merchantId: string;
@@ -52,4 +53,29 @@ export function weightedRate(counts: RateCounts[]): number | null {
   }
   if (totalDen <= 0) return null;
   return totalNum / totalDen;
+}
+
+/**
+ * Merge per-branch rebook-lag bins into group-level bins. Bin counts
+ * sum across branches; percentages are recomputed at the group level
+ * against the total cohort size (sum of all per-branch bin counts).
+ *
+ * Returns 5 zero-count bins when given an empty array — useful as a
+ * suppress-everything fallback.
+ */
+export function mergeRebookLagBins(perBranchBins: RebookLagBin[][]): RebookLagBin[] {
+  const counts: Record<RebookLagBin["id"], number> = {
+    "0-7d": 0, "8-14d": 0, "15-30d": 0, "31-60d": 0, "60d+": 0,
+  };
+  for (const bins of perBranchBins) {
+    for (const bin of bins) {
+      counts[bin.id] += bin.count;
+    }
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return BIN_DEFINITIONS.map((def) => ({
+    ...def,
+    count: counts[def.id],
+    pct: total > 0 ? Math.round((counts[def.id] / total) * 1000) / 10 : 0,
+  }));
 }
