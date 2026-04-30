@@ -9,6 +9,13 @@ import {
   assembleResult,
   computeUtilizationPct,
 } from "./utilization.js";
+import {
+  type CohortRetentionResult,
+  LOOKFORWARD_DAYS as COHORT_LOOKFORWARD_DAYS,
+  computeCohortWindow,
+  computeRetentionPct as computeCohortRetentionPct,
+  assembleResult as assembleCohortResult,
+} from "./cohort-retention.js";
 
 /**
  * Numeric aggregator for the Analytics Digest email reports. Returns the
@@ -650,4 +657,126 @@ async function computePriorPeriodAvailable(args: {
     merchantTz: args.merchantTz,
   });
   return byDow.reduce((a, b) => a + b, 0);
+}
+
+// ─── Cohort retention aggregator ─────────────────────────────────────────
+//
+// Issues two SQL queries (current cohort + prior cohort) using the same
+// CTE shape as `computeFirstTimerReturn`, then assembles via the pure
+// helpers in `cohort-retention.ts`. Wrapped in try/catch so a digest
+// never fails because of cohort-retention compute.
+
+export async function aggregateCohortRetention(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<CohortRetentionResult> {
+  try {
+    return await aggregateCohortRetentionInner(args);
+  } catch (err) {
+    console.error("[cohort-retention] aggregation failed — returning null result", {
+      merchantId: args.merchantId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // Return a valid-shaped result with headline=null so consumers omit
+    // the section gracefully. Cohort window reported as the trailing
+    // window we WOULD have used so the UI's "insufficient sample" copy
+    // can still cite the right date range.
+    const cohortWindow = computeCohortWindow({
+      periodStart: args.periodStart,
+      periodEnd: args.periodEnd,
+    });
+    return {
+      lookforwardDays: COHORT_LOOKFORWARD_DAYS,
+      cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: 0 },
+      headline: null,
+      guards: { lowSample: true },
+    };
+  }
+}
+
+async function aggregateCohortRetentionInner(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<CohortRetentionResult> {
+  const cohortWindow = computeCohortWindow({
+    periodStart: args.periodStart,
+    periodEnd: args.periodEnd,
+  });
+
+  const periodLenMs = args.periodEnd.getTime() - args.periodStart.getTime();
+  const priorCohortStart = new Date(cohortWindow.windowStart.getTime() - periodLenMs);
+  const priorCohortEnd = new Date(cohortWindow.windowEnd.getTime() - periodLenMs);
+
+  // Run both queries in parallel — they're independent.
+  const [current, prior] = await Promise.all([
+    queryCohort({ merchantId: args.merchantId, cohortStart: cohortWindow.windowStart, cohortEnd: cohortWindow.windowEnd }),
+    queryCohort({ merchantId: args.merchantId, cohortStart: priorCohortStart, cohortEnd: priorCohortEnd }),
+  ]);
+
+  const priorRetentionPct = computeCohortRetentionPct(prior.returned, prior.sampleSize);
+
+  return assembleCohortResult({
+    cohort: {
+      windowStart: cohortWindow.windowStart,
+      windowEnd: cohortWindow.windowEnd,
+      size: current.sampleSize,
+    },
+    returnedCount: current.returned,
+    priorRetentionPct,
+  });
+}
+
+/**
+ * Cohort query — finds first-timers whose earliest 'completed' booking
+ * fell in [cohortStart, cohortEnd] AND whose lookforward window has
+ * already elapsed (`first_at + LOOKFORWARD_DAYS <= NOW()`). For each
+ * cohort member, checks for a 'completed' return within that lookforward.
+ */
+async function queryCohort(args: {
+  merchantId: string;
+  cohortStart: Date;
+  cohortEnd: Date;
+}): Promise<{ sampleSize: number; returned: number }> {
+  const rows = await db.execute<{
+    sample_size: number;
+    returned: number;
+  }>(sql`
+    WITH first_visits AS (
+      SELECT
+        client_id,
+        MIN(start_time) AS first_at
+      FROM bookings
+      WHERE merchant_id = ${args.merchantId}
+        AND status = 'completed'
+      GROUP BY client_id
+    ),
+    cohort AS (
+      SELECT client_id, first_at
+      FROM first_visits
+      WHERE first_at >= ${args.cohortStart}
+        AND first_at <= ${args.cohortEnd}
+        AND first_at + (${COHORT_LOOKFORWARD_DAYS} * INTERVAL '1 day') <= NOW()
+    )
+    SELECT
+      COUNT(*) AS sample_size,
+      COUNT(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1 FROM bookings b2
+          WHERE b2.merchant_id = ${args.merchantId}
+            AND b2.client_id = cohort.client_id
+            AND b2.status = 'completed'
+            AND b2.start_time > cohort.first_at
+            AND b2.start_time <= cohort.first_at + (${COHORT_LOOKFORWARD_DAYS} * INTERVAL '1 day')
+        )
+      ) AS returned
+    FROM cohort
+  `);
+  const row = rows.rows[0];
+  if (!row) return { sampleSize: 0, returned: 0 };
+  return {
+    sampleSize: Number(row.sample_size ?? 0),
+    returned: Number(row.returned ?? 0),
+  };
 }

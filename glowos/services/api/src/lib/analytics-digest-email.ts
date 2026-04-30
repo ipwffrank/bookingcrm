@@ -1,5 +1,6 @@
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { UtilizationResult } from "./utilization.js";
+import type { CohortRetentionResult } from "./cohort-retention.js";
 
 /**
  * Renders the Analytics Digest email body. PR 1 ships numeric content
@@ -34,6 +35,9 @@ interface Args {
   // Capacity utilization for the period. When the headline is null
   // (no usable capacity data) the row is omitted from the email.
   utilization?: UtilizationResult;
+  // 60-day cohort retention. When the headline is null (cohort below
+  // sample-size threshold) the row is omitted.
+  cohortRetention?: CohortRetentionResult;
 }
 
 interface Delta {
@@ -221,6 +225,21 @@ function renderAiBlock(markdown: string, frequency: DigestFrequency): string {
   `;
 }
 
+function cohortRetentionValueHtml(headline: NonNullable<CohortRetentionResult["headline"]>): string {
+  const pct = headline.retentionPct.toFixed(1);
+  return `${pct}% <span style="color:${COLOURS.grey45};font-weight:400;font-size:11px">(cohort: ${headline.cohortSize})</span>`;
+}
+
+function cohortRetentionDeltaHtml(pp: number | null): string {
+  if (pp === null) return "";
+  const abs = Math.abs(pp);
+  if (abs < 0.5) return deltaCell({ pct: "—", arrow: "—" }, true);
+  return deltaCell(
+    { pct: `${abs.toFixed(1)}pp`, arrow: pp > 0 ? "▲" : "▼" },
+    true,
+  );
+}
+
 function utilizationValueHtml(headline: NonNullable<UtilizationResult["headline"]>): string {
   const raw = headline.utilizationPct;
   const display = Math.min(100, Math.round(raw));
@@ -300,6 +319,11 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
         "Capacity utilization",
         utilizationValueHtml(args.utilization.headline),
         utilizationDeltaHtml(args.utilization.headline.deltaVsPriorPp),
+      ) : ""}
+      ${args.cohortRetention?.headline ? gridRow(
+        "60-day cohort retention",
+        cohortRetentionValueHtml(args.cohortRetention.headline),
+        cohortRetentionDeltaHtml(args.cohortRetention.headline.deltaVsPriorCohortPp),
       ) : ""}
       ${gridRow(
         "Reviews",
