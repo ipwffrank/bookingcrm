@@ -22,6 +22,12 @@ import {
   computeMedian as computeRebookLagMedian,
   assembleResult as assembleRebookLagResult,
 } from "./rebook-lag.js";
+import {
+  type GroupRollupResult,
+  type RateCounts,
+  weightedRate,
+  mergeRebookLagBins,
+} from "./group-rollup.js";
 
 /**
  * Numeric aggregator for the Analytics Digest email reports. Returns the
@@ -945,4 +951,185 @@ export async function resolveBranchesForGroup(groupId: string): Promise<Array<{
     .orderBy(merchants.name);
 
   return rows;
+}
+
+// ─── Group-rollup: digest metrics ────────────────────────────────────────
+//
+// Calls computeDigestMetrics in parallel for each branch in the group,
+// then composes a group-level DigestMetrics via weighted aggregation.
+// Per-branch results are returned alongside for the email/PDF/AI prompt
+// to render the per-branch comparison table.
+
+export async function computeDigestMetricsForGroup(args: {
+  groupId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<GroupRollupResult<DigestMetrics>> {
+  const branches = await resolveBranchesForGroup(args.groupId);
+  if (branches.length === 0) {
+    return {
+      group: emptyDigestMetrics(args.groupId, args.periodStart, args.periodEnd),
+      perBranch: [],
+    };
+  }
+
+  const perBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      computeDigestMetrics({
+        merchantId: b.merchantId,
+        periodStart: args.periodStart,
+        periodEnd: args.periodEnd,
+      }),
+    ),
+  );
+
+  const perBranch: GroupRollupResult<DigestMetrics>["perBranch"] = [];
+  const successfulBranches: DigestMetrics[] = [];
+  perBranchSettled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      successfulBranches.push(r.value);
+      perBranch.push({
+        merchantId: branches[i].merchantId,
+        merchantName: branches[i].merchantName,
+        metrics: r.value,
+      });
+    } else {
+      console.warn("[group-rollup] computeDigestMetrics failed for branch — omitting", {
+        merchantId: branches[i].merchantId,
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  });
+
+  if (successfulBranches.length === 0) {
+    return {
+      group: emptyDigestMetrics(args.groupId, args.periodStart, args.periodEnd),
+      perBranch,
+    };
+  }
+
+  const sumNum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const m = successfulBranches;
+
+  const noShowCounts: RateCounts[] = m.map((x) => ({
+    numerator: x.noShowsCount,
+    denominator: x.noShowRate > 0 ? Math.round(x.noShowsCount / x.noShowRate) : x.bookingsCount + x.noShowsCount,
+  }));
+  const noShowRate = weightedRate(noShowCounts) ?? 0;
+
+  const ftCounts: RateCounts[] = m
+    .filter((x) => x.firstTimerReturnRatePct !== null)
+    .map((x) => ({
+      numerator: Math.round((x.firstTimerReturnRatePct! / 100) * x.firstTimerSampleSize),
+      denominator: x.firstTimerSampleSize,
+    }));
+  const ftRate = weightedRate(ftCounts);
+  const ftRatePct = ftRate === null ? null : Math.round(ftRate * 1000) / 10;
+  const ftSampleSize = sumNum(m.map((x) => x.firstTimerSampleSize));
+
+  const ratingCounts: RateCounts[] = m
+    .filter((x) => x.averageRating !== null && x.reviewsCount > 0)
+    .map((x) => ({
+      numerator: x.averageRating! * x.reviewsCount,
+      denominator: x.reviewsCount,
+    }));
+  const avgRating = weightedRate(ratingCounts);
+
+  const allBusiestDays = m.map((x) => x.highlights.busiestDay).filter((d) => d !== null) as Array<{ date: string; bookings: number }>;
+  const allQuietestDays = m.map((x) => x.highlights.quietestDay).filter((d) => d !== null) as Array<{ date: string; bookings: number }>;
+
+  const serviceRevenue = new Map<string, number>();
+  for (const branch of m) {
+    if (branch.highlights.topServiceByRevenue) {
+      const ts = branch.highlights.topServiceByRevenue;
+      serviceRevenue.set(ts.name, (serviceRevenue.get(ts.name) ?? 0) + ts.revenueSgd);
+    }
+  }
+  let topService: { name: string; revenueSgd: number } | null = null;
+  for (const [name, rev] of serviceRevenue) {
+    if (topService === null || rev > topService.revenueSgd) {
+      topService = { name, revenueSgd: rev };
+    }
+  }
+
+  const priorNoShowCounts: RateCounts[] = m.map((x) => ({
+    numerator: x.prior.noShowsCount,
+    denominator: x.prior.noShowRate > 0 ? Math.round(x.prior.noShowsCount / x.prior.noShowRate) : x.prior.bookingsCount + x.prior.noShowsCount,
+  }));
+  const priorFtCounts: RateCounts[] = m
+    .filter((x) => x.prior.firstTimerReturnRatePct !== null)
+    .map((x) => ({
+      numerator: Math.round((x.prior.firstTimerReturnRatePct! / 100) * x.prior.firstTimerSampleSize),
+      denominator: x.prior.firstTimerSampleSize,
+    }));
+  const priorRatingCounts: RateCounts[] = m
+    .filter((x) => x.prior.averageRating !== null && x.prior.reviewsCount > 0)
+    .map((x) => ({ numerator: x.prior.averageRating! * x.prior.reviewsCount, denominator: x.prior.reviewsCount }));
+
+  const groupResult: DigestMetrics = {
+    merchantId: args.groupId,
+    periodStart: args.periodStart,
+    periodEnd: args.periodEnd,
+    revenueSgd: sumNum(m.map((x) => x.revenueSgd)),
+    bookingsCount: sumNum(m.map((x) => x.bookingsCount)),
+    noShowRate,
+    noShowsCount: sumNum(m.map((x) => x.noShowsCount)),
+    cancelledCount: sumNum(m.map((x) => x.cancelledCount)),
+    firstTimerReturnRatePct: ftRatePct,
+    firstTimerSampleSize: ftSampleSize,
+    reviewsCount: sumNum(m.map((x) => x.reviewsCount)),
+    averageRating: avgRating === null ? null : Math.round(avgRating * 10) / 10,
+    prior: {
+      revenueSgd: sumNum(m.map((x) => x.prior.revenueSgd)),
+      bookingsCount: sumNum(m.map((x) => x.prior.bookingsCount)),
+      noShowRate: weightedRate(priorNoShowCounts) ?? 0,
+      noShowsCount: sumNum(m.map((x) => x.prior.noShowsCount)),
+      cancelledCount: sumNum(m.map((x) => x.prior.cancelledCount)),
+      firstTimerReturnRatePct: (() => {
+        const r = weightedRate(priorFtCounts);
+        return r === null ? null : Math.round(r * 1000) / 10;
+      })(),
+      firstTimerSampleSize: sumNum(m.map((x) => x.prior.firstTimerSampleSize)),
+      reviewsCount: sumNum(m.map((x) => x.prior.reviewsCount)),
+      averageRating: (() => {
+        const r = weightedRate(priorRatingCounts);
+        return r === null ? null : Math.round(r * 10) / 10;
+      })(),
+    },
+    highlights: {
+      busiestDay: allBusiestDays.length > 0
+        ? allBusiestDays.reduce((max, d) => d.bookings > max.bookings ? d : max)
+        : null,
+      quietestDay: allQuietestDays.length > 0
+        ? allQuietestDays.reduce((min, d) => d.bookings < min.bookings ? d : min)
+        : null,
+      topServiceByRevenue: topService,
+    },
+  };
+
+  return { group: groupResult, perBranch };
+}
+
+/** Empty result shape for the zero-active-branch case. */
+function emptyDigestMetrics(groupId: string, periodStart: Date, periodEnd: Date): DigestMetrics {
+  return {
+    merchantId: groupId,
+    periodStart,
+    periodEnd,
+    revenueSgd: 0,
+    bookingsCount: 0,
+    noShowRate: 0,
+    noShowsCount: 0,
+    cancelledCount: 0,
+    firstTimerReturnRatePct: null,
+    firstTimerSampleSize: 0,
+    reviewsCount: 0,
+    averageRating: null,
+    prior: {
+      revenueSgd: 0, bookingsCount: 0, noShowRate: 0, noShowsCount: 0,
+      cancelledCount: 0, firstTimerReturnRatePct: null, firstTimerSampleSize: 0,
+      reviewsCount: 0, averageRating: null,
+    },
+    highlights: { busiestDay: null, quietestDay: null, topServiceByRevenue: null },
+  };
 }
