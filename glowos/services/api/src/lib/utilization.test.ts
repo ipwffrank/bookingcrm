@@ -54,7 +54,7 @@ describe("groupBookingsByDow", () => {
     // 2026-04-29T03:00:00Z = 11am SGT Wed (UTC+8)
     const booked = groupBookingsByDow({
       bookings: [
-        { scheduledAt: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 },
+        { startTime: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 },
       ],
       merchantTz: "Asia/Singapore",
     });
@@ -67,13 +67,13 @@ describe("groupBookingsByDow", () => {
   it("respects merchant timezone for dow boundary", () => {
     // 2026-04-30T15:30:00Z = Thu 23:30 SGT but Fri 00:30 KST
     const inSgt = groupBookingsByDow({
-      bookings: [{ scheduledAt: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
+      bookings: [{ startTime: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
       merchantTz: "Asia/Singapore",
     });
     expect(inSgt[4]).toBe(30); // Thursday in SGT
 
     const inKst = groupBookingsByDow({
-      bookings: [{ scheduledAt: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
+      bookings: [{ startTime: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
       merchantTz: "Asia/Seoul",
     });
     expect(inKst[5]).toBe(30); // Friday in KST
@@ -82,8 +82,8 @@ describe("groupBookingsByDow", () => {
   it("sums multiple bookings on the same dow", () => {
     const booked = groupBookingsByDow({
       bookings: [
-        { scheduledAt: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 }, // Wed 11am SGT
-        { scheduledAt: new Date("2026-04-29T07:00:00Z"), durationMinutes: 30 }, // Wed 3pm SGT
+        { startTime: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 }, // Wed 11am SGT
+        { startTime: new Date("2026-04-29T07:00:00Z"), durationMinutes: 30 }, // Wed 3pm SGT
       ],
       merchantTz: "Asia/Singapore",
     });

@@ -65,7 +65,7 @@ const DOW_BY_WEEKDAY_LABEL: Record<string, number> = {
  * Intl.DateTimeFormat for tz conversion to avoid pulling in date-fns.
  */
 export function groupBookingsByDow(args: {
-  bookings: Array<{ scheduledAt: Date; durationMinutes: number }>;
+  bookings: Array<{ startTime: Date; durationMinutes: number }>;
   merchantTz: string;
 }): number[] {
   const buckets = [0, 0, 0, 0, 0, 0, 0];
@@ -74,7 +74,7 @@ export function groupBookingsByDow(args: {
     weekday: "short",
   });
   for (const b of args.bookings) {
-    const dow = DOW_BY_WEEKDAY_LABEL[fmt.format(b.scheduledAt)];
+    const dow = DOW_BY_WEEKDAY_LABEL[fmt.format(b.startTime)];
     if (dow !== undefined) buckets[dow] += b.durationMinutes;
   }
   return buckets;
