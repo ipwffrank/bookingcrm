@@ -53,3 +53,16 @@ export function computeCohortWindow(args: {
     windowEnd: new Date(args.periodEnd.getTime() - LOOKFORWARD_MS),
   };
 }
+
+/**
+ * Retention pct as `(returned / cohortSize) * 100`, rounded to 1 decimal.
+ * Returns null when cohort is below the sample-size threshold — signals
+ * "too noisy to act on" upstream.
+ */
+export function computeRetentionPct(
+  returnedCount: number,
+  cohortSize: number,
+): number | null {
+  if (cohortSize < SAMPLE_SIZE_THRESHOLD) return null;
+  return Math.round((returnedCount / cohortSize) * 1000) / 10;
+}
