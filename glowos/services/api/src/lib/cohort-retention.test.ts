@@ -4,6 +4,8 @@ import {
   SAMPLE_SIZE_THRESHOLD,
   computeCohortWindow,
   computeRetentionPct,
+  computeDeltaVsPrior,
+  assembleResult,
 } from "./cohort-retention.js";
 
 describe("cohort-retention constants", () => {
@@ -54,5 +56,66 @@ describe("computeRetentionPct", () => {
 
   it("returns null when cohort size is exactly 0", () => {
     expect(computeRetentionPct(0, 0)).toBeNull();
+  });
+});
+
+describe("computeDeltaVsPrior", () => {
+  it("returns the difference in percentage points", () => {
+    expect(computeDeltaVsPrior(64.3, 75.0)).toBeCloseTo(-10.7, 1);
+  });
+
+  it("returns null when prior is null", () => {
+    expect(computeDeltaVsPrior(64.3, null)).toBeNull();
+  });
+
+  it("returns null when current is null", () => {
+    expect(computeDeltaVsPrior(null, 75.0)).toBeNull();
+  });
+
+  it("rounds to one decimal", () => {
+    expect(computeDeltaVsPrior(60.123, 50.000)).toBe(10.1);
+  });
+});
+
+describe("assembleResult", () => {
+  const cohort = {
+    windowStart: new Date("2026-02-01T00:00:00Z"),
+    windowEnd: new Date("2026-03-01T00:00:00Z"),
+    size: 22,
+  };
+
+  it("returns headline=null when cohort below threshold", () => {
+    const r = assembleResult({
+      cohort: { ...cohort, size: 4 },
+      returnedCount: 2,
+      priorRetentionPct: null,
+    });
+    expect(r.headline).toBeNull();
+    expect(r.guards.lowSample).toBe(true);
+    expect(r.cohort.size).toBe(4);
+  });
+
+  it("populates headline + delta when cohort meets threshold", () => {
+    const r = assembleResult({
+      cohort,
+      returnedCount: 14,
+      priorRetentionPct: 75.0,
+    });
+    expect(r.headline).not.toBeNull();
+    expect(r.headline!.retentionPct).toBeCloseTo(63.6, 1);
+    expect(r.headline!.cohortSize).toBe(22);
+    expect(r.headline!.returnedCount).toBe(14);
+    expect(r.headline!.deltaVsPriorCohortPp).toBeCloseTo(-11.4, 1);
+    expect(r.guards.lowSample).toBe(false);
+    expect(r.lookforwardDays).toBe(60);
+  });
+
+  it("populates headline with null delta when prior cohort was below threshold", () => {
+    const r = assembleResult({
+      cohort,
+      returnedCount: 14,
+      priorRetentionPct: null,
+    });
+    expect(r.headline!.deltaVsPriorCohortPp).toBeNull();
   });
 });

@@ -66,3 +66,45 @@ export function computeRetentionPct(
   if (cohortSize < SAMPLE_SIZE_THRESHOLD) return null;
   return Math.round((returnedCount / cohortSize) * 1000) / 10;
 }
+
+/** Percentage-point delta. null if either side is null. */
+export function computeDeltaVsPrior(
+  current: number | null,
+  prior: number | null,
+): number | null {
+  if (current === null || prior === null) return null;
+  return Math.round((current - prior) * 10) / 10;
+}
+
+/**
+ * Assemble the final CohortRetentionResult from the pre-aggregated
+ * pieces. Returns headline=null when the cohort is below the sample-size
+ * threshold — the "insufficient sample" signal that propagates to the UI
+ * / digest / AI prompt so they can suppress the section gracefully.
+ */
+export function assembleResult(args: {
+  cohort: CohortInfo;
+  returnedCount: number;
+  priorRetentionPct: number | null;
+}): CohortRetentionResult {
+  const retentionPct = computeRetentionPct(args.returnedCount, args.cohort.size);
+  if (retentionPct === null) {
+    return {
+      lookforwardDays: LOOKFORWARD_DAYS,
+      cohort: args.cohort,
+      headline: null,
+      guards: { lowSample: true },
+    };
+  }
+  return {
+    lookforwardDays: LOOKFORWARD_DAYS,
+    cohort: args.cohort,
+    headline: {
+      retentionPct,
+      returnedCount: args.returnedCount,
+      cohortSize: args.cohort.size,
+      deltaVsPriorCohortPp: computeDeltaVsPrior(retentionPct, args.priorRetentionPct),
+    },
+    guards: { lowSample: false },
+  };
+}
