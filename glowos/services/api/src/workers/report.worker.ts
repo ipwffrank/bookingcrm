@@ -8,16 +8,26 @@ import {
   analyticsDigestDeliveries,
   merchants,
   merchantUsers,
+  groups,
 } from "@glowos/db";
 import { config } from "../lib/config.js";
 import {
+  type DigestMetrics,
   computeDigestMetrics,
+  computeDigestMetricsForGroup,
   aggregateUtilization,
+  aggregateUtilizationForGroup,
   aggregateCohortRetention,
+  aggregateCohortRetentionForGroup,
   aggregateRebookLag,
+  aggregateRebookLagForGroup,
+  resolveBranchesForGroup,
   resolvePeriodForFrequency,
   getMerchantTimezone,
 } from "../lib/analytics-aggregator.js";
+import type { UtilizationResult } from "../lib/utilization.js";
+import type { CohortRetentionResult } from "../lib/cohort-retention.js";
+import type { RebookLagResult } from "../lib/rebook-lag.js";
 import {
   formatPeriodLabel,
   renderDigestEmail,
@@ -263,43 +273,118 @@ async function processGenerate(data: {
     }
 
     const frequency = cfg.frequency as DigestFrequency;
-    const metrics = await computeDigestMetrics({
-      merchantId: cfg.merchantId,
-      periodStart,
-      periodEnd,
-    });
 
-    // Capacity utilization runs alongside computeDigestMetrics. Wrapped
-    // internally in try/catch so a failure returns a null-headline result
-    // and the digest pipeline simply omits the utilization block.
     const periodSpanMs = periodEnd.getTime() - periodStart.getTime();
     const priorPeriodEnd = new Date(periodStart.getTime() - 1);
     const priorPeriodStart = new Date(priorPeriodEnd.getTime() - periodSpanMs);
-    const utilization = await aggregateUtilization({
-      merchantId: cfg.merchantId,
-      periodStart,
-      periodEnd,
-      priorPeriodStart,
-      priorPeriodEnd,
-    });
 
-    // Cohort retention runs alongside the other aggregators. Wrapped
-    // internally in try/catch so a failure returns headline=null and the
-    // digest pipeline simply omits the cohort retention block.
-    const cohortRetention = await aggregateCohortRetention({
-      merchantId: cfg.merchantId,
-      periodStart,
-      periodEnd,
-    });
+    let metrics: DigestMetrics;
+    let utilization: UtilizationResult;
+    let cohortRetention: CohortRetentionResult;
+    let rebookLag: RebookLagResult;
+    let groupContext: { groupName: string; branches: Array<{ merchantId: string; merchantName: string }> } | null = null;
+    let perBranchMetrics: Array<{
+      merchantId: string;
+      merchantName: string;
+      metrics: DigestMetrics;
+      utilization: UtilizationResult;
+      cohortRetention: CohortRetentionResult;
+      rebookLag: RebookLagResult;
+    }> | null = null;
 
-    // Rebook lag — same cohort as cohortRetention. Wrapped internally
-    // in try/catch so a failure returns headline=null and the digest
-    // pipeline simply omits the rebook lag block.
-    const rebookLag = await aggregateRebookLag({
-      merchantId: cfg.merchantId,
-      periodStart,
-      periodEnd,
-    });
+    if (cfg.scope === "group") {
+      if (!cfg.groupId) {
+        await db
+          .update(analyticsDigestRuns)
+          .set({ status: "failed", errorMessage: "missing_group_id", completedAt: new Date() })
+          .where(eq(analyticsDigestRuns.id, run.id));
+        console.error("[ReportWorker:generate] group-scope config missing groupId", { configId: cfg.id });
+        return;
+      }
+
+      const branches = await resolveBranchesForGroup(cfg.groupId);
+      if (branches.length === 0) {
+        await db
+          .update(analyticsDigestRuns)
+          .set({ status: "skipped", errorMessage: "no_active_branches", completedAt: new Date() })
+          .where(eq(analyticsDigestRuns.id, run.id));
+        console.log("[ReportWorker:generate] group has no active branches, skipping", { configId: cfg.id, groupId: cfg.groupId });
+        return;
+      }
+
+      const [groupRow] = await db
+        .select({ name: groups.name })
+        .from(groups)
+        .where(eq(groups.id, cfg.groupId))
+        .limit(1);
+      const groupName = groupRow?.name ?? "Group";
+
+      const [metricsRes, utilizationRes, cohortRes, rebookRes] = await Promise.all([
+        computeDigestMetricsForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+        aggregateUtilizationForGroup({ groupId: cfg.groupId, periodStart, periodEnd, priorPeriodStart, priorPeriodEnd }),
+        aggregateCohortRetentionForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+        aggregateRebookLagForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+      ]);
+
+      metrics = metricsRes.group;
+      utilization = utilizationRes.group;
+      cohortRetention = cohortRes.group;
+      rebookLag = rebookRes.group;
+
+      const branchMap = new Map<string, {
+        merchantId: string;
+        merchantName: string;
+        metrics?: DigestMetrics;
+        utilization?: UtilizationResult;
+        cohortRetention?: CohortRetentionResult;
+        rebookLag?: RebookLagResult;
+      }>();
+      const ensure = (id: string, name: string) => {
+        if (!branchMap.has(id)) branchMap.set(id, { merchantId: id, merchantName: name });
+        return branchMap.get(id)!;
+      };
+      for (const e of metricsRes.perBranch) ensure(e.merchantId, e.merchantName).metrics = e.metrics;
+      for (const e of utilizationRes.perBranch) ensure(e.merchantId, e.merchantName).utilization = e.metrics;
+      for (const e of cohortRes.perBranch) ensure(e.merchantId, e.merchantName).cohortRetention = e.metrics;
+      for (const e of rebookRes.perBranch) ensure(e.merchantId, e.merchantName).rebookLag = e.metrics;
+
+      perBranchMetrics = Array.from(branchMap.values())
+        .filter((b) => b.metrics && b.utilization && b.cohortRetention && b.rebookLag)
+        .map((b) => ({
+          merchantId: b.merchantId,
+          merchantName: b.merchantName,
+          metrics: b.metrics!,
+          utilization: b.utilization!,
+          cohortRetention: b.cohortRetention!,
+          rebookLag: b.rebookLag!,
+        }));
+
+      groupContext = { groupName, branches: branches.map((b) => ({ merchantId: b.merchantId, merchantName: b.merchantName })) };
+    } else {
+      // Existing per-merchant path unchanged.
+      metrics = await computeDigestMetrics({
+        merchantId: cfg.merchantId,
+        periodStart,
+        periodEnd,
+      });
+      utilization = await aggregateUtilization({
+        merchantId: cfg.merchantId,
+        periodStart,
+        periodEnd,
+        priorPeriodStart,
+        priorPeriodEnd,
+      });
+      cohortRetention = await aggregateCohortRetention({
+        merchantId: cfg.merchantId,
+        periodStart,
+        periodEnd,
+      });
+      rebookLag = await aggregateRebookLag({
+        merchantId: cfg.merchantId,
+        periodStart,
+        periodEnd,
+      });
+    }
 
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
@@ -314,7 +399,7 @@ async function processGenerate(data: {
     let aiPromptVersion: string | undefined;
     try {
       const aiResult = await generateDigestSuggestions({
-        merchantName: merchant.name,
+        merchantName: groupContext ? groupContext.groupName : merchant.name,
         merchantCategory: merchant.category ?? null,
         frequency,
         periodLabel,
@@ -322,6 +407,8 @@ async function processGenerate(data: {
         utilization,
         cohortRetention,
         rebookLag,
+        groupContext,
+        perBranchMetrics,
       });
       if (aiResult) {
         // Look for a cached output for this exact input within the last
@@ -359,7 +446,7 @@ async function processGenerate(data: {
     }
 
     const { subject, html } = renderDigestEmail({
-      merchantName: merchant.name,
+      merchantName: groupContext ? groupContext.groupName : merchant.name,
       frequency,
       metrics,
       dashboardUrl,
@@ -368,6 +455,8 @@ async function processGenerate(data: {
       utilization,
       cohortRetention,
       rebookLag,
+      groupContext,
+      perBranchMetrics,
     });
 
     // PDF attachment — generate once for all recipients (the Buffer is the
@@ -377,7 +466,7 @@ async function processGenerate(data: {
     let pdfFilename: string | null = null;
     try {
       pdfBuffer = await renderDigestPdf({
-        merchantName: merchant.name,
+        merchantName: groupContext ? groupContext.groupName : merchant.name,
         frequency,
         periodLabel,
         metrics,
@@ -386,6 +475,8 @@ async function processGenerate(data: {
         utilization,
         cohortRetention,
         rebookLag,
+        groupContext,
+        perBranchMetrics,
       });
       pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
     } catch (err) {

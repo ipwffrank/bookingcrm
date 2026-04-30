@@ -22,6 +22,12 @@ import {
   computeMedian as computeRebookLagMedian,
   assembleResult as assembleRebookLagResult,
 } from "./rebook-lag.js";
+import {
+  type GroupRollupResult,
+  type RateCounts,
+  weightedRate,
+  mergeRebookLagBins,
+} from "./group-rollup.js";
 
 /**
  * Numeric aggregator for the Analytics Digest email reports. Returns the
@@ -872,7 +878,7 @@ async function aggregateRebookLagInner(args: {
  * their second 'completed' booking within 60 days of the first, or NULL
  * if no such booking exists.
  */
-async function queryRebookLagCohort(args: {
+export async function queryRebookLagCohort(args: {
   merchantId: string;
   cohortStart: Date;
   cohortEnd: Date;
@@ -921,5 +927,557 @@ async function queryRebookLagCohort(args: {
     lagDaysPerMember: rows.rows.map((r) =>
       r.lag_days === null || r.lag_days === undefined ? null : Number(r.lag_days),
     ),
+  };
+}
+
+// ─── Group resolution ────────────────────────────────────────────────────
+//
+// Returns the active branches in a group. Used by all four
+// `aggregate*ForGroup` wrappers as the first step.
+
+export async function resolveBranchesForGroup(groupId: string): Promise<Array<{
+  merchantId: string;
+  merchantName: string;
+  timezone: string;
+}>> {
+  const rows = await db
+    .select({
+      merchantId: merchants.id,
+      merchantName: merchants.name,
+      timezone: merchants.timezone,
+    })
+    .from(merchants)
+    .where(eq(merchants.groupId, groupId))
+    .orderBy(merchants.name);
+
+  return rows;
+}
+
+// ─── Group-rollup: digest metrics ────────────────────────────────────────
+//
+// Calls computeDigestMetrics in parallel for each branch in the group,
+// then composes a group-level DigestMetrics via weighted aggregation.
+// Per-branch results are returned alongside for the email/PDF/AI prompt
+// to render the per-branch comparison table.
+
+export async function computeDigestMetricsForGroup(args: {
+  groupId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<GroupRollupResult<DigestMetrics>> {
+  const branches = await resolveBranchesForGroup(args.groupId);
+  if (branches.length === 0) {
+    return {
+      group: emptyDigestMetrics(args.groupId, args.periodStart, args.periodEnd),
+      perBranch: [],
+    };
+  }
+
+  const perBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      computeDigestMetrics({
+        merchantId: b.merchantId,
+        periodStart: args.periodStart,
+        periodEnd: args.periodEnd,
+      }),
+    ),
+  );
+
+  const perBranch: GroupRollupResult<DigestMetrics>["perBranch"] = [];
+  const successfulBranches: DigestMetrics[] = [];
+  perBranchSettled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      successfulBranches.push(r.value);
+      perBranch.push({
+        merchantId: branches[i].merchantId,
+        merchantName: branches[i].merchantName,
+        metrics: r.value,
+      });
+    } else {
+      console.warn("[group-rollup] computeDigestMetrics failed for branch — omitting", {
+        merchantId: branches[i].merchantId,
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  });
+
+  if (successfulBranches.length === 0) {
+    return {
+      group: emptyDigestMetrics(args.groupId, args.periodStart, args.periodEnd),
+      perBranch,
+    };
+  }
+
+  const sumNum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const m = successfulBranches;
+
+  const noShowCounts: RateCounts[] = m.map((x) => ({
+    numerator: x.noShowsCount,
+    denominator: x.noShowRate > 0 ? Math.round(x.noShowsCount / x.noShowRate) : x.bookingsCount + x.noShowsCount,
+  }));
+  const noShowRate = weightedRate(noShowCounts) ?? 0;
+
+  const ftCounts: RateCounts[] = m
+    .filter((x) => x.firstTimerReturnRatePct !== null)
+    .map((x) => ({
+      numerator: Math.round((x.firstTimerReturnRatePct! / 100) * x.firstTimerSampleSize),
+      denominator: x.firstTimerSampleSize,
+    }));
+  const ftRate = weightedRate(ftCounts);
+  const ftRatePct = ftRate === null ? null : Math.round(ftRate * 1000) / 10;
+  const ftSampleSize = sumNum(m.map((x) => x.firstTimerSampleSize));
+
+  const ratingCounts: RateCounts[] = m
+    .filter((x) => x.averageRating !== null && x.reviewsCount > 0)
+    .map((x) => ({
+      numerator: x.averageRating! * x.reviewsCount,
+      denominator: x.reviewsCount,
+    }));
+  const avgRating = weightedRate(ratingCounts);
+
+  const allBusiestDays = m.map((x) => x.highlights.busiestDay).filter((d) => d !== null) as Array<{ date: string; bookings: number }>;
+  const allQuietestDays = m.map((x) => x.highlights.quietestDay).filter((d) => d !== null) as Array<{ date: string; bookings: number }>;
+
+  const serviceRevenue = new Map<string, number>();
+  for (const branch of m) {
+    if (branch.highlights.topServiceByRevenue) {
+      const ts = branch.highlights.topServiceByRevenue;
+      serviceRevenue.set(ts.name, (serviceRevenue.get(ts.name) ?? 0) + ts.revenueSgd);
+    }
+  }
+  let topService: { name: string; revenueSgd: number } | null = null;
+  for (const [name, rev] of serviceRevenue) {
+    if (topService === null || rev > topService.revenueSgd) {
+      topService = { name, revenueSgd: rev };
+    }
+  }
+
+  const priorNoShowCounts: RateCounts[] = m.map((x) => ({
+    numerator: x.prior.noShowsCount,
+    denominator: x.prior.noShowRate > 0 ? Math.round(x.prior.noShowsCount / x.prior.noShowRate) : x.prior.bookingsCount + x.prior.noShowsCount,
+  }));
+  const priorFtCounts: RateCounts[] = m
+    .filter((x) => x.prior.firstTimerReturnRatePct !== null)
+    .map((x) => ({
+      numerator: Math.round((x.prior.firstTimerReturnRatePct! / 100) * x.prior.firstTimerSampleSize),
+      denominator: x.prior.firstTimerSampleSize,
+    }));
+  const priorRatingCounts: RateCounts[] = m
+    .filter((x) => x.prior.averageRating !== null && x.prior.reviewsCount > 0)
+    .map((x) => ({ numerator: x.prior.averageRating! * x.prior.reviewsCount, denominator: x.prior.reviewsCount }));
+
+  const groupResult: DigestMetrics = {
+    merchantId: args.groupId,
+    periodStart: args.periodStart,
+    periodEnd: args.periodEnd,
+    revenueSgd: sumNum(m.map((x) => x.revenueSgd)),
+    bookingsCount: sumNum(m.map((x) => x.bookingsCount)),
+    noShowRate,
+    noShowsCount: sumNum(m.map((x) => x.noShowsCount)),
+    cancelledCount: sumNum(m.map((x) => x.cancelledCount)),
+    firstTimerReturnRatePct: ftRatePct,
+    firstTimerSampleSize: ftSampleSize,
+    reviewsCount: sumNum(m.map((x) => x.reviewsCount)),
+    averageRating: avgRating === null ? null : Math.round(avgRating * 10) / 10,
+    prior: {
+      revenueSgd: sumNum(m.map((x) => x.prior.revenueSgd)),
+      bookingsCount: sumNum(m.map((x) => x.prior.bookingsCount)),
+      noShowRate: weightedRate(priorNoShowCounts) ?? 0,
+      noShowsCount: sumNum(m.map((x) => x.prior.noShowsCount)),
+      cancelledCount: sumNum(m.map((x) => x.prior.cancelledCount)),
+      firstTimerReturnRatePct: (() => {
+        const r = weightedRate(priorFtCounts);
+        return r === null ? null : Math.round(r * 1000) / 10;
+      })(),
+      firstTimerSampleSize: sumNum(m.map((x) => x.prior.firstTimerSampleSize)),
+      reviewsCount: sumNum(m.map((x) => x.prior.reviewsCount)),
+      averageRating: (() => {
+        const r = weightedRate(priorRatingCounts);
+        return r === null ? null : Math.round(r * 10) / 10;
+      })(),
+    },
+    highlights: {
+      busiestDay: allBusiestDays.length > 0
+        ? allBusiestDays.reduce((max, d) => d.bookings > max.bookings ? d : max)
+        : null,
+      quietestDay: allQuietestDays.length > 0
+        ? allQuietestDays.reduce((min, d) => d.bookings < min.bookings ? d : min)
+        : null,
+      topServiceByRevenue: topService,
+    },
+  };
+
+  return { group: groupResult, perBranch };
+}
+
+/** Empty result shape for the zero-active-branch case. */
+function emptyDigestMetrics(groupId: string, periodStart: Date, periodEnd: Date): DigestMetrics {
+  return {
+    merchantId: groupId,
+    periodStart,
+    periodEnd,
+    revenueSgd: 0,
+    bookingsCount: 0,
+    noShowRate: 0,
+    noShowsCount: 0,
+    cancelledCount: 0,
+    firstTimerReturnRatePct: null,
+    firstTimerSampleSize: 0,
+    reviewsCount: 0,
+    averageRating: null,
+    prior: {
+      revenueSgd: 0, bookingsCount: 0, noShowRate: 0, noShowsCount: 0,
+      cancelledCount: 0, firstTimerReturnRatePct: null, firstTimerSampleSize: 0,
+      reviewsCount: 0, averageRating: null,
+    },
+    highlights: { busiestDay: null, quietestDay: null, topServiceByRevenue: null },
+  };
+}
+
+// ─── Group-rollup: utilization ───────────────────────────────────────────
+
+export async function aggregateUtilizationForGroup(args: {
+  groupId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  priorPeriodStart: Date;
+  priorPeriodEnd: Date;
+}): Promise<GroupRollupResult<UtilizationResult>> {
+  const branches = await resolveBranchesForGroup(args.groupId);
+  if (branches.length === 0) {
+    return {
+      group: { headline: null, byDayOfWeek: [], guards: { lowSampleDows: [] } },
+      perBranch: [],
+    };
+  }
+
+  const perBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      aggregateUtilization({
+        merchantId: b.merchantId,
+        periodStart: args.periodStart,
+        periodEnd: args.periodEnd,
+        priorPeriodStart: args.priorPeriodStart,
+        priorPeriodEnd: args.priorPeriodEnd,
+      }),
+    ),
+  );
+
+  const perBranch: GroupRollupResult<UtilizationResult>["perBranch"] = [];
+  const successful: UtilizationResult[] = [];
+  perBranchSettled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      successful.push(r.value);
+      perBranch.push({
+        merchantId: branches[i].merchantId,
+        merchantName: branches[i].merchantName,
+        metrics: r.value,
+      });
+    } else {
+      console.warn("[group-rollup] aggregateUtilization failed for branch — omitting", {
+        merchantId: branches[i].merchantId,
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  });
+
+  const withHeadline = successful.filter((r) => r.headline !== null);
+  if (withHeadline.length === 0) {
+    return {
+      group: { headline: null, byDayOfWeek: [], guards: { lowSampleDows: [] } },
+      perBranch,
+    };
+  }
+
+  const totalBooked = withHeadline.reduce((sum, r) => sum + r.headline!.bookedMinutes, 0);
+  const totalAvailable = withHeadline.reduce((sum, r) => sum + r.headline!.availableMinutes, 0);
+  const groupPct = totalAvailable > 0
+    ? Math.round((totalBooked / totalAvailable) * 1000) / 10
+    : null;
+
+  const dowBuckets = [0, 1, 2, 3, 4, 5, 6].map((dow) => {
+    let booked = 0;
+    let available = 0;
+    let bookings = 0;
+    for (const r of withHeadline) {
+      const branchDow = r.byDayOfWeek.find((b) => b.dow === dow);
+      if (branchDow) {
+        booked += branchDow.bookedMinutes;
+        available += branchDow.availableMinutes;
+        bookings += Math.round(branchDow.bookedMinutes / 60);
+      }
+    }
+    return {
+      dow,
+      label: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow],
+      bookedMinutes: booked,
+      availableMinutes: available,
+      utilizationPct: available > 0 ? Math.round((booked / available) * 1000) / 10 : null,
+      lowSample: bookings < 10,
+    };
+  });
+
+  const sourceCounts = { duties: 0, estimated: 0 };
+  for (const r of withHeadline) sourceCounts[r.headline!.denominatorSource]++;
+  const denominatorSource: "duties" | "estimated" =
+    sourceCounts.duties >= sourceCounts.estimated ? "duties" : "estimated";
+
+  const priorBookedTotal = withHeadline.reduce((sum, r) => {
+    if (r.headline?.deltaVsPriorPp !== null && r.headline?.deltaVsPriorPp !== undefined) {
+      const priorPct = r.headline.utilizationPct - r.headline.deltaVsPriorPp;
+      return sum + (priorPct / 100) * r.headline.availableMinutes;
+    }
+    return sum;
+  }, 0);
+  const priorAvailableTotal = totalAvailable;
+  const priorPct = priorAvailableTotal > 0
+    ? Math.round((priorBookedTotal / priorAvailableTotal) * 1000) / 10
+    : null;
+  const deltaVsPriorPp = (groupPct !== null && priorPct !== null)
+    ? Math.round((groupPct - priorPct) * 10) / 10
+    : null;
+
+  return {
+    group: {
+      headline: groupPct === null
+        ? null
+        : {
+            utilizationPct: groupPct,
+            bookedMinutes: totalBooked,
+            availableMinutes: totalAvailable,
+            denominatorSource,
+            deltaVsPriorPp,
+          },
+      byDayOfWeek: dowBuckets,
+      guards: {
+        lowSampleDows: dowBuckets.filter((b) => b.lowSample).map((b) => b.label),
+      },
+    },
+    perBranch,
+  };
+}
+
+// ─── Group-rollup: cohort retention ──────────────────────────────────────
+
+export async function aggregateCohortRetentionForGroup(args: {
+  groupId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<GroupRollupResult<CohortRetentionResult>> {
+  const branches = await resolveBranchesForGroup(args.groupId);
+  if (branches.length === 0) {
+    const cohortWindow = computeCohortWindow({ periodStart: args.periodStart, periodEnd: args.periodEnd });
+    return {
+      group: {
+        lookforwardDays: COHORT_LOOKFORWARD_DAYS,
+        cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: 0 },
+        headline: null,
+        guards: { lowSample: true },
+      },
+      perBranch: [],
+    };
+  }
+
+  const perBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      aggregateCohortRetention({
+        merchantId: b.merchantId,
+        periodStart: args.periodStart,
+        periodEnd: args.periodEnd,
+      }),
+    ),
+  );
+
+  const perBranch: GroupRollupResult<CohortRetentionResult>["perBranch"] = [];
+  const successful: CohortRetentionResult[] = [];
+  perBranchSettled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      successful.push(r.value);
+      perBranch.push({
+        merchantId: branches[i].merchantId,
+        merchantName: branches[i].merchantName,
+        metrics: r.value,
+      });
+    }
+  });
+
+  const totalCohortSize = successful.reduce((sum, r) => sum + r.cohort.size, 0);
+  const totalReturned = successful
+    .filter((r) => r.headline !== null)
+    .reduce((sum, r) => sum + r.headline!.returnedCount, 0);
+
+  const cohortWindow = computeCohortWindow({ periodStart: args.periodStart, periodEnd: args.periodEnd });
+
+  if (totalCohortSize < 5) {
+    return {
+      group: {
+        lookforwardDays: COHORT_LOOKFORWARD_DAYS,
+        cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: totalCohortSize },
+        headline: null,
+        guards: { lowSample: true },
+      },
+      perBranch,
+    };
+  }
+
+  const groupPct = computeCohortRetentionPct(totalReturned, totalCohortSize);
+
+  const priorPcts = successful
+    .filter((r) => r.headline !== null && r.headline.deltaVsPriorCohortPp !== null)
+    .map((r) => ({
+      branchPriorPct: r.headline!.retentionPct - r.headline!.deltaVsPriorCohortPp!,
+      branchCohortSize: r.cohort.size,
+    }));
+  let priorPct: number | null = null;
+  if (priorPcts.length > 0) {
+    const totalPriorWeight = priorPcts.reduce((s, p) => s + p.branchCohortSize, 0);
+    if (totalPriorWeight > 0) {
+      const weighted = priorPcts.reduce(
+        (s, p) => s + (p.branchPriorPct * p.branchCohortSize),
+        0,
+      );
+      priorPct = Math.round((weighted / totalPriorWeight) * 10) / 10;
+    }
+  }
+  const deltaVsPrior = (groupPct !== null && priorPct !== null)
+    ? Math.round((groupPct - priorPct) * 10) / 10
+    : null;
+
+  return {
+    group: {
+      lookforwardDays: COHORT_LOOKFORWARD_DAYS,
+      cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: totalCohortSize },
+      headline: groupPct === null ? null : {
+        retentionPct: groupPct,
+        returnedCount: totalReturned,
+        cohortSize: totalCohortSize,
+        deltaVsPriorCohortPp: deltaVsPrior,
+      },
+      guards: { lowSample: false },
+    },
+    perBranch,
+  };
+}
+
+// ─── Group-rollup: rebook lag ────────────────────────────────────────────
+
+export async function aggregateRebookLagForGroup(args: {
+  groupId: string;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<GroupRollupResult<RebookLagResult>> {
+  const branches = await resolveBranchesForGroup(args.groupId);
+  if (branches.length === 0) {
+    const cohortWindow = computeCohortWindow({ periodStart: args.periodStart, periodEnd: args.periodEnd });
+    return {
+      group: {
+        lookforwardDays: REBOOK_LOOKFORWARD_DAYS,
+        cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: 0 },
+        headline: null,
+        bins: [],
+        guards: { lowSample: true, medianSuppressed: false },
+      },
+      perBranch: [],
+    };
+  }
+
+  const perBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      aggregateRebookLag({
+        merchantId: b.merchantId,
+        periodStart: args.periodStart,
+        periodEnd: args.periodEnd,
+      }),
+    ),
+  );
+
+  const perBranch: GroupRollupResult<RebookLagResult>["perBranch"] = [];
+  const successful: RebookLagResult[] = [];
+  perBranchSettled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      successful.push(r.value);
+      perBranch.push({
+        merchantId: branches[i].merchantId,
+        merchantName: branches[i].merchantName,
+        metrics: r.value,
+      });
+    }
+  });
+
+  const cohortWindow = computeCohortWindow({ periodStart: args.periodStart, periodEnd: args.periodEnd });
+  const periodLenMs = args.periodEnd.getTime() - args.periodStart.getTime();
+  const priorCohortStart = new Date(cohortWindow.windowStart.getTime() - periodLenMs);
+  const priorCohortEnd = new Date(cohortWindow.windowEnd.getTime() - periodLenMs);
+
+  const rawLagsPerBranchSettled = await Promise.allSettled(
+    branches.map((b) =>
+      queryRebookLagCohort({
+        merchantId: b.merchantId,
+        cohortStart: cohortWindow.windowStart,
+        cohortEnd: cohortWindow.windowEnd,
+      }),
+    ),
+  );
+  const allLagDays: Array<number | null> = [];
+  rawLagsPerBranchSettled.forEach((r) => {
+    if (r.status === "fulfilled") {
+      allLagDays.push(...r.value.lagDaysPerMember);
+    }
+  });
+
+  const totalCohortSize = allLagDays.length;
+  if (totalCohortSize < 5) {
+    return {
+      group: {
+        lookforwardDays: REBOOK_LOOKFORWARD_DAYS,
+        cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: totalCohortSize },
+        headline: null,
+        bins: [],
+        guards: { lowSample: true, medianSuppressed: false },
+      },
+      perBranch,
+    };
+  }
+
+  const returnerLags = allLagDays.filter((l): l is number => l !== null && l <= 60);
+  const groupMedian = computeRebookLagMedian(returnerLags);
+  const groupBins = mergeRebookLagBins(successful.map((r) => r.bins));
+
+  const priorRawLagsSettled = await Promise.allSettled(
+    branches.map((b) =>
+      queryRebookLagCohort({
+        merchantId: b.merchantId,
+        cohortStart: priorCohortStart,
+        cohortEnd: priorCohortEnd,
+      }),
+    ),
+  );
+  const allPriorLagDays: Array<number | null> = [];
+  priorRawLagsSettled.forEach((r) => {
+    if (r.status === "fulfilled") {
+      allPriorLagDays.push(...r.value.lagDaysPerMember);
+    }
+  });
+  const priorReturnerLags = allPriorLagDays.filter((l): l is number => l !== null && l <= 60);
+  const priorMedian = computeRebookLagMedian(priorReturnerLags);
+
+  const deltaVsPrior = (groupMedian !== null && priorMedian !== null)
+    ? groupMedian - priorMedian
+    : null;
+
+  return {
+    group: {
+      lookforwardDays: REBOOK_LOOKFORWARD_DAYS,
+      cohort: { windowStart: cohortWindow.windowStart, windowEnd: cohortWindow.windowEnd, size: totalCohortSize },
+      headline: {
+        medianDays: groupMedian,
+        deltaVsPriorCohortDays: deltaVsPrior,
+        returnedCount: returnerLags.length,
+        cohortSize: totalCohortSize,
+      },
+      bins: groupBins,
+      guards: { lowSample: false, medianSuppressed: groupMedian === null },
+    },
+    perBranch,
   };
 }

@@ -6,6 +6,7 @@ import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
 import type { RebookLagResult } from "./rebook-lag.js";
+import type { GroupContext, PerBranchMetrics } from "./analytics-digest-email.js";
 
 /**
  * Gemini integration for the Analytics Digest email.
@@ -25,7 +26,7 @@ import type { RebookLagResult } from "./rebook-lag.js";
  * AI prose this round" and falls back to numeric-only.
  */
 
-const PROMPT_VERSION = "digest-prose-v4"; // v4: adds rebook lag distribution block to INPUT
+const PROMPT_VERSION = "digest-prose-v5"; // v5: adds GROUP CONTEXT block (per-branch breakdown) for group-scope digests
 // Google has rolled the default lineage twice in 2026: `gemini-1.5-flash`
 // was removed from v1beta first, then `gemini-2.0-flash` became "no longer
 // available to new users" for projects enabled later in the year (404 on
@@ -69,6 +70,8 @@ export async function generateDigestSuggestions(args: {
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
   rebookLag?: RebookLagResult;
+  groupContext?: GroupContext | null;
+  perBranchMetrics?: PerBranchMetrics[] | null;
 }): Promise<DigestAiResult | null> {
   const client = getClient();
   if (!client) {
@@ -128,11 +131,15 @@ function hashInput(args: {
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
   rebookLag?: RebookLagResult;
+  groupContext?: GroupContext | null;
+  perBranchMetrics?: PerBranchMetrics[] | null;
 }): string {
   const m = args.metrics;
   const u = args.utilization;
   const cr = args.cohortRetention;
   const rl = args.rebookLag;
+  const gc = args.groupContext;
+  const pb = args.perBranchMetrics;
   // Stable JSON serialization — pin specific fields rather than
   // JSON.stringify-ing the whole object so future metric additions don't
   // silently invalidate every cached entry.
@@ -164,6 +171,16 @@ function hashInput(args: {
     rl?.headline?.returnedCount ?? null,
     rl?.headline?.deltaVsPriorCohortDays ?? null,
     rl?.bins?.map((b) => [b.id, b.count, b.pct]) ?? null,
+    gc?.groupName ?? null,
+    pb?.map((p) => [
+      p.merchantName,
+      p.metrics.revenueSgd,
+      p.metrics.bookingsCount,
+      p.metrics.noShowRate,
+      p.cohortRetention.headline?.retentionPct ?? null,
+      p.cohortRetention.cohort.size,
+      p.utilization.headline?.utilizationPct ?? null,
+    ]) ?? null,
   ]);
   return crypto.createHash("sha256").update(stable).digest("hex");
 }
@@ -179,6 +196,8 @@ function buildPrompt(args: {
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
   rebookLag?: RebookLagResult;
+  groupContext?: GroupContext | null;
+  perBranchMetrics?: PerBranchMetrics[] | null;
 }): string {
   const m = args.metrics;
   const cat = args.merchantCategory ?? "appointment-based service";
@@ -257,6 +276,43 @@ function buildPrompt(args: {
         return `${medianLine}\n- Rebook lag distribution: ${distribution}`;
       })();
 
+  // GROUP CONTEXT block — only present for scope='group' digests.
+  // Lists per-branch breakdown with low-sample suppression notes so the
+  // model can speak about specific branches without hallucinating on
+  // statistically unstable rates.
+  const groupContextBlock = !args.groupContext || !args.perBranchMetrics || args.perBranchMetrics.length === 0
+    ? ""
+    : (() => {
+        const branchLines = args.perBranchMetrics!.map((b) => {
+          const noShow = (b.metrics.noShowRate * 100).toFixed(1);
+          const retention = b.cohortRetention.headline?.retentionPct;
+          const retentionStr = retention !== undefined && retention !== null
+            ? `Retention ${retention.toFixed(1)}% (cohort: ${b.cohortRetention.cohort.size})`
+            : `Retention n/a (cohort: ${b.cohortRetention.cohort.size} — too small)`;
+          const util = b.utilization.headline?.utilizationPct;
+          const utilStr = util !== undefined && util !== null
+            ? `Utilization ${util.toFixed(0)}%`
+            : `Utilization n/a`;
+          return `  - ${b.merchantName}: Revenue ${fmtMoney(b.metrics.revenueSgd)}, Bookings ${b.metrics.bookingsCount}, No-show ${noShow}%, ${retentionStr}, ${utilStr}`;
+        }).join("\n");
+
+        const retentionSuppressedBranches = args.perBranchMetrics!
+          .filter((b) => b.cohortRetention.headline === null)
+          .map((b) => b.merchantName);
+        const utilSuppressedBranches = args.perBranchMetrics!
+          .filter((b) => b.utilization.headline === null)
+          .map((b) => b.merchantName);
+
+        const retentionSuppressLine = retentionSuppressedBranches.length > 0
+          ? `\n- Branches with insufficient sample for retention: ${retentionSuppressedBranches.join(", ")}`
+          : "";
+        const utilSuppressLine = utilSuppressedBranches.length > 0
+          ? `\n- Branches with insufficient sample for utilization: ${utilSuppressedBranches.join(", ")}`
+          : "";
+
+        return `\n\nGROUP CONTEXT:\n- Group: ${args.groupContext!.groupName} (${args.perBranchMetrics!.length} active branches)\n- Per-branch breakdown:\n${branchLines}${retentionSuppressLine}${utilSuppressLine}`;
+      })();
+
   return `You are an operations analyst writing a ${args.frequency} digest for a ${cat} business in Singapore/Malaysia. Output ${horizon}.
 
 CONSTRAINTS — these are absolute, do not violate:
@@ -268,6 +324,7 @@ CONSTRAINTS — these are absolute, do not violate:
 - Reference utilization only when it appears in INPUT — never invent a percentage. Do not make day-of-week claims about days listed in "Low-sample days".
 - Reference cohort retention only when it appears in INPUT. The cohort window is offset by 60 days — if you mention the cohort, frame it as "first-timers from N days ago" not "this period's first-timers" (those don't yet have full 60-day return data).
 - Reference rebook lag only when it appears in INPUT. The bins are aligned with common rebook intervals (1 week / 2 weeks / 1 month / 2 months) — feel free to recommend post-service rebook CTA timing relative to the modal bin (the bin with the largest %).
+- When making suggestions about specific branches, name them by their merchant name. Do not aggregate branches into "the bigger branches" or "the smaller ones" — refer to specific named branches when the data warrants. If a branch is listed under "Branches with insufficient sample," do not make claims about its rates.
 - Plain ASCII markdown only. No headers (#), no horizontal rules. Use only the structure shown in the OUTPUT FORMAT.
 - Total length: 80-150 words. No preamble, no closing line.
 
@@ -282,7 +339,7 @@ INPUT:
 - Reviews this period: ${m.reviewsCount} ${m.averageRating === null ? "" : `(avg ${m.averageRating.toFixed(1)}★)`}
 - Busiest day: ${m.highlights.busiestDay ? `${m.highlights.busiestDay.date} (${m.highlights.busiestDay.bookings} bookings)` : "n/a"}
 - Quietest day: ${m.highlights.quietestDay ? `${m.highlights.quietestDay.date} (${m.highlights.quietestDay.bookings} bookings)` : "n/a"}
-- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}${cohortBlock}${rebookLagBlock}
+- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}${cohortBlock}${rebookLagBlock}${groupContextBlock}
 
 OUTPUT FORMAT (exactly):
 Suggestions:
