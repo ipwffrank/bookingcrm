@@ -3,6 +3,20 @@ import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
 import type { RebookLagResult } from "./rebook-lag.js";
 
+export interface PerBranchMetrics {
+  merchantId: string;
+  merchantName: string;
+  metrics: DigestMetrics;
+  utilization: UtilizationResult;
+  cohortRetention: CohortRetentionResult;
+  rebookLag: RebookLagResult;
+}
+
+export interface GroupContext {
+  groupName: string;
+  branches: Array<{ merchantId: string; merchantName: string }>;
+}
+
 /**
  * Renders the Analytics Digest email body. PR 1 ships numeric content
  * only — no AI prose. The HTML is intentionally inline-styled (matches
@@ -41,6 +55,11 @@ interface Args {
   cohortRetention?: CohortRetentionResult;
   // Rebook lag distribution. Row omitted when headline is null.
   rebookLag?: RebookLagResult;
+  // Group context — present only when scope='group'. Triggers per-branch
+  // table rendering and changes the digest framing.
+  groupContext?: GroupContext | null;
+  // Per-branch metrics — only used when groupContext is present.
+  perBranchMetrics?: PerBranchMetrics[] | null;
 }
 
 interface Delta {
@@ -325,6 +344,11 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
     </table>
   `;
 
+  // Group-scope per-branch table. Renders only when groupContext present.
+  const perBranchTable = args.groupContext && args.perBranchMetrics && args.perBranchMetrics.length > 0
+    ? renderPerBranchTable(args.perBranchMetrics, m)
+    : "";
+
   const grid = `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:16px">
       ${gridRow(
@@ -418,6 +442,8 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
 
       ${heroRow}
 
+      ${perBranchTable}
+
       ${grid}
 
       ${highlightsBlock}
@@ -469,4 +495,65 @@ export function formatPeriodLabel(args: {
     });
   }
   return periodStart.toLocaleDateString("en-SG", { year: "numeric" });
+}
+
+function renderPerBranchTable(perBranch: PerBranchMetrics[], groupTotal: DigestMetrics): string {
+  const sorted = [...perBranch].sort((a, b) => b.metrics.revenueSgd - a.metrics.revenueSgd);
+  const topRevenueId = sorted[0]?.merchantId;
+
+  const rowHtml = (b: PerBranchMetrics): string => {
+    const isTopRevenue = b.merchantId === topRevenueId;
+    const noShowColour = b.metrics.noShowRate >= 0.10 ? COLOURS.warn : COLOURS.ink;
+    const revenueColour = isTopRevenue ? COLOURS.sage : COLOURS.ink;
+    return `
+      <tr>
+        <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; color:${COLOURS.ink}; font-weight:500;">
+          ${escapeHtml(b.merchantName)}
+        </td>
+        <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; text-align:right; color:${revenueColour};">
+          ${fmtSgd(b.metrics.revenueSgd)}
+        </td>
+        <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; text-align:right; color:${COLOURS.ink};">
+          ${b.metrics.bookingsCount}
+        </td>
+        <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; text-align:right; color:${noShowColour};">
+          ${fmtPct(b.metrics.noShowRate)}
+        </td>
+      </tr>
+    `;
+  };
+
+  const totalRow = `
+    <tr>
+      <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; color:${COLOURS.ink}; font-weight:600;">
+        Group total
+      </td>
+      <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; text-align:right; color:${COLOURS.ink}; font-weight:600;">
+        ${fmtSgd(groupTotal.revenueSgd)}
+      </td>
+      <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; text-align:right; color:${COLOURS.ink}; font-weight:600;">
+        ${groupTotal.bookingsCount}
+      </td>
+      <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; text-align:right; color:${COLOURS.ink}; font-weight:600;">
+        ${fmtPct(groupTotal.noShowRate)}
+      </td>
+    </tr>
+  `;
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; margin-top:24px;">
+      <thead>
+        <tr>
+          <th style="padding:8px 4px; text-align:left; color:${COLOURS.grey60}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid ${COLOURS.grey15};">Branch</th>
+          <th style="padding:8px 4px; text-align:right; color:${COLOURS.grey60}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid ${COLOURS.grey15};">Revenue</th>
+          <th style="padding:8px 4px; text-align:right; color:${COLOURS.grey60}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid ${COLOURS.grey15};">Bookings</th>
+          <th style="padding:8px 4px; text-align:right; color:${COLOURS.grey60}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid ${COLOURS.grey15};">No-show</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map(rowHtml).join("")}
+        ${totalRow}
+      </tbody>
+    </table>
+  `;
 }

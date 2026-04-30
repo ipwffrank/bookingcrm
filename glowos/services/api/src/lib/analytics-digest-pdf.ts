@@ -4,6 +4,7 @@ import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
 import type { RebookLagResult } from "./rebook-lag.js";
+import type { GroupContext, PerBranchMetrics } from "./analytics-digest-email.js";
 
 /**
  * PDF version of the Analytics Digest, attached to the email send. Mirrors
@@ -31,6 +32,8 @@ interface Args {
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
   rebookLag?: RebookLagResult;
+  groupContext?: GroupContext | null;
+  perBranchMetrics?: PerBranchMetrics[] | null;
 }
 
 // ─── Colours (match the email palette) ────────────────────────────────
@@ -192,6 +195,12 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
   drawHeroCard(doc, 50 + 2 * (heroCardWidth + 8), heroY, heroCardWidth, heroCardHeight, "NO-SHOW RATE", fmtPct(m.noShowRate), nsD, false);
 
   doc.y = heroY + heroCardHeight + 16;
+
+  // Per-branch table for group-scope digests.
+  if (args.groupContext && args.perBranchMetrics && args.perBranchMetrics.length > 0) {
+    drawPerBranchTable(doc, args.perBranchMetrics, m);
+    doc.moveDown(1);
+  }
 
   // ─── KPI grid (3 rows) ─────────────────────────────────────────────
   doc.fillColor(COLOURS.ink).fontSize(11).font("Helvetica");
@@ -541,4 +550,63 @@ export function digestPdfFilename(args: {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `${slug}-digest-${period}.pdf`;
+}
+
+function drawPerBranchTable(
+  doc: PDFKit.PDFDocument,
+  perBranch: PerBranchMetrics[],
+  groupTotal: DigestMetrics,
+): void {
+  const sorted = [...perBranch].sort((a, b) => b.metrics.revenueSgd - a.metrics.revenueSgd);
+  const topRevenueId = sorted[0]?.merchantId;
+
+  doc.x = PAGE_LEFT;
+  const startY = doc.y;
+  const colWidths = [200, 90, 70, 70];
+  const headerHeight = 18;
+  const rowHeight = 16;
+
+  doc.fillColor(COLOURS.grey60).fontSize(9).font("Helvetica-Bold");
+  doc.text("BRANCH", PAGE_LEFT, startY, { width: colWidths[0], lineBreak: false });
+  doc.text("REVENUE", PAGE_LEFT + colWidths[0], startY, { width: colWidths[1], align: "right", lineBreak: false });
+  doc.text("BOOKINGS", PAGE_LEFT + colWidths[0] + colWidths[1], startY, { width: colWidths[2], align: "right", lineBreak: false });
+  doc.text("NO-SHOW", PAGE_LEFT + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], align: "right", lineBreak: false });
+
+  doc.moveTo(PAGE_LEFT, startY + headerHeight - 4)
+     .lineTo(PAGE_LEFT + colWidths.reduce((a, b) => a + b, 0), startY + headerHeight - 4)
+     .strokeColor(COLOURS.grey15)
+     .stroke();
+
+  doc.font("Helvetica").fontSize(10);
+  let y = startY + headerHeight;
+  for (const branch of sorted) {
+    const isTopRevenue = branch.merchantId === topRevenueId;
+    const noShowColour = branch.metrics.noShowRate >= 0.10 ? COLOURS.warn : COLOURS.ink;
+    const revenueColour = isTopRevenue ? COLOURS.sage : COLOURS.ink;
+
+    doc.fillColor(COLOURS.ink).text(branch.merchantName, PAGE_LEFT, y, { width: colWidths[0], lineBreak: false });
+    doc.fillColor(revenueColour).text(fmtSgd(branch.metrics.revenueSgd), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
+    doc.fillColor(COLOURS.ink).text(String(branch.metrics.bookingsCount), PAGE_LEFT + colWidths[0] + colWidths[1], y, { width: colWidths[2], align: "right", lineBreak: false });
+    doc.fillColor(noShowColour).text(fmtPct(branch.metrics.noShowRate), PAGE_LEFT + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3], align: "right", lineBreak: false });
+
+    y += rowHeight;
+  }
+
+  doc.moveTo(PAGE_LEFT, y + 2)
+     .lineTo(PAGE_LEFT + colWidths.reduce((a, b) => a + b, 0), y + 2)
+     .strokeColor(COLOURS.ink)
+     .lineWidth(1.5)
+     .stroke();
+  doc.lineWidth(1);
+
+  y += 8;
+  doc.font("Helvetica-Bold").fillColor(COLOURS.ink);
+  doc.text("Group total", PAGE_LEFT, y, { width: colWidths[0], lineBreak: false });
+  doc.text(fmtSgd(groupTotal.revenueSgd), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
+  doc.text(String(groupTotal.bookingsCount), PAGE_LEFT + colWidths[0] + colWidths[1], y, { width: colWidths[2], align: "right", lineBreak: false });
+  doc.text(fmtPct(groupTotal.noShowRate), PAGE_LEFT + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3], align: "right", lineBreak: false });
+
+  doc.x = PAGE_LEFT;
+  doc.y = y + rowHeight + 8;
+  doc.font("Helvetica").fillColor(COLOURS.ink).fontSize(11);
 }
