@@ -35,3 +35,21 @@ export const LOOKFORWARD_DAYS = 60;
 
 /** Cohort smaller than this → headline suppressed (rate too noisy). */
 export const SAMPLE_SIZE_THRESHOLD = 5;
+
+/** ms in 60 days — used in cohort-window math + lookforward filter. */
+const LOOKFORWARD_MS = LOOKFORWARD_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Trailing cohort window = period bounds shifted backward by the
+ * lookforward duration. Each cohort member from this window has had
+ * `LOOKFORWARD_DAYS` to potentially return.
+ */
+export function computeCohortWindow(args: {
+  periodStart: Date;
+  periodEnd: Date;
+}): { windowStart: Date; windowEnd: Date } {
+  return {
+    windowStart: new Date(args.periodStart.getTime() - LOOKFORWARD_MS),
+    windowEnd: new Date(args.periodEnd.getTime() - LOOKFORWARD_MS),
+  };
+}
