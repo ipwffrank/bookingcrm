@@ -39,3 +39,18 @@ export const DUTY_COVERAGE_THRESHOLD = 0.5;
 
 /** Threshold below which a per-DoW slice is marked low-sample. */
 export const LOW_SAMPLE_BOOKINGS_PER_DOW = 10;
+
+/**
+ * Pick the denominator source. Duty-roster minutes are higher fidelity but
+ * many merchants don't fill in duties consistently. We use duties when at
+ * least half the period's days have at least one duty entry, else fall
+ * back to operating-hours × publicly-visible-headcount.
+ */
+export function selectDenominatorSource(args: {
+  daysWithDuties: number;
+  periodDays: number;
+}): DenominatorSource {
+  if (args.periodDays <= 0) return "estimated";
+  const coverage = args.daysWithDuties / args.periodDays;
+  return coverage >= DUTY_COVERAGE_THRESHOLD ? "duties" : "estimated";
+}
