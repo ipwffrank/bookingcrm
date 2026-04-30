@@ -12,6 +12,7 @@ import {
 import { config } from "../lib/config.js";
 import {
   computeDigestMetrics,
+  aggregateUtilization,
   resolvePeriodForFrequency,
   getMerchantTimezone,
 } from "../lib/analytics-aggregator.js";
@@ -265,6 +266,21 @@ async function processGenerate(data: {
       periodStart,
       periodEnd,
     });
+
+    // Capacity utilization runs alongside computeDigestMetrics. Wrapped
+    // internally in try/catch so a failure returns a null-headline result
+    // and the digest pipeline simply omits the utilization block.
+    const periodSpanMs = periodEnd.getTime() - periodStart.getTime();
+    const priorPeriodEnd = new Date(periodStart.getTime() - 1);
+    const priorPeriodStart = new Date(priorPeriodEnd.getTime() - periodSpanMs);
+    const utilization = await aggregateUtilization({
+      merchantId: cfg.merchantId,
+      periodStart,
+      periodEnd,
+      priorPeriodStart,
+      priorPeriodEnd,
+    });
+
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
 
@@ -283,6 +299,7 @@ async function processGenerate(data: {
         frequency,
         periodLabel,
         metrics,
+        utilization,
       });
       if (aiResult) {
         // Look for a cached output for this exact input within the last
@@ -326,6 +343,7 @@ async function processGenerate(data: {
       dashboardUrl,
       periodLabel,
       aiProseMd,
+      utilization,
     });
 
     // PDF attachment — generate once for all recipients (the Buffer is the
@@ -341,6 +359,7 @@ async function processGenerate(data: {
         metrics,
         aiProseMd,
         dashboardUrl,
+        utilization,
       });
       pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
     } catch (err) {

@@ -1,5 +1,14 @@
-import { and, eq, gte, lte, sql } from "drizzle-orm";
-import { db, bookings, reviews, merchants } from "@glowos/db";
+import { and, eq, gte, lte, inArray, sql } from "drizzle-orm";
+import { db, bookings, reviews, merchants, staff, staffDuties } from "@glowos/db";
+import {
+  type UtilizationResult,
+  UTILIZATION_BOOKING_STATUSES,
+  selectDenominatorSource,
+  groupBookingsByDow,
+  buildDowBuckets,
+  assembleResult,
+  computeUtilizationPct,
+} from "./utilization.js";
 
 /**
  * Numeric aggregator for the Analytics Digest email reports. Returns the
@@ -342,4 +351,303 @@ export async function getMerchantTimezone(merchantId: string): Promise<string> {
     .where(eq(merchants.id, merchantId))
     .limit(1);
   return m?.timezone ?? "Asia/Singapore";
+}
+
+// ─── Utilization aggregator ──────────────────────────────────────────────
+//
+// Pulls bookings + duties + operating hours, pushes math to pure helpers
+// in `utilization.ts`. Wrapped in a try/catch that returns a suppress-
+// everything result so a digest never fails because of utilization compute.
+
+export async function aggregateUtilization(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  priorPeriodStart: Date;
+  priorPeriodEnd: Date;
+}): Promise<UtilizationResult> {
+  try {
+    return await aggregateUtilizationInner(args);
+  } catch (err) {
+    console.error("[utilization] aggregation failed — returning null result", {
+      merchantId: args.merchantId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { headline: null, byDayOfWeek: [], guards: { lowSampleDows: [] } };
+  }
+}
+
+async function aggregateUtilizationInner(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  priorPeriodStart: Date;
+  priorPeriodEnd: Date;
+}): Promise<UtilizationResult> {
+  const merchantTz = await getMerchantTimezone(args.merchantId);
+
+  // Local-date strings (YYYY-MM-DD in merchant tz) for duty range.
+  const localStartDate = formatDateInTz(args.periodStart, merchantTz);
+  const localEndDate = formatDateInTz(args.periodEnd, merchantTz);
+  const priorLocalStartDate = formatDateInTz(args.priorPeriodStart, merchantTz);
+  const priorLocalEndDate = formatDateInTz(args.priorPeriodEnd, merchantTz);
+
+  // Bookings (current period) — startTime in UTC, status filtered.
+  const currentBookings = await db
+    .select({
+      startTime: bookings.startTime,
+      durationMinutes: bookings.durationMinutes,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, args.merchantId),
+        gte(bookings.startTime, args.periodStart),
+        lte(bookings.startTime, args.periodEnd),
+        inArray(bookings.status, [...UTILIZATION_BOOKING_STATUSES]),
+      ),
+    );
+
+  // Bookings (prior period) — for delta only.
+  const priorBookings = await db
+    .select({
+      startTime: bookings.startTime,
+      durationMinutes: bookings.durationMinutes,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, args.merchantId),
+        gte(bookings.startTime, args.priorPeriodStart),
+        lte(bookings.startTime, args.priorPeriodEnd),
+        inArray(bookings.status, [...UTILIZATION_BOOKING_STATUSES]),
+      ),
+    );
+
+  // Duties (current period) — date in merchant local, time-of-day fields.
+  const duties = await db
+    .select({
+      date: staffDuties.date,
+      startTime: staffDuties.startTime,
+      endTime: staffDuties.endTime,
+    })
+    .from(staffDuties)
+    .where(
+      and(
+        eq(staffDuties.merchantId, args.merchantId),
+        gte(staffDuties.date, localStartDate),
+        lte(staffDuties.date, localEndDate),
+      ),
+    );
+
+  // Decide denominator source.
+  const periodDays = Math.max(
+    1,
+    Math.ceil((args.periodEnd.getTime() - args.periodStart.getTime()) / 86_400_000),
+  );
+  const dutyDayKeys = new Set(duties.map((d) => d.date));
+  const source = selectDenominatorSource({
+    daysWithDuties: dutyDayKeys.size,
+    periodDays,
+  });
+
+  // Booked totals + by-DoW.
+  const bookedByDow = groupBookingsByDow({ bookings: currentBookings, merchantTz });
+  const totalBooked = bookedByDow.reduce((a, b) => a + b, 0);
+  const bookingsCountByDow = countBookingsByDow({ bookings: currentBookings, merchantTz });
+
+  // Available totals + by-DoW (branch on source).
+  let availableByDow: number[];
+  if (source === "duties") {
+    availableByDow = computeAvailableByDowFromDuties({ duties, merchantTz });
+  } else {
+    availableByDow = await computeAvailableByDowFromOperatingHours({
+      merchantId: args.merchantId,
+      periodStart: args.periodStart,
+      periodEnd: args.periodEnd,
+      merchantTz,
+    });
+  }
+  const totalAvailable = availableByDow.reduce((a, b) => a + b, 0);
+
+  // Prior-period headline pct for delta (no DoW slice).
+  const priorBookedTotal = priorBookings.reduce((a, b) => a + b.durationMinutes, 0);
+  const priorAvailableTotal = await computePriorPeriodAvailable({
+    merchantId: args.merchantId,
+    priorLocalStartDate,
+    priorLocalEndDate,
+    priorPeriodStart: args.priorPeriodStart,
+    priorPeriodEnd: args.priorPeriodEnd,
+    merchantTz,
+    source,
+  });
+  const priorHeadlinePct = computeUtilizationPct(priorBookedTotal, priorAvailableTotal);
+
+  return assembleResult({
+    bookedMinutes: totalBooked,
+    availableMinutes: totalAvailable,
+    denominatorSource: source,
+    priorUtilizationPct: priorHeadlinePct,
+    byDow: buildDowBuckets({ bookedByDow, availableByDow, bookingsCountByDow }),
+  });
+}
+
+// ─── Utilization helpers ─────────────────────────────────────────────────
+
+const DOW_BY_WEEKDAY_LABEL: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/** YYYY-MM-DD in the given tz. */
+function formatDateInTz(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function dowFromLocalDate(dateStr: string, tz: string): number | undefined {
+  // dateStr is YYYY-MM-DD in merchant local. Construct a midday timestamp
+  // in that tz so the dow is unambiguous regardless of UTC offset.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  // Create a UTC midday — close enough that any tz lookup lands on the
+  // intended date.
+  const midday = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+  return DOW_BY_WEEKDAY_LABEL[fmt.format(midday)];
+}
+
+function countBookingsByDow(args: {
+  bookings: Array<{ startTime: Date }>;
+  merchantTz: string;
+}): number[] {
+  const counts = [0, 0, 0, 0, 0, 0, 0];
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: args.merchantTz,
+    weekday: "short",
+  });
+  for (const b of args.bookings) {
+    const d = DOW_BY_WEEKDAY_LABEL[fmt.format(b.startTime)];
+    if (d !== undefined) counts[d]++;
+  }
+  return counts;
+}
+
+/** Parse "HH:MM" or "HH:MM:SS" to total minutes since midnight. null if invalid. */
+function parseTimeOfDay(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  return h * 60 + mm;
+}
+
+function computeAvailableByDowFromDuties(args: {
+  duties: Array<{ date: string; startTime: string; endTime: string }>;
+  merchantTz: string;
+}): number[] {
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  for (const d of args.duties) {
+    const start = parseTimeOfDay(d.startTime);
+    const end = parseTimeOfDay(d.endTime);
+    if (start === null || end === null || end <= start) continue;
+    const dow = dowFromLocalDate(d.date, args.merchantTz);
+    if (dow === undefined) continue;
+    buckets[dow] += end - start;
+  }
+  return buckets;
+}
+
+async function computeAvailableByDowFromOperatingHours(args: {
+  merchantId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  merchantTz: string;
+}): Promise<number[]> {
+  const [m] = await db
+    .select({ operatingHours: merchants.operatingHours })
+    .from(merchants)
+    .where(eq(merchants.id, args.merchantId))
+    .limit(1);
+  if (!m?.operatingHours) return [0, 0, 0, 0, 0, 0, 0];
+
+  const [staffCountRow] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(staff)
+    .where(
+      and(
+        eq(staff.merchantId, args.merchantId),
+        eq(staff.isPubliclyVisible, true),
+        eq(staff.isAnyAvailable, false),
+      ),
+    );
+  const headcount = staffCountRow?.count ?? 0;
+  if (headcount === 0) return [0, 0, 0, 0, 0, 0, 0];
+
+  // operating_hours is { mon: { open, close, closed }, ... } keyed by lowercase weekday abbrev.
+  const dowKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: args.merchantTz,
+    weekday: "short",
+  });
+
+  // Walk each calendar day in the period (UTC stride is fine — the dow is
+  // still computed in the merchant tz).
+  for (
+    let cursor = new Date(args.periodStart.getTime());
+    cursor < args.periodEnd;
+    cursor = new Date(cursor.getTime() + 86_400_000)
+  ) {
+    const dow = DOW_BY_WEEKDAY_LABEL[fmt.format(cursor)];
+    if (dow === undefined) continue;
+    const dayConfig = (m.operatingHours as Record<string, { open?: string; close?: string; closed?: boolean }>)[dowKeys[dow]];
+    if (!dayConfig || dayConfig.closed) continue;
+    const open = parseTimeOfDay(dayConfig.open);
+    const close = parseTimeOfDay(dayConfig.close);
+    if (open === null || close === null || close <= open) continue;
+    buckets[dow] += (close - open) * headcount;
+  }
+  return buckets;
+}
+
+async function computePriorPeriodAvailable(args: {
+  merchantId: string;
+  priorLocalStartDate: string;
+  priorLocalEndDate: string;
+  priorPeriodStart: Date;
+  priorPeriodEnd: Date;
+  merchantTz: string;
+  source: "duties" | "estimated";
+}): Promise<number> {
+  if (args.source === "duties") {
+    const duties = await db
+      .select({
+        date: staffDuties.date,
+        startTime: staffDuties.startTime,
+        endTime: staffDuties.endTime,
+      })
+      .from(staffDuties)
+      .where(
+        and(
+          eq(staffDuties.merchantId, args.merchantId),
+          gte(staffDuties.date, args.priorLocalStartDate),
+          lte(staffDuties.date, args.priorLocalEndDate),
+        ),
+      );
+    return computeAvailableByDowFromDuties({ duties, merchantTz: args.merchantTz })
+      .reduce((a, b) => a + b, 0);
+  }
+  const byDow = await computeAvailableByDowFromOperatingHours({
+    merchantId: args.merchantId,
+    periodStart: args.priorPeriodStart,
+    periodEnd: args.priorPeriodEnd,
+    merchantTz: args.merchantTz,
+  });
+  return byDow.reduce((a, b) => a + b, 0);
 }
