@@ -74,3 +74,19 @@ export function assignBin(lagDays: number | null): RebookLagBin["id"] {
   // Shouldn't reach here — Number.POSITIVE_INFINITY catches everything.
   return "60d+";
 }
+
+/**
+ * Median of a sample. Returns null when sample is below
+ * SAMPLE_SIZE_THRESHOLD (5) — the median of fewer values isn't a stable
+ * estimator, surfacing it would mislead. Result rounded to the nearest
+ * integer day.
+ */
+export function computeMedian(values: number[]): number | null {
+  if (values.length < SAMPLE_SIZE_THRESHOLD) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const raw = sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+  return Math.round(raw);
+}

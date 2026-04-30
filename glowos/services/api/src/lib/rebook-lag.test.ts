@@ -4,6 +4,7 @@ import {
   SAMPLE_SIZE_THRESHOLD,
   BIN_DEFINITIONS,
   assignBin,
+  computeMedian,
 } from "./rebook-lag.js";
 
 describe("rebook-lag constants", () => {
@@ -56,5 +57,34 @@ describe("assignBin", () => {
 
   it("returns '60d+' for null lag (no second booking within window)", () => {
     expect(assignBin(null)).toBe("60d+");
+  });
+});
+
+describe("computeMedian", () => {
+  it("returns the middle value for odd count", () => {
+    expect(computeMedian([10, 20, 30, 40, 50])).toBe(30);
+  });
+
+  it("returns the average of middle two for even count", () => {
+    expect(computeMedian([10, 20, 30, 40, 50, 60])).toBe(35);
+  });
+
+  it("rounds to the nearest integer", () => {
+    expect(computeMedian([10, 20, 30, 41, 50, 60])).toBe(36); // (30+41)/2 = 35.5 rounds to 36
+  });
+
+  it("returns null when fewer than SAMPLE_SIZE_THRESHOLD values", () => {
+    expect(computeMedian([10, 20, 30, 40])).toBeNull();
+    expect(computeMedian([])).toBeNull();
+  });
+
+  it("handles 5 values (boundary) — returns the 3rd sorted value", () => {
+    expect(computeMedian([50, 10, 30, 40, 20])).toBe(30);
+  });
+
+  it("does not mutate the input array", () => {
+    const input = [50, 10, 30, 40, 20];
+    computeMedian(input);
+    expect(input).toEqual([50, 10, 30, 40, 20]);
   });
 });
