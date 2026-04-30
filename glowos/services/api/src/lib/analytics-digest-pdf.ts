@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
+import type { CohortRetentionResult } from "./cohort-retention.js";
 
 /**
  * PDF version of the Analytics Digest, attached to the email send. Mirrors
@@ -27,6 +28,7 @@ interface Args {
   aiProseMd?: string;
   dashboardUrl: string;
   utilization?: UtilizationResult;
+  cohortRetention?: CohortRetentionResult;
 }
 
 // ─── Colours (match the email palette) ────────────────────────────────
@@ -215,6 +217,20 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
             positive: h.deltaVsPriorPp > 0,
           };
     drawGridRow(doc, "Capacity utilization", valueText, utilDelta, true);
+  }
+  if (args.cohortRetention?.headline) {
+    const h = args.cohortRetention.headline;
+    const valueText = `${h.retentionPct.toFixed(1)}% (cohort: ${h.cohortSize})`;
+    const cohortDelta = h.deltaVsPriorCohortPp === null
+      ? null
+      : Math.abs(h.deltaVsPriorCohortPp) < 0.5
+        ? { text: "-", positive: null as boolean | null }
+        : {
+            text: `${h.deltaVsPriorCohortPp > 0 ? "+" : "-"}${Math.abs(h.deltaVsPriorCohortPp).toFixed(1)}pp`,
+            positive: h.deltaVsPriorCohortPp > 0,
+          };
+    doc.x = PAGE_LEFT;
+    drawGridRow(doc, "60d cohort retention", valueText, cohortDelta, true);
   }
   drawGridRow(
     doc,

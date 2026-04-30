@@ -13,6 +13,7 @@ import { config } from "../lib/config.js";
 import {
   computeDigestMetrics,
   aggregateUtilization,
+  aggregateCohortRetention,
   resolvePeriodForFrequency,
   getMerchantTimezone,
 } from "../lib/analytics-aggregator.js";
@@ -281,6 +282,15 @@ async function processGenerate(data: {
       priorPeriodEnd,
     });
 
+    // Cohort retention runs alongside the other aggregators. Wrapped
+    // internally in try/catch so a failure returns headline=null and the
+    // digest pipeline simply omits the cohort retention block.
+    const cohortRetention = await aggregateCohortRetention({
+      merchantId: cfg.merchantId,
+      periodStart,
+      periodEnd,
+    });
+
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
 
@@ -300,6 +310,7 @@ async function processGenerate(data: {
         periodLabel,
         metrics,
         utilization,
+        cohortRetention,
       });
       if (aiResult) {
         // Look for a cached output for this exact input within the last
@@ -344,6 +355,7 @@ async function processGenerate(data: {
       periodLabel,
       aiProseMd,
       utilization,
+      cohortRetention,
     });
 
     // PDF attachment — generate once for all recipients (the Buffer is the
@@ -360,6 +372,7 @@ async function processGenerate(data: {
         aiProseMd,
         dashboardUrl,
         utilization,
+        cohortRetention,
       });
       pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
     } catch (err) {

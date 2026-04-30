@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
+import type { CohortRetentionResult } from "./cohort-retention.js";
 
 /**
  * Gemini integration for the Analytics Digest email.
@@ -23,7 +24,7 @@ import type { UtilizationResult } from "./utilization.js";
  * AI prose this round" and falls back to numeric-only.
  */
 
-const PROMPT_VERSION = "digest-prose-v2"; // v2: adds capacity utilization block to INPUT
+const PROMPT_VERSION = "digest-prose-v3"; // v3: adds 60-day cohort retention block to INPUT
 // Google has rolled the default lineage twice in 2026: `gemini-1.5-flash`
 // was removed from v1beta first, then `gemini-2.0-flash` became "no longer
 // available to new users" for projects enabled later in the year (404 on
@@ -65,6 +66,7 @@ export async function generateDigestSuggestions(args: {
   periodLabel: string;
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
+  cohortRetention?: CohortRetentionResult;
 }): Promise<DigestAiResult | null> {
   const client = getClient();
   if (!client) {
@@ -122,9 +124,11 @@ function hashInput(args: {
   periodLabel: string;
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
+  cohortRetention?: CohortRetentionResult;
 }): string {
   const m = args.metrics;
   const u = args.utilization;
+  const cr = args.cohortRetention;
   // Stable JSON serialization — pin specific fields rather than
   // JSON.stringify-ing the whole object so future metric additions don't
   // silently invalidate every cached entry.
@@ -148,6 +152,9 @@ function hashInput(args: {
     u?.headline?.denominatorSource ?? null,
     u?.headline?.deltaVsPriorPp ?? null,
     u?.byDayOfWeek?.map((b) => [b.dow, b.utilizationPct, b.lowSample]) ?? null,
+    cr?.headline?.retentionPct ?? null,
+    cr?.headline?.cohortSize ?? null,
+    cr?.headline?.deltaVsPriorCohortPp ?? null,
   ]);
   return crypto.createHash("sha256").update(stable).digest("hex");
 }
@@ -161,6 +168,7 @@ function buildPrompt(args: {
   periodLabel: string;
   metrics: DigestMetrics;
   utilization?: UtilizationResult;
+  cohortRetention?: CohortRetentionResult;
 }): string {
   const m = args.metrics;
   const cat = args.merchantCategory ?? "appointment-based service";
@@ -203,6 +211,20 @@ function buildPrompt(args: {
         return `\n- Capacity utilization: ${Math.round(h.utilizationPct)}% (denominator: ${h.denominatorSource})${deltaPhrase}\n- Utilization by day-of-week: ${dowLine}${lowSampleLine}`;
       })();
 
+  // Cohort retention block — suppressed entirely when headline is null
+  // (cohort below sample threshold).
+  const cohortBlock = !args.cohortRetention?.headline
+    ? ""
+    : (() => {
+        const h = args.cohortRetention!.headline!;
+        const cohortStartLabel = formatCohortDayAgo(args.cohortRetention!.cohort.windowStart);
+        const cohortEndLabel = formatCohortDayAgo(args.cohortRetention!.cohort.windowEnd);
+        const deltaPhrase = h.deltaVsPriorCohortPp === null
+          ? ""
+          : ` (${h.deltaVsPriorCohortPp >= 0 ? "+" : ""}${h.deltaVsPriorCohortPp.toFixed(1)}pp vs prior cohort)`;
+        return `\n- 60-day cohort retention: ${h.retentionPct.toFixed(1)}% (cohort: ${h.cohortSize} first-timers from ${cohortStartLabel}-${cohortEndLabel})${deltaPhrase}`;
+      })();
+
   return `You are an operations analyst writing a ${args.frequency} digest for a ${cat} business in Singapore/Malaysia. Output ${horizon}.
 
 CONSTRAINTS — these are absolute, do not violate:
@@ -212,6 +234,7 @@ CONSTRAINTS — these are absolute, do not violate:
 - Skip any suggestion that depends on a KPI with sample size < 30 bookings or < 10 reviews.
 - Reference specific days, services, or staff only if named in the data below.
 - Reference utilization only when it appears in INPUT — never invent a percentage. Do not make day-of-week claims about days listed in "Low-sample days".
+- Reference cohort retention only when it appears in INPUT. The cohort window is offset by 60 days — if you mention the cohort, frame it as "first-timers from N days ago" not "this period's first-timers" (those don't yet have full 60-day return data).
 - Plain ASCII markdown only. No headers (#), no horizontal rules. Use only the structure shown in the OUTPUT FORMAT.
 - Total length: 80-150 words. No preamble, no closing line.
 
@@ -226,7 +249,7 @@ INPUT:
 - Reviews this period: ${m.reviewsCount} ${m.averageRating === null ? "" : `(avg ${m.averageRating.toFixed(1)}★)`}
 - Busiest day: ${m.highlights.busiestDay ? `${m.highlights.busiestDay.date} (${m.highlights.busiestDay.bookings} bookings)` : "n/a"}
 - Quietest day: ${m.highlights.quietestDay ? `${m.highlights.quietestDay.date} (${m.highlights.quietestDay.bookings} bookings)` : "n/a"}
-- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}
+- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}${cohortBlock}
 
 OUTPUT FORMAT (exactly):
 Suggestions:
@@ -286,6 +309,14 @@ function validateOutput(raw: string): string | null {
 }
 
 // ─── Timeout helper ───────────────────────────────────────────────────
+
+/** "90d ago" / "60d ago" — used in the cohort retention prompt block to
+ *  frame the trailing window for the model. */
+function formatCohortDayAgo(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const days = Math.round(ms / (24 * 60 * 60 * 1000));
+  return `${days}d ago`;
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
