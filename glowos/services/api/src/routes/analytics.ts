@@ -3,6 +3,7 @@ import { eq, and, gte, lte, gt, sql, inArray } from "drizzle-orm";
 import { db, bookings, clients, clientProfiles, services, staff, reviews, clientPackages } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
+import { aggregateUtilization } from "../lib/analytics-aggregator.js";
 
 const analyticsRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -935,5 +936,47 @@ analyticsRouter.get("/staff-contribution", requireMerchant, async (c) => {
 
   return c.json({ period, rows });
 });
+
+// ─── Capacity utilization ──────────────────────────────────────────────────
+//
+// Returns headline % + by-day-of-week breakdown for the requested period.
+// `headline: null` signals "no usable capacity data" (e.g. zero duties AND
+// no operating hours configured) so the UI / digest / AI prompt can
+// gracefully suppress the section.
+
+analyticsRouter.get("/utilization", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const period = c.req.query("period") ?? "30d";
+  const customStart = c.req.query("start");
+  const customEnd = c.req.query("end");
+
+  const bounds = customStart && customEnd
+    ? customRangeBounds(customStart, customEnd)
+    : getPeriodBounds(getPeriodDays(period));
+
+  const result = await aggregateUtilization({
+    merchantId,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+    priorPeriodStart: bounds.prevStart,
+    priorPeriodEnd: bounds.prevEnd,
+  });
+
+  return c.json({
+    period: { start: bounds.start, end: bounds.end, label: period },
+    headline: result.headline,
+    byDayOfWeek: result.byDayOfWeek,
+    guards: result.guards,
+  });
+});
+
+function customRangeBounds(startISO: string, endISO: string) {
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  const span = end.getTime() - start.getTime();
+  const prevStart = new Date(start.getTime() - span);
+  const prevEnd = new Date(start.getTime());
+  return { start, end, prevStart, prevEnd };
+}
 
 export { analyticsRouter };
