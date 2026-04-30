@@ -872,7 +872,7 @@ async function aggregateRebookLagInner(args: {
  * their second 'completed' booking within 60 days of the first, or NULL
  * if no such booking exists.
  */
-async function queryRebookLagCohort(args: {
+export async function queryRebookLagCohort(args: {
   merchantId: string;
   cohortStart: Date;
   cohortEnd: Date;
@@ -922,4 +922,27 @@ async function queryRebookLagCohort(args: {
       r.lag_days === null || r.lag_days === undefined ? null : Number(r.lag_days),
     ),
   };
+}
+
+// ─── Group resolution ────────────────────────────────────────────────────
+//
+// Returns the active branches in a group. Used by all four
+// `aggregate*ForGroup` wrappers as the first step.
+
+export async function resolveBranchesForGroup(groupId: string): Promise<Array<{
+  merchantId: string;
+  merchantName: string;
+  timezone: string;
+}>> {
+  const rows = await db
+    .select({
+      merchantId: merchants.id,
+      merchantName: merchants.name,
+      timezone: merchants.timezone,
+    })
+    .from(merchants)
+    .where(eq(merchants.groupId, groupId))
+    .orderBy(merchants.name);
+
+  return rows;
 }
