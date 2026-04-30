@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
 import { UtilizationSection } from './UtilizationSection';
+import { CohortRetentionSection } from './CohortRetentionSection';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1413,6 +1414,11 @@ export default function AnalyticsPage() {
       {/* Capacity utilization */}
       <div className="mb-6">
         <UtilizationSection windowQuery={buildWindowQuery(windowState)} />
+      </div>
+
+      {/* 60-day cohort retention */}
+      <div className="mb-6">
+        <CohortRetentionSection windowQuery={buildWindowQuery(windowState)} />
       </div>
 
       {/* Revenue Chart */}
