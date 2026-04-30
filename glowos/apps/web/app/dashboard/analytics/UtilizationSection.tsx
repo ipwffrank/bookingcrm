@@ -33,7 +33,6 @@ export function UtilizationSection({ windowQuery }: { windowQuery: string }) {
     setLoading(true);
     setError(null);
     apiFetch(`/merchant/analytics/utilization?${windowQuery}`)
-      .then((r) => r.json())
       .then((json: UtilizationApiResponse) => {
         if (!cancelled) setData(json);
       })
