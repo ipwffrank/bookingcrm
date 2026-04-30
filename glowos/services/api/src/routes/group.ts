@@ -57,11 +57,17 @@ const updateBranchSchema = z
 function parseDateRange(fromStr: string | undefined, toStr: string | undefined): { from: Date; to: Date } {
   const now = new Date();
   const from = fromStr ? new Date(fromStr) : new Date(now.getFullYear(), now.getMonth(), 1);
-  const to = toStr ? new Date(toStr) : now;
+  let to = toStr ? new Date(toStr) : now;
   if (isNaN(from.getTime()) || isNaN(to.getTime())) {
     throw new Error("INVALID_DATE");
   }
-  if (from >= to) {
+  // `to` passed as a date-only string (YYYY-MM-DD) parses as start-of-day
+  // UTC. Bump to end-of-day so single-day queries (from === to) and
+  // inclusive range ends both return the expected data.
+  if (toStr && /^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+    to = new Date(to.getTime() + 24 * 60 * 60 * 1000 - 1);
+  }
+  if (from > to) {
     throw new Error("INVALID_DATE");
   }
   return { from, to };
