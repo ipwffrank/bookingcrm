@@ -79,3 +79,40 @@ export function groupBookingsByDow(args: {
   }
   return buckets;
 }
+
+const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Compute booked / available × 100, rounded to one decimal. Returns null
+ * when the denominator is 0 (signals "no capacity data" upstream).
+ */
+export function computeUtilizationPct(
+  bookedMinutes: number,
+  availableMinutes: number,
+): number | null {
+  if (availableMinutes <= 0) return null;
+  return Math.round((bookedMinutes / availableMinutes) * 1000) / 10;
+}
+
+/**
+ * Build the 7-element DowBucket[] array. Pure: takes pre-aggregated
+ * per-dow values; lowSample flag is set per the LOW_SAMPLE_BOOKINGS_PER_DOW
+ * threshold so consumers can de-emphasize unreliable slices.
+ */
+export function buildDowBuckets(args: {
+  bookedByDow: number[];
+  availableByDow: number[];
+  bookingsCountByDow: number[];
+}): DowBucket[] {
+  return DOW_LABELS.map((label, dow) => ({
+    dow,
+    label,
+    bookedMinutes: args.bookedByDow[dow] ?? 0,
+    availableMinutes: args.availableByDow[dow] ?? 0,
+    utilizationPct: computeUtilizationPct(
+      args.bookedByDow[dow] ?? 0,
+      args.availableByDow[dow] ?? 0,
+    ),
+    lowSample: (args.bookingsCountByDow[dow] ?? 0) < LOW_SAMPLE_BOOKINGS_PER_DOW,
+  }));
+}

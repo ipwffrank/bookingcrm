@@ -5,6 +5,8 @@ import {
   LOW_SAMPLE_BOOKINGS_PER_DOW,
   selectDenominatorSource,
   groupBookingsByDow,
+  computeUtilizationPct,
+  buildDowBuckets,
 } from "./utilization.js";
 
 describe("utilization constants", () => {
@@ -88,5 +90,45 @@ describe("groupBookingsByDow", () => {
   it("returns 7 zeros for empty bookings", () => {
     const booked = groupBookingsByDow({ bookings: [], merchantTz: "Asia/Singapore" });
     expect(booked).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("computeUtilizationPct", () => {
+  it("returns the percentage when both inputs are positive", () => {
+    expect(computeUtilizationPct(60, 100)).toBe(60);
+  });
+  it("returns null when available is 0", () => {
+    expect(computeUtilizationPct(60, 0)).toBeNull();
+  });
+  it("returns 0 when booked is 0 and available is positive", () => {
+    expect(computeUtilizationPct(0, 100)).toBe(0);
+  });
+  it("rounds to 1 decimal place", () => {
+    expect(computeUtilizationPct(1, 3)).toBe(33.3);
+  });
+});
+
+describe("buildDowBuckets", () => {
+  it("flags dows with <10 bookings as lowSample", () => {
+    const buckets = buildDowBuckets({
+      bookedByDow:    [60, 600, 60, 600, 60, 600, 60],
+      availableByDow: [480, 480, 480, 480, 480, 480, 480],
+      bookingsCountByDow: [3, 12, 4, 15, 5, 14, 2],
+    });
+    expect(buckets[0].lowSample).toBe(true);
+    expect(buckets[0].label).toBe("Sun");
+    expect(buckets[0].utilizationPct).toBeCloseTo(12.5, 1);
+    expect(buckets[1].lowSample).toBe(false);
+    expect(buckets[1].utilizationPct).toBe(125); // raw, uncapped
+  });
+
+  it("returns null utilizationPct for dows with 0 available", () => {
+    const buckets = buildDowBuckets({
+      bookedByDow:    [0, 0, 0, 0, 0, 0, 0],
+      availableByDow: [0, 480, 480, 480, 480, 480, 480],
+      bookingsCountByDow: [0, 12, 12, 12, 12, 12, 12],
+    });
+    expect(buckets[0].utilizationPct).toBeNull();
+    expect(buckets[1].utilizationPct).toBe(0);
   });
 });
