@@ -14,6 +14,7 @@ import {
   computeDigestMetrics,
   aggregateUtilization,
   aggregateCohortRetention,
+  aggregateRebookLag,
   resolvePeriodForFrequency,
   getMerchantTimezone,
 } from "../lib/analytics-aggregator.js";
@@ -291,6 +292,15 @@ async function processGenerate(data: {
       periodEnd,
     });
 
+    // Rebook lag — same cohort as cohortRetention. Wrapped internally
+    // in try/catch so a failure returns headline=null and the digest
+    // pipeline simply omits the rebook lag block.
+    const rebookLag = await aggregateRebookLag({
+      merchantId: cfg.merchantId,
+      periodStart,
+      periodEnd,
+    });
+
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
 
@@ -311,6 +321,7 @@ async function processGenerate(data: {
         metrics,
         utilization,
         cohortRetention,
+        rebookLag,
       });
       if (aiResult) {
         // Look for a cached output for this exact input within the last
@@ -356,6 +367,7 @@ async function processGenerate(data: {
       aiProseMd,
       utilization,
       cohortRetention,
+      rebookLag,
     });
 
     // PDF attachment — generate once for all recipients (the Buffer is the
@@ -373,6 +385,7 @@ async function processGenerate(data: {
         dashboardUrl,
         utilization,
         cohortRetention,
+        rebookLag,
       });
       pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
     } catch (err) {

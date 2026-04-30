@@ -3,6 +3,7 @@ import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
 import type { UtilizationResult } from "./utilization.js";
 import type { CohortRetentionResult } from "./cohort-retention.js";
+import type { RebookLagResult } from "./rebook-lag.js";
 
 /**
  * PDF version of the Analytics Digest, attached to the email send. Mirrors
@@ -29,6 +30,7 @@ interface Args {
   dashboardUrl: string;
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
+  rebookLag?: RebookLagResult;
 }
 
 // ─── Colours (match the email palette) ────────────────────────────────
@@ -231,6 +233,25 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
           };
     doc.x = PAGE_LEFT;
     drawGridRow(doc, "60d cohort retention", valueText, cohortDelta, true);
+  }
+  if (args.rebookLag?.headline) {
+    const h = args.rebookLag.headline;
+    const valueText = h.medianDays === null
+      ? `— (${h.returnedCount} returners)`
+      : `${h.medianDays}d median (${h.returnedCount}/${h.cohortSize})`;
+    const lagDelta = h.deltaVsPriorCohortDays === null
+      ? null
+      : Math.abs(h.deltaVsPriorCohortDays) < 1
+        ? { text: "-", positive: null as boolean | null }
+        : {
+            text: `${h.deltaVsPriorCohortDays > 0 ? "+" : "-"}${Math.abs(h.deltaVsPriorCohortDays)}d`,
+            // `positive` is the SIGN of the delta. The `goodIfUp=false`
+            // arg below tells drawGridRow that "up is bad" for rebook lag
+            // (slower rebook = warn, faster rebook = sage).
+            positive: h.deltaVsPriorCohortDays > 0,
+          };
+    doc.x = PAGE_LEFT;
+    drawGridRow(doc, "Rebook lag", valueText, lagDelta, /* goodIfUp */ false);
   }
   drawGridRow(
     doc,
