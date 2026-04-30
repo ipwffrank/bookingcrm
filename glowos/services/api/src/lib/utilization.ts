@@ -54,3 +54,28 @@ export function selectDenominatorSource(args: {
   const coverage = args.daysWithDuties / args.periodDays;
   return coverage >= DUTY_COVERAGE_THRESHOLD ? "duties" : "estimated";
 }
+
+const DOW_BY_WEEKDAY_LABEL: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/**
+ * Bucket booking minutes into a 7-element array indexed by day-of-week
+ * (0 = Sun ... 6 = Sat) in the merchant's local timezone. Uses
+ * Intl.DateTimeFormat for tz conversion to avoid pulling in date-fns.
+ */
+export function groupBookingsByDow(args: {
+  bookings: Array<{ scheduledAt: Date; durationMinutes: number }>;
+  merchantTz: string;
+}): number[] {
+  const buckets = [0, 0, 0, 0, 0, 0, 0];
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: args.merchantTz,
+    weekday: "short",
+  });
+  for (const b of args.bookings) {
+    const dow = DOW_BY_WEEKDAY_LABEL[fmt.format(b.scheduledAt)];
+    if (dow !== undefined) buckets[dow] += b.durationMinutes;
+  }
+  return buckets;
+}

@@ -4,6 +4,7 @@ import {
   DUTY_COVERAGE_THRESHOLD,
   LOW_SAMPLE_BOOKINGS_PER_DOW,
   selectDenominatorSource,
+  groupBookingsByDow,
 } from "./utilization.js";
 
 describe("utilization constants", () => {
@@ -40,5 +41,52 @@ describe("selectDenominatorSource", () => {
 
   it("returns 'estimated' when periodDays is 0 (defensive)", () => {
     expect(selectDenominatorSource({ daysWithDuties: 0, periodDays: 0 })).toBe("estimated");
+  });
+});
+
+describe("groupBookingsByDow", () => {
+  it("buckets a single booking into the correct dow", () => {
+    // 2026-04-29T03:00:00Z = 11am SGT Wed (UTC+8)
+    const booked = groupBookingsByDow({
+      bookings: [
+        { scheduledAt: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 },
+      ],
+      merchantTz: "Asia/Singapore",
+    });
+    expect(booked[3]).toBe(60); // Wed
+    expect(booked[0]).toBe(0);
+    expect(booked[6]).toBe(0);
+    expect(booked.reduce((a, b) => a + b, 0)).toBe(60);
+  });
+
+  it("respects merchant timezone for dow boundary", () => {
+    // 2026-04-30T15:30:00Z = Thu 23:30 SGT but Fri 00:30 KST
+    const inSgt = groupBookingsByDow({
+      bookings: [{ scheduledAt: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
+      merchantTz: "Asia/Singapore",
+    });
+    expect(inSgt[4]).toBe(30); // Thursday in SGT
+
+    const inKst = groupBookingsByDow({
+      bookings: [{ scheduledAt: new Date("2026-04-30T15:30:00Z"), durationMinutes: 30 }],
+      merchantTz: "Asia/Seoul",
+    });
+    expect(inKst[5]).toBe(30); // Friday in KST
+  });
+
+  it("sums multiple bookings on the same dow", () => {
+    const booked = groupBookingsByDow({
+      bookings: [
+        { scheduledAt: new Date("2026-04-29T03:00:00Z"), durationMinutes: 60 }, // Wed 11am SGT
+        { scheduledAt: new Date("2026-04-29T07:00:00Z"), durationMinutes: 30 }, // Wed 3pm SGT
+      ],
+      merchantTz: "Asia/Singapore",
+    });
+    expect(booked[3]).toBe(90);
+  });
+
+  it("returns 7 zeros for empty bookings", () => {
+    const booked = groupBookingsByDow({ bookings: [], merchantTz: "Asia/Singapore" });
+    expect(booked).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 });
