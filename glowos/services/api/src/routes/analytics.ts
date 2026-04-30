@@ -3,7 +3,10 @@ import { eq, and, gte, lte, gt, sql, inArray } from "drizzle-orm";
 import { db, bookings, clients, clientProfiles, services, staff, reviews, clientPackages } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
-import { aggregateUtilization } from "../lib/analytics-aggregator.js";
+import {
+  aggregateUtilization,
+  aggregateCohortRetention,
+} from "../lib/analytics-aggregator.js";
 
 const analyticsRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -966,6 +969,36 @@ analyticsRouter.get("/utilization", requireMerchant, async (c) => {
     period: { start: bounds.start, end: bounds.end, label: period },
     headline: result.headline,
     byDayOfWeek: result.byDayOfWeek,
+    guards: result.guards,
+  });
+});
+
+// ─── Cohort retention ──────────────────────────────────────────────────────
+//
+// Returns 60-day retention for a trailing cohort (period bounds offset by
+// 60 days). `headline: null` signals "insufficient sample" (cohort < 5).
+
+analyticsRouter.get("/cohort-retention", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const period = c.req.query("period") ?? "30d";
+  const customStart = c.req.query("start");
+  const customEnd = c.req.query("end");
+
+  const bounds = customStart && customEnd
+    ? customRangeBounds(customStart, customEnd)
+    : getPeriodBounds(getPeriodDays(period));
+
+  const result = await aggregateCohortRetention({
+    merchantId,
+    periodStart: bounds.start,
+    periodEnd: bounds.end,
+  });
+
+  return c.json({
+    period: { start: bounds.start, end: bounds.end, label: period },
+    lookforwardDays: result.lookforwardDays,
+    cohort: result.cohort,
+    headline: result.headline,
     guards: result.guards,
   });
 });
