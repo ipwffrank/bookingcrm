@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
+import type { UtilizationResult } from "./utilization.js";
 
 /**
  * PDF version of the Analytics Digest, attached to the email send. Mirrors
@@ -25,6 +26,7 @@ interface Args {
   metrics: DigestMetrics;
   aiProseMd?: string;
   dashboardUrl: string;
+  utilization?: UtilizationResult;
 }
 
 // ─── Colours (match the email palette) ────────────────────────────────
@@ -200,6 +202,20 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
       : null,
     true,
   );
+  if (args.utilization?.headline) {
+    const h = args.utilization.headline;
+    const display = Math.min(100, Math.round(h.utilizationPct));
+    const valueText = h.utilizationPct > 100 ? `${display}% (raw)` : `${display}%`;
+    const utilDelta = h.deltaVsPriorPp === null
+      ? null
+      : Math.abs(h.deltaVsPriorPp) < 0.5
+        ? { text: "-", positive: null as boolean | null }
+        : {
+            text: `${h.deltaVsPriorPp > 0 ? "+" : "-"}${Math.abs(h.deltaVsPriorPp).toFixed(1)}pp`,
+            positive: h.deltaVsPriorPp > 0,
+          };
+    drawGridRow(doc, "Capacity utilization", valueText, utilDelta, true);
+  }
   drawGridRow(
     doc,
     "Reviews",

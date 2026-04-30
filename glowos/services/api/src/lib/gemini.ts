@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { config } from "./config.js";
 import type { DigestMetrics } from "./analytics-aggregator.js";
 import type { DigestFrequency } from "./analytics-digest-email.js";
+import type { UtilizationResult } from "./utilization.js";
 
 /**
  * Gemini integration for the Analytics Digest email.
@@ -22,7 +23,7 @@ import type { DigestFrequency } from "./analytics-digest-email.js";
  * AI prose this round" and falls back to numeric-only.
  */
 
-const PROMPT_VERSION = "digest-prose-v1";
+const PROMPT_VERSION = "digest-prose-v2"; // v2: adds capacity utilization block to INPUT
 // Google has rolled the default lineage twice in 2026: `gemini-1.5-flash`
 // was removed from v1beta first, then `gemini-2.0-flash` became "no longer
 // available to new users" for projects enabled later in the year (404 on
@@ -63,6 +64,7 @@ export async function generateDigestSuggestions(args: {
   frequency: DigestFrequency;
   periodLabel: string;
   metrics: DigestMetrics;
+  utilization?: UtilizationResult;
 }): Promise<DigestAiResult | null> {
   const client = getClient();
   if (!client) {
@@ -119,8 +121,10 @@ function hashInput(args: {
   frequency: DigestFrequency;
   periodLabel: string;
   metrics: DigestMetrics;
+  utilization?: UtilizationResult;
 }): string {
   const m = args.metrics;
+  const u = args.utilization;
   // Stable JSON serialization — pin specific fields rather than
   // JSON.stringify-ing the whole object so future metric additions don't
   // silently invalidate every cached entry.
@@ -140,6 +144,10 @@ function hashInput(args: {
     m.highlights.quietestDay?.date ?? null, m.highlights.quietestDay?.bookings ?? null,
     m.highlights.topServiceByRevenue?.name ?? null,
     m.highlights.topServiceByRevenue?.revenueSgd ?? null,
+    u?.headline?.utilizationPct ?? null,
+    u?.headline?.denominatorSource ?? null,
+    u?.headline?.deltaVsPriorPp ?? null,
+    u?.byDayOfWeek?.map((b) => [b.dow, b.utilizationPct, b.lowSample]) ?? null,
   ]);
   return crypto.createHash("sha256").update(stable).digest("hex");
 }
@@ -152,6 +160,7 @@ function buildPrompt(args: {
   frequency: DigestFrequency;
   periodLabel: string;
   metrics: DigestMetrics;
+  utilization?: UtilizationResult;
 }): string {
   const m = args.metrics;
   const cat = args.merchantCategory ?? "appointment-based service";
@@ -171,6 +180,29 @@ function buildPrompt(args: {
     return `(${d >= 0 ? "+" : ""}${d.toFixed(1)}% vs prior)`;
   };
 
+  // Utilization block — suppressed entirely when headline is null OR when
+  // the period's overall bookings count is below 10. Per-DoW low-sample
+  // is communicated separately so the model can avoid those slices.
+  const utilSuppressed = !args.utilization?.headline || m.bookingsCount < 10;
+  const utilizationBlock = utilSuppressed
+    ? ""
+    : (() => {
+        const h = args.utilization!.headline!;
+        const dowLine = args.utilization!.byDayOfWeek
+          .filter((b) => b.utilizationPct !== null)
+          .map((b) => `${b.label} ${Math.round(b.utilizationPct!)}%`)
+          .join(", ");
+        const lowSampleLine =
+          args.utilization!.guards.lowSampleDows.length > 0
+            ? `\n- Low-sample days (suppress claims): ${args.utilization!.guards.lowSampleDows.join(", ")}`
+            : "";
+        const deltaPhrase =
+          h.deltaVsPriorPp === null
+            ? ""
+            : ` (${h.deltaVsPriorPp >= 0 ? "+" : ""}${h.deltaVsPriorPp.toFixed(1)}pp vs prior)`;
+        return `\n- Capacity utilization: ${Math.round(h.utilizationPct)}% (denominator: ${h.denominatorSource})${deltaPhrase}\n- Utilization by day-of-week: ${dowLine}${lowSampleLine}`;
+      })();
+
   return `You are an operations analyst writing a ${args.frequency} digest for a ${cat} business in Singapore/Malaysia. Output ${horizon}.
 
 CONSTRAINTS — these are absolute, do not violate:
@@ -179,6 +211,7 @@ CONSTRAINTS — these are absolute, do not violate:
 - Never make medical, clinical, or efficacy claims (regulatory risk in SG/MY).
 - Skip any suggestion that depends on a KPI with sample size < 30 bookings or < 10 reviews.
 - Reference specific days, services, or staff only if named in the data below.
+- Reference utilization only when it appears in INPUT — never invent a percentage. Do not make day-of-week claims about days listed in "Low-sample days".
 - Plain ASCII markdown only. No headers (#), no horizontal rules. Use only the structure shown in the OUTPUT FORMAT.
 - Total length: 80-150 words. No preamble, no closing line.
 
@@ -193,7 +226,7 @@ INPUT:
 - Reviews this period: ${m.reviewsCount} ${m.averageRating === null ? "" : `(avg ${m.averageRating.toFixed(1)}★)`}
 - Busiest day: ${m.highlights.busiestDay ? `${m.highlights.busiestDay.date} (${m.highlights.busiestDay.bookings} bookings)` : "n/a"}
 - Quietest day: ${m.highlights.quietestDay ? `${m.highlights.quietestDay.date} (${m.highlights.quietestDay.bookings} bookings)` : "n/a"}
-- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}
+- Top service by revenue: ${m.highlights.topServiceByRevenue ? `${m.highlights.topServiceByRevenue.name} (${fmtMoney(m.highlights.topServiceByRevenue.revenueSgd)})` : "n/a"}${utilizationBlock}
 
 OUTPUT FORMAT (exactly):
 Suggestions:
