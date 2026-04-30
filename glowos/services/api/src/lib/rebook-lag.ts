@@ -90,3 +90,65 @@ export function computeMedian(values: number[]): number | null {
     : sorted[mid];
   return Math.round(raw);
 }
+
+/**
+ * Assemble the final RebookLagResult from a per-cohort-member lag-days
+ * array. `null` entries represent cohort members who didn't rebook
+ * within the lookforward window; they bucket to the "60d+" bin and are
+ * excluded from the median calculation.
+ */
+export function assembleResult(args: {
+  cohort: { windowStart: Date; windowEnd: Date; size: number };
+  lagDaysPerMember: Array<number | null>;
+  priorMedianDays: number | null;
+}): RebookLagResult {
+  // Cohort below threshold → suppress everything.
+  if (args.cohort.size < SAMPLE_SIZE_THRESHOLD) {
+    return {
+      lookforwardDays: LOOKFORWARD_DAYS,
+      cohort: args.cohort,
+      headline: null,
+      bins: [],
+      guards: { lowSample: true, medianSuppressed: false },
+    };
+  }
+
+  // Bin counts.
+  const counts: Record<RebookLagBin["id"], number> = {
+    "0-7d": 0, "8-14d": 0, "15-30d": 0, "31-60d": 0, "60d+": 0,
+  };
+  for (const lag of args.lagDaysPerMember) {
+    counts[assignBin(lag)]++;
+  }
+
+  // Returner subset for median (lags within the lookforward window only).
+  const returnerLags = args.lagDaysPerMember.filter((l): l is number => l !== null && l <= 60);
+  const medianDays = computeMedian(returnerLags);
+
+  // Bins with pct (one decimal, sums to 100 within rounding).
+  const totalForPct = args.cohort.size;
+  const bins: RebookLagBin[] = BIN_DEFINITIONS.map((def) => ({
+    ...def,
+    count: counts[def.id],
+    pct: totalForPct > 0 ? Math.round((counts[def.id] / totalForPct) * 1000) / 10 : 0,
+  }));
+
+  return {
+    lookforwardDays: LOOKFORWARD_DAYS,
+    cohort: args.cohort,
+    headline: {
+      medianDays,
+      deltaVsPriorCohortDays:
+        medianDays !== null && args.priorMedianDays !== null
+          ? medianDays - args.priorMedianDays
+          : null,
+      returnedCount: returnerLags.length,
+      cohortSize: args.cohort.size,
+    },
+    bins,
+    guards: {
+      lowSample: false,
+      medianSuppressed: medianDays === null,
+    },
+  };
+}
