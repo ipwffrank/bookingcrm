@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, ApiError } from '../../lib/api';
+import { UtilizationSection } from './UtilizationSection';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1407,6 +1408,11 @@ export default function AnalyticsPage() {
       {/* Summary Cards */}
       <div className="mb-6">
         <SummaryCards data={summaryData} loading={loadingSummary} />
+      </div>
+
+      {/* Capacity utilization */}
+      <div className="mb-6">
+        <UtilizationSection windowQuery={buildWindowQuery(windowState)} />
       </div>
 
       {/* Revenue Chart */}
