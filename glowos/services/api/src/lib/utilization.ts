@@ -116,3 +116,44 @@ export function buildDowBuckets(args: {
     lowSample: (args.bookingsCountByDow[dow] ?? 0) < LOW_SAMPLE_BOOKINGS_PER_DOW,
   }));
 }
+
+/** Percentage-point delta. null if either side is null. */
+export function computeDeltaVsPrior(
+  current: number | null,
+  prior: number | null,
+): number | null {
+  if (current === null || prior === null) return null;
+  return Math.round((current - prior) * 10) / 10;
+}
+
+/**
+ * Assemble the final UtilizationResult shape from the pre-aggregated
+ * pieces. Returns headline=null when availableMinutes is 0 — the
+ * "no usable capacity data" signal that propagates to the UI / digest /
+ * AI prompt so they can suppress the section gracefully.
+ */
+export function assembleResult(args: {
+  bookedMinutes: number;
+  availableMinutes: number;
+  denominatorSource: DenominatorSource;
+  priorUtilizationPct: number | null;
+  byDow: DowBucket[];
+}): UtilizationResult {
+  const headlinePct = computeUtilizationPct(args.bookedMinutes, args.availableMinutes);
+  if (headlinePct === null) {
+    return { headline: null, byDayOfWeek: args.byDow, guards: { lowSampleDows: [] } };
+  }
+  return {
+    headline: {
+      utilizationPct: headlinePct,
+      bookedMinutes: args.bookedMinutes,
+      availableMinutes: args.availableMinutes,
+      denominatorSource: args.denominatorSource,
+      deltaVsPriorPp: computeDeltaVsPrior(headlinePct, args.priorUtilizationPct),
+    },
+    byDayOfWeek: args.byDow,
+    guards: {
+      lowSampleDows: args.byDow.filter((b) => b.lowSample).map((b) => b.label),
+    },
+  };
+}
