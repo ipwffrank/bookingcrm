@@ -28,3 +28,28 @@ export interface GroupRollupResult<T> {
     metrics: T;
   }>;
 }
+
+/**
+ * Compute a weighted rate from per-branch numerator/denominator pairs.
+ * Sums numerators and denominators across all branches with positive
+ * denominators, then divides. Returns null if no branch has a positive
+ * denominator (signals "no data for this metric in any branch").
+ *
+ * This is the canonical group-rollup math for any rate metric:
+ *   noShowRate, retentionPct, utilizationPct, firstTimerReturnRate, etc.
+ *
+ * It deliberately avoids "mean of per-branch rates" — a 5-booking branch
+ * and a 500-booking branch would otherwise have equal weight, distorting
+ * the group rate.
+ */
+export function weightedRate(counts: RateCounts[]): number | null {
+  let totalNum = 0;
+  let totalDen = 0;
+  for (const c of counts) {
+    if (c.denominator <= 0) continue;
+    totalNum += c.numerator;
+    totalDen += c.denominator;
+  }
+  if (totalDen <= 0) return null;
+  return totalNum / totalDen;
+}
