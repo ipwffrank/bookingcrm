@@ -3,6 +3,7 @@ import {
   LOOKFORWARD_DAYS,
   SAMPLE_SIZE_THRESHOLD,
   BIN_DEFINITIONS,
+  assignBin,
 } from "./rebook-lag.js";
 
 describe("rebook-lag constants", () => {
@@ -23,5 +24,37 @@ describe("rebook-lag constants", () => {
     const last = BIN_DEFINITIONS[BIN_DEFINITIONS.length - 1];
     expect(last.id).toBe("60d+");
     expect(last.maxDays).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("assignBin", () => {
+  it("returns '0-7d' for 0-7 day lags inclusive", () => {
+    expect(assignBin(0)).toBe("0-7d");
+    expect(assignBin(3)).toBe("0-7d");
+    expect(assignBin(7)).toBe("0-7d");
+  });
+
+  it("returns '8-14d' for 8-14 day lags", () => {
+    expect(assignBin(8)).toBe("8-14d");
+    expect(assignBin(14)).toBe("8-14d");
+  });
+
+  it("returns '15-30d' for 15-30 day lags", () => {
+    expect(assignBin(15)).toBe("15-30d");
+    expect(assignBin(30)).toBe("15-30d");
+  });
+
+  it("returns '31-60d' for 31-60 day lags", () => {
+    expect(assignBin(31)).toBe("31-60d");
+    expect(assignBin(60)).toBe("31-60d");
+  });
+
+  it("returns '60d+' for lags > 60 (extreme but should never reach here in practice)", () => {
+    expect(assignBin(61)).toBe("60d+");
+    expect(assignBin(365)).toBe("60d+");
+  });
+
+  it("returns '60d+' for null lag (no second booking within window)", () => {
+    expect(assignBin(null)).toBe("60d+");
   });
 });

@@ -59,3 +59,18 @@ export const BIN_DEFINITIONS: ReadonlyArray<Omit<RebookLagBin, "count" | "pct">>
   { id: "31-60d", label: "31-60 days",            minDays: 31, maxDays: 60 },
   { id: "60d+",   label: "didn't return in 60d",  minDays: 61, maxDays: Number.POSITIVE_INFINITY },
 ];
+
+/**
+ * Assign a lag-days value to one of the 5 bins. `null` (no second
+ * booking within the lookforward window) → "60d+" bucket. Boundary
+ * values land in the lower bin (e.g. 7 → "0-7d", 8 → "8-14d") since
+ * `maxDays` is inclusive.
+ */
+export function assignBin(lagDays: number | null): RebookLagBin["id"] {
+  if (lagDays === null) return "60d+";
+  for (const bin of BIN_DEFINITIONS) {
+    if (lagDays >= bin.minDays && lagDays <= bin.maxDays) return bin.id;
+  }
+  // Shouldn't reach here — Number.POSITIVE_INFINITY catches everything.
+  return "60d+";
+}
