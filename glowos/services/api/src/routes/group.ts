@@ -7,6 +7,11 @@ import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
 import { z } from "zod";
 import { zValidator } from "../middleware/validate.js";
+import {
+  aggregateUtilizationForGroup,
+  aggregateCohortRetentionForGroup,
+  aggregateRebookLagForGroup,
+} from "../lib/analytics-aggregator.js";
 
 type AppContext = Context<{ Variables: AppVariables }>;
 
@@ -929,6 +934,115 @@ groupRouter.delete("/invites/:id", async (c) => {
     .where(eq(brandInvites.id, id));
 
   return c.json({ canceled: true });
+});
+
+// ─── Group analytics-depth endpoints ─────────────────────────────────────────
+//
+// These mirror the per-merchant `/merchant/analytics/{utilization,
+// cohort-retention,rebook-lag}` endpoints but roll the metric up across
+// every active branch in the group. They reuse the same fault-tolerant
+// per-branch fan-out helpers built for the digest pipeline (PR 5a), so
+// a single broken branch can't poison the rollup.
+//
+// Response shape mirrors the per-merchant endpoints exactly so the same
+// React section components (UtilizationSection / CohortRetentionSection /
+// RebookLagSection) can render them. We tack on a `perBranch` array for
+// the per-branch comparison panel that only the group page renders.
+
+groupRouter.get("/analytics/utilization", async (c) => {
+  const groupId = c.get("groupId")!;
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
+
+  // Prior period mirrors per-merchant route: same span immediately preceding.
+  const span = to.getTime() - from.getTime();
+  const priorPeriodEnd = new Date(from.getTime());
+  const priorPeriodStart = new Date(from.getTime() - span);
+
+  const result = await aggregateUtilizationForGroup({
+    groupId,
+    periodStart: from,
+    periodEnd: to,
+    priorPeriodStart,
+    priorPeriodEnd,
+  });
+
+  return c.json({
+    period: { start: from, end: to, label: "custom" },
+    headline: result.group.headline,
+    byDayOfWeek: result.group.byDayOfWeek,
+    guards: result.group.guards,
+    perBranch: result.perBranch.map((b) => ({
+      merchantId: b.merchantId,
+      merchantName: b.merchantName,
+      headline: b.metrics.headline,
+    })),
+  });
+});
+
+groupRouter.get("/analytics/cohort-retention", async (c) => {
+  const groupId = c.get("groupId")!;
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
+
+  const result = await aggregateCohortRetentionForGroup({
+    groupId,
+    periodStart: from,
+    periodEnd: to,
+  });
+
+  return c.json({
+    period: { start: from, end: to, label: "custom" },
+    lookforwardDays: result.group.lookforwardDays,
+    cohort: result.group.cohort,
+    headline: result.group.headline,
+    guards: result.group.guards,
+    perBranch: result.perBranch.map((b) => ({
+      merchantId: b.merchantId,
+      merchantName: b.merchantName,
+      cohort: b.metrics.cohort,
+      headline: b.metrics.headline,
+    })),
+  });
+});
+
+groupRouter.get("/analytics/rebook-lag", async (c) => {
+  const groupId = c.get("groupId")!;
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
+
+  const result = await aggregateRebookLagForGroup({
+    groupId,
+    periodStart: from,
+    periodEnd: to,
+  });
+
+  return c.json({
+    period: { start: from, end: to, label: "custom" },
+    lookforwardDays: result.group.lookforwardDays,
+    cohort: result.group.cohort,
+    headline: result.group.headline,
+    bins: result.group.bins,
+    guards: result.group.guards,
+    perBranch: result.perBranch.map((b) => ({
+      merchantId: b.merchantId,
+      merchantName: b.merchantName,
+      cohort: b.metrics.cohort,
+      headline: b.metrics.headline,
+    })),
+  });
 });
 
 export { groupRouter };

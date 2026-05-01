@@ -26,7 +26,13 @@ interface RebookLagApiResponse {
   guards: { lowSample: boolean; medianSuppressed: boolean };
 }
 
-export function RebookLagSection({ windowQuery }: { windowQuery: string }) {
+export function RebookLagSection({
+  windowQuery,
+  apiPath = '/merchant/analytics/rebook-lag',
+}: {
+  windowQuery: string;
+  apiPath?: string;
+}) {
   const [data, setData] = useState<RebookLagApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +41,7 @@ export function RebookLagSection({ windowQuery }: { windowQuery: string }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch(`/merchant/analytics/rebook-lag?${windowQuery}`)
+    apiFetch(`${apiPath}?${windowQuery}`)
       .then((json: RebookLagApiResponse) => {
         if (!cancelled) setData(json);
       })
@@ -51,7 +57,7 @@ export function RebookLagSection({ windowQuery }: { windowQuery: string }) {
     return () => {
       cancelled = true;
     };
-  }, [windowQuery]);
+  }, [windowQuery, apiPath]);
 
   if (loading) {
     return (
