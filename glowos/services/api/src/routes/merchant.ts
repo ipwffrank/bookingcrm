@@ -25,13 +25,17 @@ const updateMerchantSchema = z.object({
   timezone: z.string().optional(),
   logoUrl: z.string().url().optional().or(z.literal("")),
   coverPhotoUrl: z.string().url().optional().or(z.literal("")),
+  // Each day entry: open/close optional (closed days don't need them),
+  // closed required. Null entries are tolerated at the schema level (the
+  // PUT handler strips them before writing) so partial/legacy data
+  // from the DB round-trips through the UI without breaking saves.
   operatingHours: z.record(
     z.string(),
     z.object({
-      open: z.string(),
-      close: z.string(),
+      open: z.string().optional(),
+      close: z.string().optional(),
       closed: z.boolean(),
-    })
+    }).nullable(),
   ).optional(),
   // Lets the merchant flip between Stripe and iPay88 from the onboarding
   // wizard before any credentials are entered. Actual credentials still come
@@ -76,9 +80,27 @@ merchantRouter.put(
       return c.json({ error: "Bad Request", message: "No fields provided to update" }, 400);
     }
 
+    // Strip null entries from operatingHours — schema allows null for
+    // round-trip resilience but we never want to persist nulls. Drizzle's
+    // column type insists on strict {open, close, closed} per entry; the
+    // JSONB column accepts the looser shape (closed-only is fine), so we
+    // cast at the write boundary.
+    const { operatingHours, ...restBody } = body;
+    const operatingHoursClean = operatingHours
+      ? Object.fromEntries(
+          Object.entries(operatingHours).filter(([, v]) => v !== null),
+        )
+      : undefined;
+
     const [updated] = await db
       .update(merchants)
-      .set({ ...body, updatedAt: new Date() })
+      .set({
+        ...restBody,
+        ...(operatingHoursClean !== undefined
+          ? { operatingHours: operatingHoursClean as Record<string, { open: string; close: string; closed: boolean }> }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(merchants.id, merchantId))
       .returning();
 
