@@ -1,5 +1,90 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 29 April 2026 (Session 22)**
+**Last updated: 1 May 2026 (Session 23)**
+
+---
+
+## What's Completed (Session 23 — 1 May 2026)
+
+Two PRs to main, both clean ships, plus one production-data cleanup. Today closes out the analytics-depth + group-scope arc that started in Session 22 (PR 4 utilization, then PRs 6/7/5a in interim work):
+
+- **PR #76** — group analytics page UI + scope-aware digest settings fix (PR 5b)
+- **PR #77** — auto-create group-scope digest config at group creation
+
+End state: any new multi-branch group registered from now on will get both the `/dashboard/group/analytics` page AND the email digest auto-wired with zero manual setup — same functionality Aura Aesthetic & Laser was hand-configured to have. Aura's existing pipeline validated end-to-end via test-send (all 3 recipients delivered).
+
+### PR 5b — Group analytics page UI ✅ (PR #76)
+
+Visual surface for the rollups PR 5a delivers via email. New `/dashboard/group/analytics` route with date-range picker and three rollup sections (Capacity utilization, 60-day cohort retention, Rebook lag), plus a per-branch comparison table at the bottom showing utilization / retention / median rebook / cohort-n side-by-side so the owner can spot which branch is dragging the group rate down at a glance.
+
+Backend adds three endpoints — `GET /group/analytics/{utilization,cohort-retention,rebook-lag}` — that reuse the PR 5a `aggregate*ForGroup` helpers. Each returns the group rollup PLUS a `perBranch` array so the comparison table doesn't need its own endpoint.
+
+Frontend reuse: refactored the existing `UtilizationSection` / `CohortRetentionSection` / `RebookLagSection` components to accept an optional `apiPath` prop. The same components render both `/merchant/analytics` and `/group/analytics` responses — zero duplication.
+
+Added `Analytics` to the group-side nav between Overview and Branches.
+
+### Digest settings scope-aware fix ✅ (bundled into PR #76)
+
+**Bug uncovered during smoke-test:** the recipient-management UI in `/dashboard/settings → Digest tab` was hard-coded to `scope='branch'` while the worker (and test-send) preferred `scope='group'` when the merchant was in a group. Owners adding recipients via the UI wrote to the **wrong** config — the scheduled digest delivered from a different config with a different recipient list. Symptom: Frank added 3 recipients via the dashboard but only 1 received the digest.
+
+Fix: introduced `resolveActiveDigestScope(merchantId)` + `configScopeFilter(scope)` helpers in `routes/analytics-digest.ts`. Every endpoint (`GET/PUT /config`, `GET/POST/DELETE /recipients`, `GET /eligible-users`, `GET /runs`) now binds to whichever scope is active for the caller's merchant — group when `merchants.group_id` is non-null, branch otherwise. The `eligible-users` query universe widens to all active users across the group's branches when group-scope, so owners can pick recipients from any branch.
+
+Auto-seed in `PUT /config` widened too: when scope='group', seeds owners across **every branch in the group** instead of just the calling merchant's owners.
+
+### PR #77 — auto-create digest config on group creation ✅
+
+Every new multi-branch group now gets the analytics digest wired up at creation time, identical to how Aura was set up manually. No separate "Configure schedule" step required for the digest to start firing.
+
+Hooked into the group-creation transaction at [routes/merchant.ts:304](services/api/src/routes/merchant.ts#L304). Inserts a default group-scope `analytics_digest_configs` row + auto-seeds the creator's active owners as recipients in the same atomic transaction as the group + `merchants.group_id` + `merchant_users.brand_admin_group_id` updates.
+
+Defaults shipped: weekly, Mondays 08:00 creator's local timezone, `is_active=true`. Owner can change cadence, deactivate, or edit recipients any time via Settings → Digest tab — those endpoints already bind to the active scope after PR #76.
+
+### Aura test-send recipient mismatch — diagnosed + resolved (no code change)
+
+After PR #76 deployed, Frank's earlier confusion ("only 1 of 3 recipients got the digest") was traced to drift between two configs:
+- `scope='branch'` config for Aura Orchard with 3 recipients (added via the buggy pre-fix UI)
+- `scope='group'` config for the Aura group with 1 recipient (originally seeded via SQL in PR 5a)
+
+Resolved via SQL only:
+1. **Diagnostic** revealed both configs had drifted to identical 3-recipient lists (UI had been writing to both at different times).
+2. **Cleanup** — deactivated the legacy `scope='branch'` config via UPDATE so the worker doesn't double-fire Monday morning (one stale per-merchant Orchard digest + one proper group digest).
+3. **Test-send** confirmed all 3 recipients (`ipwffrank@gmail.com`, `ipwffrank24@gmail.com`, `info@axle-finance.com`) delivered cleanly via the group-scope config.
+
+End state DB:
+- `scope='branch'` Aura Orchard config: `is_active=false` ✅
+- `scope='group'` Aura Aesthetic & Laser config: `is_active=true`, 3 recipients ✅
+
+### Monday verification scheduled (remote agent)
+
+Created one-shot remote agent routine `trig_018MMJdTBWaUdEPG1b7i4oLV` to fire once on Mon 2026-05-04 at 10:13 SGT (02:13 UTC). The agent searches `ipwffrank@gmail.com` via the Gmail connector for the digest email between 00:00–03:00 UTC, then drafts a `[GlowOS] Monday digest verification — PASS/FAIL` email to Frank with the SQL diagnostic to verify all recipients delivered + a Railway log scan reminder + a PR #77 sanity-check query for any new groups created since 2026-05-01.
+
+Runs in Anthropic's cloud independent of any local Claude session. Sonnet 4.6 + Gmail connector. Manageable at https://claude.ai/code/routines/trig_018MMJdTBWaUdEPG1b7i4oLV.
+
+### Operational lessons logged
+
+- **UI scope drift is silent.** When the same logical resource has multiple rows with different scopes (branch + group), and the UI binds to one while the worker prefers the other, mismatches don't error — they just silently drop recipients. Audit pattern: any time a feature has two storage shapes (single-tenant + multi-tenant), the read/write/scheduled-job paths must all derive scope from the **same** decision function. `resolveActiveDigestScope()` is that single source of truth now; same pattern would help future features that grow from single → multi-tenant.
+- **Auto-seed at creation beats prompt-on-first-load.** Rather than wait for the owner to click "Configure schedule" before the digest exists, create it eagerly with sensible defaults at group-creation time. Disable / change cadence / edit recipients are all available later. "It just works" beats "click here to enable" for paid-feature first impressions.
+- **Remote agents can verify via what the user already has.** The Monday digest agent has no DB or Railway access, but it has Gmail. Searching the user's own inbox for the expected email is a valid PASS/FAIL signal, and the agent can draft a follow-up email with the SQL the user must run themselves for full verification. Plan around the connector surface you actually have.
+- **Schema invariants matter for cross-cutting features.** `analytics_digest_configs.merchant_id` is `NOT NULL` even for group-scope rows (the schema records the creator's home branch); only `group_id` is the routing key. Required a one-line fix in PR #77's INSERT after the first typecheck failure. Worth eyeballing schema constraints before assuming "scope='group' means merchant_id can be null".
+
+### Memories saved
+
+- (none new this session — all guidance from this session is encoded in code or covered by Session 22 memories)
+
+### Roadmap — next slots
+
+**PR 5c — Outlier flagging in AI prompt (deferred from PR 5):** add prompt logic so Gemini calls out which branch is dragging the group rate down. Per-branch metrics already flow into the AI prompt via `groupContext + perBranchMetrics`; just needs prompt engineering to surface outliers explicitly. Useful once a group has 5+ branches.
+
+**Open verification (Mon 2026-05-04):**
+- Remote agent reports back on first auto-fired weekly digest for Aura group
+- Should also confirm any group created via `POST /merchant/upgrade-to-brand` between 2026-05-01 and 2026-05-04 has its own auto-created digest config + first scheduled run from PR #77
+
+**Carried tech debt:**
+- Tests + CI gating for new aggregator code paths (`computeDigestMetricsForGroup`, `aggregate{Utilization,CohortRetention,RebookLag}ForGroup`)
+- Photo-during-record-creation drag-and-drop
+- Granular RBAC: clinician role separate from manager
+- Photo attachment storage migration to private bucket + signed URLs
+- Encryption at rest for `clinical_records.body` via `pgcrypto`
+- SendGrid sender authentication (DNS-blocked pending domain registration; digest emails currently land in spam)
 
 ---
 
