@@ -608,8 +608,14 @@ async function computeAvailableByDowFromOperatingHours(args: {
   const headcount = staffCountRow?.count ?? 0;
   if (headcount === 0) return [0, 0, 0, 0, 0, 0, 0];
 
-  // operating_hours is { mon: { open, close, closed }, ... } keyed by lowercase weekday abbrev.
-  const dowKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  // operating_hours can be keyed either by 3-letter abbrev (mon, tue, ...) or
+  // by long-form name (monday, tuesday, ...). The UI's settings page writes
+  // long-form; some seed scripts wrote 3-letter. Handle both shapes by
+  // checking both keys per dow.
+  const dowKeys: Array<[string, string]> = [
+    ["sun", "sunday"], ["mon", "monday"], ["tue", "tuesday"],
+    ["wed", "wednesday"], ["thu", "thursday"], ["fri", "friday"], ["sat", "saturday"],
+  ];
   const buckets = [0, 0, 0, 0, 0, 0, 0];
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: args.merchantTz,
@@ -625,7 +631,8 @@ async function computeAvailableByDowFromOperatingHours(args: {
   ) {
     const dow = DOW_BY_WEEKDAY_LABEL[fmt.format(cursor)];
     if (dow === undefined) continue;
-    const dayConfig = (m.operatingHours as Record<string, { open?: string; close?: string; closed?: boolean }>)[dowKeys[dow]];
+    const ohRaw = m.operatingHours as Record<string, { open?: string; close?: string; closed?: boolean } | null>;
+    const dayConfig = ohRaw[dowKeys[dow][0]] ?? ohRaw[dowKeys[dow][1]];
     if (!dayConfig || dayConfig.closed) continue;
     const open = parseTimeOfDay(dayConfig.open);
     const close = parseTimeOfDay(dayConfig.close);
