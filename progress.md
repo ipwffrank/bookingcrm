@@ -59,18 +59,45 @@ Created one-shot remote agent routine `trig_018MMJdTBWaUdEPG1b7i4oLV` to fire on
 
 Runs in Anthropic's cloud independent of any local Claude session. Sonnet 4.6 + Gmail connector. Manageable at https://claude.ai/code/routines/trig_018MMJdTBWaUdEPG1b7i4oLV.
 
+### Afternoon — sales deck for dental clinic ICP (non-code deliverable)
+
+Built first-version sales deck targeting **Malaysian dental clinic owners**. 12-slide PDF, 1.3 MB, saved to `~/Desktop/projects/bookingcrm - doc/dental-deck-2026-05-01/`. Companion `clinical/index.html` source for future edits + `render.sh` for re-rendering via headless Chrome.
+
+**Approach:**
+- 3 research agents dispatched in parallel: codebase feature audit (grounded every claim against shipped code), competitor scan (Fresha · Curve Dental · CareStack · kumoDent · KumoDoc · Kreloses · MAGSYS — Malaysia-first), and Malaysian dental ICP voice-of-customer (PDPA Act 709, MDC 2024 mandates, MyInvois LHDN compliance, ~3,876 private clinics TAM).
+- **Framing A** chosen: "front-of-house OS layered on top of existing PMS" — honest given GlowOS does not yet ship MyInvois e-invoicing, full-mouth charting / odontogram, or `pgcrypto` encryption-at-rest (all required for full dental-PMS replacement vs kumoDent).
+- frontend-architect agent built two tonal variants (clinical / SaaS) as code-faithful CSS mockups — no real screenshots needed since the agent reads `UtilizationSection.tsx` / `PerBranchComparisonTable.tsx` / `analytics-digest-email.ts` directly and replicates them in the deck. **Clinical variant chosen.**
+- Sutherland-style copywriting agent generated 12 headline candidates ranked + top 3. Winner: **"The clinic runs itself. You just take the credit."** — pure status-without-effort play; lets the principal imagine being figurehead of a well-run clinic.
+
+**12-slide flow:** Title · Reality (4 pain points) · 4 pillars one-pager · Patient-direct booking (Google Business Profile, no marketplace tax) · WhatsApp-first engagement (3-tier reminders + configurable cadences) · Loyalty + recall · **Hero: multi-branch group rollup** (real `/dashboard/group/analytics` mockup) · Monday-morning AI digest preview · PDPA-grade audit · vs alternatives table · Pre-empted objections · 30-day pilot CTA with WhatsApp QR.
+
+**Honest scope flagged:** slide 9 carries "Full odontogram + MDC 2024 charting on the May–June roadmap" small print to avoid overclaim. Slide 5 cadence claims audited against actual `scheduler.ts` — three-tier (24h/12h/2h) reminders + birthday/winback/rebook automations are real and configurable.
+
+**Production notes:** real working WhatsApp QR on slide 12 (`https://wa.me/6591262212` with pre-filled "Hi Chrisrine, I'd like a GlowOS walkthrough" message), generated via Python `qrcode` lib with HIGH error correction + pure black/white + 4-module border for scan reliability. Contact: Chrisrine Soo, WhatsApp +65 9126 2212. Pilot length unified at 30 days throughout (initial draft had 14-day pilot + 30-day parallel run mismatch).
+
 ### Operational lessons logged
 
 - **UI scope drift is silent.** When the same logical resource has multiple rows with different scopes (branch + group), and the UI binds to one while the worker prefers the other, mismatches don't error — they just silently drop recipients. Audit pattern: any time a feature has two storage shapes (single-tenant + multi-tenant), the read/write/scheduled-job paths must all derive scope from the **same** decision function. `resolveActiveDigestScope()` is that single source of truth now; same pattern would help future features that grow from single → multi-tenant.
 - **Auto-seed at creation beats prompt-on-first-load.** Rather than wait for the owner to click "Configure schedule" before the digest exists, create it eagerly with sensible defaults at group-creation time. Disable / change cadence / edit recipients are all available later. "It just works" beats "click here to enable" for paid-feature first impressions.
 - **Remote agents can verify via what the user already has.** The Monday digest agent has no DB or Railway access, but it has Gmail. Searching the user's own inbox for the expected email is a valid PASS/FAIL signal, and the agent can draft a follow-up email with the SQL the user must run themselves for full verification. Plan around the connector surface you actually have.
 - **Schema invariants matter for cross-cutting features.** `analytics_digest_configs.merchant_id` is `NOT NULL` even for group-scope rows (the schema records the creator's home branch); only `group_id` is the routing key. Required a one-line fix in PR #77's INSERT after the first typecheck failure. Worth eyeballing schema constraints before assuming "scope='group' means merchant_id can be null".
+- **Code-faithful CSS mockups beat real screenshots for sales decks.** No browser chrome, no auth dance, no awkward cropping; the design agent reads the actual product components and reproduces them at higher visual fidelity than a screenshot would carry. Especially powerful when the agent can grep for palette tokens (`tone-ink`, `tone-sage`) and replicate exact component shapes — the deck visually echoes the product without requiring dev-server access.
+- **QR rendering for sales collateral has known gotchas.** Default sage-tinted ink on warm off-white doesn't scan reliably in print or on phones. Generate with: pure `#000` on `#fff`, HIGH error correction (vs MEDIUM), `box_size=12` minimum, `border=4` (4-module quiet zone), and ≥ 168×168 px display size. Even better: keep the URL short; long URLs make denser patterns that scan worse. wa.me links with pre-filled `text=` params are fine at HIGH error correction but borderline at MEDIUM.
+- **Sutherland-style copywriting via agent works when briefed deeply.** A 200-word brief listing his moves (reframe the problem, status not features, permission slip / face-saver, punch with small words, implied confession) plus the audience's tribal vocabulary (DSA, panel patient, scaling, MDC, MyInvois) plus an explicit anti-pattern list (no smile/teeth/drill puns, no "transform your practice") produced 12 candidates with multiple genuinely usable lines. The winning headline ("The clinic runs itself. You just take the credit.") was Sutherland's "status without effort" move encoded as a permission slip — not something a generic copy prompt would surface.
 
 ### Memories saved
 
 - (none new this session — all guidance from this session is encoded in code or covered by Session 22 memories)
 
 ### Roadmap — next slots
+
+**Weekend dental-table-stakes sprint (committed by Frank on 1 May):**
+The dental clinic deck flagged three table-stakes gaps for the MY ICP. Frank committed to closing them this weekend so the deck can flip from Framing A (front-of-house OS layered on top) to Framing B (full dental clinic OS):
+- **MyInvois (LHDN e-invoicing) integration** — ~~table-stakes for every MY clinic; both kumoDent and Kreloses lead with this~~
+- **MDC 2024 full-mouth charting / odontogram** — mandatory record-keeping mandate effective 1 Jan 2024; no structured perio/odontogram UI in GlowOS today
+- (Stretch) **Encryption at rest** for `clinical_records.body` via `pgcrypto` — PDPA Act 709 expectation
+
+Once shipped: revise slide 9's small-print disclaimer ("MDC 2024 charting on roadmap") and slide 10's comparison table (kumoDent's local-fit advantage closes), and re-pitch as a full PMS replacement instead of a complement.
 
 **PR 5c — Outlier flagging in AI prompt (deferred from PR 5):** add prompt logic so Gemini calls out which branch is dragging the group rate down. Per-branch metrics already flow into the AI prompt via `groupContext + perBranchMetrics`; just needs prompt engineering to surface outliers explicitly. Useful once a group has 5+ branches.
 
@@ -83,7 +110,6 @@ Runs in Anthropic's cloud independent of any local Claude session. Sonnet 4.6 + 
 - Photo-during-record-creation drag-and-drop
 - Granular RBAC: clinician role separate from manager
 - Photo attachment storage migration to private bucket + signed URLs
-- Encryption at rest for `clinical_records.body` via `pgcrypto`
 - SendGrid sender authentication (DNS-blocked pending domain registration; digest emails currently land in spam)
 
 ---
