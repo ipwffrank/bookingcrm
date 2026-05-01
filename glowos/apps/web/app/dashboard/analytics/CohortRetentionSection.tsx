@@ -16,7 +16,13 @@ interface CohortRetentionApiResponse {
   guards: { lowSample: boolean };
 }
 
-export function CohortRetentionSection({ windowQuery }: { windowQuery: string }) {
+export function CohortRetentionSection({
+  windowQuery,
+  apiPath = '/merchant/analytics/cohort-retention',
+}: {
+  windowQuery: string;
+  apiPath?: string;
+}) {
   const [data, setData] = useState<CohortRetentionApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +31,7 @@ export function CohortRetentionSection({ windowQuery }: { windowQuery: string })
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch(`/merchant/analytics/cohort-retention?${windowQuery}`)
+    apiFetch(`${apiPath}?${windowQuery}`)
       .then((json: CohortRetentionApiResponse) => {
         if (!cancelled) setData(json);
       })
@@ -41,7 +47,7 @@ export function CohortRetentionSection({ windowQuery }: { windowQuery: string })
     return () => {
       cancelled = true;
     };
-  }, [windowQuery]);
+  }, [windowQuery, apiPath]);
 
   if (loading) {
     return (

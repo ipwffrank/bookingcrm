@@ -23,7 +23,13 @@ interface UtilizationApiResponse {
   guards: { lowSampleDows: string[] };
 }
 
-export function UtilizationSection({ windowQuery }: { windowQuery: string }) {
+export function UtilizationSection({
+  windowQuery,
+  apiPath = '/merchant/analytics/utilization',
+}: {
+  windowQuery: string;
+  apiPath?: string;
+}) {
   const [data, setData] = useState<UtilizationApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +38,7 @@ export function UtilizationSection({ windowQuery }: { windowQuery: string }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch(`/merchant/analytics/utilization?${windowQuery}`)
+    apiFetch(`${apiPath}?${windowQuery}`)
       .then((json: UtilizationApiResponse) => {
         if (!cancelled) setData(json);
       })
@@ -48,7 +54,7 @@ export function UtilizationSection({ windowQuery }: { windowQuery: string }) {
     return () => {
       cancelled = true;
     };
-  }, [windowQuery]);
+  }, [windowQuery, apiPath]);
 
   if (loading) {
     return (

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, isNull, desc, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -82,6 +82,43 @@ function isFeatureUnlocked(ctx: { tier: string; inGroup: boolean }): boolean {
   return ctx.tier === "multibranch" || ctx.inGroup;
 }
 
+// ─── Scope resolution ────────────────────────────────────────────────────────
+// The digest config + recipient list lives at one of two scopes:
+//   - 'group'  → keyed on (group_id, scope='group'), shared by every branch
+//                in the group. Used whenever the merchant belongs to a group.
+//   - 'branch' → keyed on (merchant_id, scope='branch'), single-branch.
+//                Used when the merchant has no group_id.
+//
+// Before this helper existed, the config/recipient/eligible-user UIs all
+// hard-coded `scope='branch'` even for merchants in a group, which meant
+// owners would add recipients to the branch-scope row but the worker
+// (and test-send) would deliver from the group-scope row — silently
+// dropping recipients. The fix is one decision point: route every read
+// and write to whichever scope is "active" for this merchant.
+
+type DigestScope =
+  | { scope: "branch"; merchantId: string }
+  | { scope: "group"; groupId: string };
+
+async function resolveActiveDigestScope(merchantId: string): Promise<DigestScope> {
+  const ctx = await loadMerchantTierContext(merchantId);
+  if (ctx.groupId) return { scope: "group", groupId: ctx.groupId };
+  return { scope: "branch", merchantId };
+}
+
+function configScopeFilter(scope: DigestScope) {
+  if (scope.scope === "group") {
+    return and(
+      eq(analyticsDigestConfigs.groupId, scope.groupId),
+      eq(analyticsDigestConfigs.scope, "group"),
+    );
+  }
+  return and(
+    eq(analyticsDigestConfigs.merchantId, scope.merchantId),
+    eq(analyticsDigestConfigs.scope, "branch"),
+  );
+}
+
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 const upsertConfigSchema = z
@@ -112,22 +149,19 @@ const addRecipientSchema = z.object({
 analyticsDigestRouter.get("/config", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
   const ctx = await loadMerchantTierContext(merchantId);
+  const scope = await resolveActiveDigestScope(merchantId);
 
   const [cfg] = await db
     .select()
     .from(analyticsDigestConfigs)
-    .where(
-      and(
-        eq(analyticsDigestConfigs.merchantId, merchantId),
-        eq(analyticsDigestConfigs.scope, "branch"),
-      ),
-    )
+    .where(configScopeFilter(scope))
     .limit(1);
 
   return c.json({
     feature_locked: !isFeatureUnlocked(ctx),
     tier: ctx.tier,
     in_group: ctx.inGroup,
+    scope: scope.scope,
     config: cfg ?? null,
   });
 });
@@ -156,15 +190,12 @@ analyticsDigestRouter.put(
       );
     }
 
+    const scope = await resolveActiveDigestScope(merchantId);
+
     const [existing] = await db
       .select({ id: analyticsDigestConfigs.id })
       .from(analyticsDigestConfigs)
-      .where(
-        and(
-          eq(analyticsDigestConfigs.merchantId, merchantId),
-          eq(analyticsDigestConfigs.scope, "branch"),
-        ),
-      )
+      .where(configScopeFilter(scope))
       .limit(1);
 
     if (existing) {
@@ -184,11 +215,16 @@ analyticsDigestRouter.put(
       return c.json({ config: updated });
     }
 
+    // analytics_digest_configs.merchant_id is NOT NULL even for group-scope
+    // rows — it records the creator's home branch. group_id is the actual
+    // routing key when scope='group'.
     const [created] = await db
       .insert(analyticsDigestConfigs)
       .values({
         merchantId,
-        scope: "branch",
+        ...(scope.scope === "group"
+          ? { groupId: scope.groupId, scope: "group" as const }
+          : { scope: "branch" as const }),
         frequency: body.frequency,
         sendHourLocal: body.send_hour_local,
         weekday: body.weekday ?? null,
@@ -199,19 +235,33 @@ analyticsDigestRouter.put(
       })
       .returning();
 
-    // Auto-seed: every owner under this merchant goes onto the recipient
-    // list when the config is first created. Owners can be removed later
-    // via the recipients UI (frontend warns when zero owners remain).
+    // Auto-seed: every owner across the active scope goes onto the
+    // recipient list when the config is first created. For group-scope
+    // that's owners across every branch in the group; for branch-scope
+    // it's just this merchant's owners. Owners can be removed later via
+    // the recipients UI (frontend warns when zero owners remain).
+    const ownerScopeFilter = scope.scope === "group"
+      ? and(
+          eq(merchantUsers.role, "owner"),
+          eq(merchantUsers.isActive, true),
+          inArray(
+            merchantUsers.merchantId,
+            db
+              .select({ id: merchants.id })
+              .from(merchants)
+              .where(eq(merchants.groupId, scope.groupId)),
+          ),
+        )
+      : and(
+          eq(merchantUsers.merchantId, scope.merchantId),
+          eq(merchantUsers.role, "owner"),
+          eq(merchantUsers.isActive, true),
+        );
+
     const ownerRows = await db
       .select({ id: merchantUsers.id, email: merchantUsers.email })
       .from(merchantUsers)
-      .where(
-        and(
-          eq(merchantUsers.merchantId, merchantId),
-          eq(merchantUsers.role, "owner"),
-          eq(merchantUsers.isActive, true),
-        ),
-      );
+      .where(ownerScopeFilter);
 
     if (ownerRows.length > 0) {
       await db.insert(analyticsDigestRecipients).values(
@@ -234,6 +284,7 @@ analyticsDigestRouter.put(
 
 analyticsDigestRouter.get("/recipients", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
+  const scope = await resolveActiveDigestScope(merchantId);
 
   const rows = await db
     .select({
@@ -255,8 +306,7 @@ analyticsDigestRouter.get("/recipients", requireMerchant, async (c) => {
     )
     .where(
       and(
-        eq(analyticsDigestConfigs.merchantId, merchantId),
-        eq(analyticsDigestConfigs.scope, "branch"),
+        configScopeFilter(scope),
         isNull(analyticsDigestRecipients.removedAt),
       ),
     )
@@ -277,16 +327,12 @@ analyticsDigestRouter.post(
     const merchantId = c.get("merchantId")!;
     const userId = c.get("userId")!;
     const body = c.get("body") as z.infer<typeof addRecipientSchema>;
+    const scope = await resolveActiveDigestScope(merchantId);
 
     const [cfg] = await db
       .select({ id: analyticsDigestConfigs.id })
       .from(analyticsDigestConfigs)
-      .where(
-        and(
-          eq(analyticsDigestConfigs.merchantId, merchantId),
-          eq(analyticsDigestConfigs.scope, "branch"),
-        ),
-      )
+      .where(configScopeFilter(scope))
       .limit(1);
     if (!cfg) {
       return c.json(
@@ -295,8 +341,25 @@ analyticsDigestRouter.post(
       );
     }
 
-    // Verify the target user belongs to this merchant — guards against an
-    // owner crafting a request that adds a user from a sibling branch.
+    // Verify the target user belongs to the active scope. For branch
+    // scope that's just this merchant; for group scope that's any
+    // branch in the group. Guards against an owner crafting a request
+    // that adds a user from outside their authority.
+    const targetScopeFilter = scope.scope === "group"
+      ? and(
+          eq(merchantUsers.id, body.merchant_user_id),
+          inArray(
+            merchantUsers.merchantId,
+            db
+              .select({ id: merchants.id })
+              .from(merchants)
+              .where(eq(merchants.groupId, scope.groupId)),
+          ),
+        )
+      : and(
+          eq(merchantUsers.id, body.merchant_user_id),
+          eq(merchantUsers.merchantId, scope.merchantId),
+        );
     const [target] = await db
       .select({
         id: merchantUsers.id,
@@ -304,16 +367,11 @@ analyticsDigestRouter.post(
         isActive: merchantUsers.isActive,
       })
       .from(merchantUsers)
-      .where(
-        and(
-          eq(merchantUsers.id, body.merchant_user_id),
-          eq(merchantUsers.merchantId, merchantId),
-        ),
-      )
+      .where(targetScopeFilter)
       .limit(1);
     if (!target || !target.isActive) {
       return c.json(
-        { error: "Not Found", message: "User not found or inactive at this merchant." },
+        { error: "Not Found", message: "User not found or inactive within your scope." },
         404,
       );
     }
@@ -371,9 +429,10 @@ analyticsDigestRouter.delete(
     const merchantId = c.get("merchantId")!;
     const userId = c.get("userId")!;
     const recipientId = c.req.param("id")!;
+    const scope = await resolveActiveDigestScope(merchantId);
 
     // Scope check via join — only allow removal of recipients tied to a
-    // config owned by the caller's merchant.
+    // config owned by the caller's active scope (group or branch).
     const [row] = await db
       .select({ id: analyticsDigestRecipients.id })
       .from(analyticsDigestRecipients)
@@ -384,7 +443,7 @@ analyticsDigestRouter.delete(
       .where(
         and(
           eq(analyticsDigestRecipients.id, recipientId),
-          eq(analyticsDigestConfigs.merchantId, merchantId),
+          configScopeFilter(scope),
           isNull(analyticsDigestRecipients.removedAt),
         ),
       )
@@ -411,6 +470,7 @@ analyticsDigestRouter.delete(
 
 analyticsDigestRouter.get("/runs", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
+  const scope = await resolveActiveDigestScope(merchantId);
 
   const rows = await db
     .select({
@@ -428,12 +488,7 @@ analyticsDigestRouter.get("/runs", requireMerchant, async (c) => {
       analyticsDigestConfigs,
       eq(analyticsDigestRuns.configId, analyticsDigestConfigs.id),
     )
-    .where(
-      and(
-        eq(analyticsDigestConfigs.merchantId, merchantId),
-        eq(analyticsDigestConfigs.scope, "branch"),
-      ),
-    )
+    .where(configScopeFilter(scope))
     .orderBy(desc(analyticsDigestRuns.scheduledFor))
     .limit(12);
 
@@ -876,16 +931,12 @@ analyticsDigestRouter.post(
 
 analyticsDigestRouter.get("/eligible-users", requireMerchant, async (c) => {
   const merchantId = c.get("merchantId")!;
+  const scope = await resolveActiveDigestScope(merchantId);
 
   const [cfg] = await db
     .select({ id: analyticsDigestConfigs.id })
     .from(analyticsDigestConfigs)
-    .where(
-      and(
-        eq(analyticsDigestConfigs.merchantId, merchantId),
-        eq(analyticsDigestConfigs.scope, "branch"),
-      ),
-    )
+    .where(configScopeFilter(scope))
     .limit(1);
 
   // Subquery: ids already in the active recipient list.
@@ -903,6 +954,25 @@ analyticsDigestRouter.get("/eligible-users", requireMerchant, async (c) => {
       ).map((r) => r.id)
     : [];
 
+  // Eligibility universe widens with scope: group-scope can pick any
+  // active user across every branch in the group; branch-scope is
+  // limited to this merchant.
+  const userScopeFilter = scope.scope === "group"
+    ? and(
+        eq(merchantUsers.isActive, true),
+        inArray(
+          merchantUsers.merchantId,
+          db
+            .select({ id: merchants.id })
+            .from(merchants)
+            .where(eq(merchants.groupId, scope.groupId)),
+        ),
+      )
+    : and(
+        eq(merchantUsers.merchantId, scope.merchantId),
+        eq(merchantUsers.isActive, true),
+      );
+
   const users = await db
     .select({
       id: merchantUsers.id,
@@ -911,12 +981,7 @@ analyticsDigestRouter.get("/eligible-users", requireMerchant, async (c) => {
       role: merchantUsers.role,
     })
     .from(merchantUsers)
-    .where(
-      and(
-        eq(merchantUsers.merchantId, merchantId),
-        eq(merchantUsers.isActive, true),
-      ),
-    )
+    .where(userScopeFilter)
     .orderBy(merchantUsers.role, merchantUsers.name);
 
   const filtered = users.filter((u) => !alreadyRecipientIds.includes(u.id));
