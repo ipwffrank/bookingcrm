@@ -148,9 +148,23 @@ export async function requireBrandAdmin(c: AppContext, next: Next) {
 /**
  * Middleware factory that restricts access to specific roles.
  * Must be used after requireMerchant.
+ *
+ * Brand-admin short-circuit: a brand admin in view-as-branch mode holds
+ * owner-equivalent permissions for any branch in their group. The
+ * `brandViewing` flag is set by `requireMerchant` only after re-validating
+ * group membership against the live DB — so honoring it here is safe and
+ * explicit. Without this short-circuit, owner-gated writes (operating
+ * hours, cancellation policy, etc.) fail with a generic 403 because the
+ * brand admin doesn't have a direct `merchant_users` row at the branch
+ * they're viewing.
  */
 export function requireRole(...roles: string[]) {
   return async function (c: AppContext, next: Next) {
+    if (roles.includes("owner") && c.get("brandViewing")) {
+      await next();
+      return;
+    }
+
     const userRole = c.get("userRole");
 
     if (!userRole || !roles.includes(userRole)) {
