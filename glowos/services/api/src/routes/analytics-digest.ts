@@ -9,13 +9,26 @@ import {
   analyticsDigestDeliveries,
   merchants,
   merchantUsers,
+  groups,
 } from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import {
+  type DigestMetrics,
   computeDigestMetrics,
+  computeDigestMetricsForGroup,
+  aggregateUtilization,
+  aggregateUtilizationForGroup,
+  aggregateCohortRetention,
+  aggregateCohortRetentionForGroup,
+  aggregateRebookLag,
+  aggregateRebookLagForGroup,
+  resolveBranchesForGroup,
   resolvePeriodForFrequency,
 } from "../lib/analytics-aggregator.js";
+import type { UtilizationResult } from "../lib/utilization.js";
+import type { CohortRetentionResult } from "../lib/cohort-retention.js";
+import type { RebookLagResult } from "../lib/rebook-lag.js";
 import {
   formatPeriodLabel,
   renderDigestEmail,
@@ -575,13 +588,101 @@ analyticsDigestRouter.post(
       frequency,
       fireAt: new Date(),
     });
-    const metrics = await computeDigestMetrics({
-      merchantId,
-      periodStart,
-      periodEnd,
-    });
     const periodLabel = formatPeriodLabel({ frequency, periodStart, periodEnd });
     const dashboardUrl = `${config.frontendUrl}/dashboard/analytics`;
+
+    // Mirror the worker's scope dispatch — for group-scope configs, run
+    // the *ForGroup aggregators and assemble the per-branch payload that
+    // the email/PDF/Gemini renderers expect when groupContext is present.
+    const periodSpanMs = periodEnd.getTime() - periodStart.getTime();
+    const priorPeriodEnd = new Date(periodStart.getTime() - 1);
+    const priorPeriodStart = new Date(priorPeriodEnd.getTime() - periodSpanMs);
+
+    let metrics: DigestMetrics;
+    let utilization: UtilizationResult | undefined;
+    let cohortRetention: CohortRetentionResult | undefined;
+    let rebookLag: RebookLagResult | undefined;
+    let groupContext: { groupName: string; branches: Array<{ merchantId: string; merchantName: string }> } | null = null;
+    let perBranchMetrics: Array<{
+      merchantId: string;
+      merchantName: string;
+      metrics: DigestMetrics;
+      utilization: UtilizationResult;
+      cohortRetention: CohortRetentionResult;
+      rebookLag: RebookLagResult;
+    }> | null = null;
+
+    if (cfg.scope === "group" && cfg.groupId) {
+      const branches = await resolveBranchesForGroup(cfg.groupId);
+      if (branches.length === 0) {
+        return c.json(
+          { error: "Conflict", message: "Group has no active branches." },
+          409,
+        );
+      }
+      const [groupRow] = await db
+        .select({ name: groups.name })
+        .from(groups)
+        .where(eq(groups.id, cfg.groupId))
+        .limit(1);
+      const groupName = groupRow?.name ?? "Group";
+
+      const [metricsRes, utilizationRes, cohortRes, rebookRes] = await Promise.all([
+        computeDigestMetricsForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+        aggregateUtilizationForGroup({ groupId: cfg.groupId, periodStart, periodEnd, priorPeriodStart, priorPeriodEnd }),
+        aggregateCohortRetentionForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+        aggregateRebookLagForGroup({ groupId: cfg.groupId, periodStart, periodEnd }),
+      ]);
+
+      metrics = metricsRes.group;
+      utilization = utilizationRes.group;
+      cohortRetention = cohortRes.group;
+      rebookLag = rebookRes.group;
+
+      const branchMap = new Map<string, {
+        merchantId: string;
+        merchantName: string;
+        metrics?: DigestMetrics;
+        utilization?: UtilizationResult;
+        cohortRetention?: CohortRetentionResult;
+        rebookLag?: RebookLagResult;
+      }>();
+      const ensure = (id: string, name: string) => {
+        if (!branchMap.has(id)) branchMap.set(id, { merchantId: id, merchantName: name });
+        return branchMap.get(id)!;
+      };
+      for (const e of metricsRes.perBranch) ensure(e.merchantId, e.merchantName).metrics = e.metrics;
+      for (const e of utilizationRes.perBranch) ensure(e.merchantId, e.merchantName).utilization = e.metrics;
+      for (const e of cohortRes.perBranch) ensure(e.merchantId, e.merchantName).cohortRetention = e.metrics;
+      for (const e of rebookRes.perBranch) ensure(e.merchantId, e.merchantName).rebookLag = e.metrics;
+
+      perBranchMetrics = Array.from(branchMap.values())
+        .filter((b) => b.metrics && b.utilization && b.cohortRetention && b.rebookLag)
+        .map((b) => ({
+          merchantId: b.merchantId,
+          merchantName: b.merchantName,
+          metrics: b.metrics!,
+          utilization: b.utilization!,
+          cohortRetention: b.cohortRetention!,
+          rebookLag: b.rebookLag!,
+        }));
+
+      groupContext = {
+        groupName,
+        branches: branches.map((b) => ({ merchantId: b.merchantId, merchantName: b.merchantName })),
+      };
+    } else {
+      // Branch-scope: existing per-merchant path
+      metrics = await computeDigestMetrics({ merchantId, periodStart, periodEnd });
+      utilization = await aggregateUtilization({
+        merchantId, periodStart, periodEnd, priorPeriodStart, priorPeriodEnd,
+      });
+      cohortRetention = await aggregateCohortRetention({ merchantId, periodStart, periodEnd });
+      rebookLag = await aggregateRebookLag({ merchantId, periodStart, periodEnd });
+    }
+
+    // Display name in subject/email — group name when scope=group, else merchant
+    const displayName = groupContext ? groupContext.groupName : merchant.name;
 
     // Test sends always call Gemini fresh (no cache lookup) so the owner
     // sees the latest prompt output. Production scheduled fires use the
@@ -592,11 +693,16 @@ analyticsDigestRouter.post(
     let aiPromptVersion: string | undefined;
     try {
       const aiResult = await generateDigestSuggestions({
-        merchantName: merchant.name,
+        merchantName: displayName,
         merchantCategory: merchant.category ?? null,
         frequency,
         periodLabel,
         metrics,
+        utilization,
+        cohortRetention,
+        rebookLag,
+        groupContext,
+        perBranchMetrics,
       });
       if (aiResult) {
         aiProseMd = aiResult.aiOutputMd;
@@ -612,12 +718,17 @@ analyticsDigestRouter.post(
     }
 
     const { subject, html } = renderDigestEmail({
-      merchantName: merchant.name,
+      merchantName: displayName,
       frequency,
       metrics,
       dashboardUrl,
       periodLabel,
       aiProseMd,
+      utilization,
+      cohortRetention,
+      rebookLag,
+      groupContext,
+      perBranchMetrics,
     });
 
     // PDF attachment — non-fatal: if rendering fails the email still
@@ -627,14 +738,19 @@ analyticsDigestRouter.post(
     let pdfFilename: string | null = null;
     try {
       pdfBuffer = await renderDigestPdf({
-        merchantName: merchant.name,
+        merchantName: displayName,
         frequency,
         periodLabel,
         metrics,
         aiProseMd,
         dashboardUrl,
+        utilization,
+        cohortRetention,
+        rebookLag,
+        groupContext,
+        perBranchMetrics,
       });
-      pdfFilename = digestPdfFilename({ merchantName: merchant.name, periodLabel });
+      pdfFilename = digestPdfFilename({ merchantName: displayName, periodLabel });
     } catch (err) {
       console.error("[test-send] PDF render failed (non-fatal)", {
         merchantId,
