@@ -49,7 +49,7 @@ const analyticsDigestRouter = new Hono<{ Variables: AppVariables }>();
 
 async function loadMerchantTierContext(
   merchantId: string,
-): Promise<{ tier: string; inGroup: boolean }> {
+): Promise<{ tier: string; inGroup: boolean; groupId: string | null }> {
   const [m] = await db
     .select({
       tier: merchants.subscriptionTier,
@@ -58,7 +58,11 @@ async function loadMerchantTierContext(
     .from(merchants)
     .where(eq(merchants.id, merchantId))
     .limit(1);
-  return { tier: m?.tier ?? "starter", inGroup: m?.groupId != null };
+  return {
+    tier: m?.tier ?? "starter",
+    inGroup: m?.groupId != null,
+    groupId: m?.groupId ?? null,
+  };
 }
 
 function isFeatureUnlocked(ctx: { tier: string; inGroup: boolean }): boolean {
@@ -446,16 +450,46 @@ analyticsDigestRouter.post(
       );
     }
 
-    const [cfg] = await db
-      .select()
-      .from(analyticsDigestConfigs)
-      .where(
-        and(
-          eq(analyticsDigestConfigs.merchantId, merchantId),
-          eq(analyticsDigestConfigs.scope, "branch"),
-        ),
-      )
-      .limit(1);
+    // Scope selection:
+    //   - Optional ?scope=group|branch query param forces a specific config.
+    //   - Default: prefer group-scope config when the merchant belongs to a
+    //     group AND a group-scope config exists, else fall back to the
+    //     branch-scope config. This means an owner of a group merchant
+    //     clicking "Send test report now" gets the rolled-up group digest.
+    const scopeParam = c.req.query("scope");
+    const explicitScope = scopeParam === "group" || scopeParam === "branch" ? scopeParam : null;
+
+    let cfg: typeof analyticsDigestConfigs.$inferSelect | undefined;
+
+    if (explicitScope === "group" || (!explicitScope && ctx.groupId)) {
+      // Try group-scope first
+      if (ctx.groupId) {
+        [cfg] = await db
+          .select()
+          .from(analyticsDigestConfigs)
+          .where(
+            and(
+              eq(analyticsDigestConfigs.groupId, ctx.groupId),
+              eq(analyticsDigestConfigs.scope, "group"),
+            ),
+          )
+          .limit(1);
+      }
+    }
+
+    if (!cfg && explicitScope !== "group") {
+      // Fall back to branch-scope (or use it directly if explicit)
+      [cfg] = await db
+        .select()
+        .from(analyticsDigestConfigs)
+        .where(
+          and(
+            eq(analyticsDigestConfigs.merchantId, merchantId),
+            eq(analyticsDigestConfigs.scope, "branch"),
+          ),
+        )
+        .limit(1);
+    }
 
     if (!cfg) {
       return c.json(
