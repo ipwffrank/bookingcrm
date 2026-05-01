@@ -1,7 +1,16 @@
 import { Hono } from "hono";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { z } from "zod";
-import { db, merchants, merchantUsers, groups, clinicalRecordAccessLog, clients } from "@glowos/db";
+import {
+  db,
+  merchants,
+  merchantUsers,
+  groups,
+  clinicalRecordAccessLog,
+  clients,
+  analyticsDigestConfigs,
+  analyticsDigestRecipients,
+} from "@glowos/db";
 import { requireMerchant, requireRole } from "../middleware/auth.js";
 import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { zValidator } from "../middleware/validate.js";
@@ -308,6 +317,57 @@ merchantRouter.post(
         .update(merchantUsers)
         .set({ brandAdminGroupId: newGroup.id })
         .where(eq(merchantUsers.id, userId));
+
+      // Auto-create the group-scope analytics digest config so every new
+      // multi-branch group gets the email digest + group analytics page
+      // wired up on day one — no separate "Configure schedule" step
+      // required. Owner can change cadence, deactivate, or edit recipients
+      // any time via /dashboard/settings → Digest tab.
+      //
+      // Defaults:
+      //   - weekly, Mondays 08:00 in the creator's local timezone
+      //   - active=true so the first scheduled fire actually goes out
+      //   - seed: every active owner at the creator's merchant. (At group-
+      //     creation time this is the only branch in the group; new
+      //     branches added later don't have merchant_users seeded by
+      //     default — the brand admin views them via view-as-branch — so
+      //     the recipient list naturally stays accurate.)
+      const [digestCfg] = await tx
+        .insert(analyticsDigestConfigs)
+        .values({
+          merchantId,
+          groupId: newGroup.id,
+          scope: "group",
+          frequency: "weekly",
+          sendHourLocal: 8,
+          weekday: 1, // Monday (0 = Sun)
+          isActive: true,
+          createdByUserId: userId,
+          updatedByUserId: userId,
+        })
+        .returning({ id: analyticsDigestConfigs.id });
+
+      const ownerRows = await tx
+        .select({ id: merchantUsers.id, email: merchantUsers.email })
+        .from(merchantUsers)
+        .where(
+          and(
+            eq(merchantUsers.merchantId, merchantId),
+            eq(merchantUsers.role, "owner"),
+            eq(merchantUsers.isActive, true),
+          ),
+        );
+
+      if (ownerRows.length > 0 && digestCfg) {
+        await tx.insert(analyticsDigestRecipients).values(
+          ownerRows.map((o) => ({
+            configId: digestCfg.id,
+            merchantUserId: o.id,
+            emailSnapshot: o.email,
+            addedByUserId: userId,
+          })),
+        );
+      }
 
       return {
         ok: true as const,
