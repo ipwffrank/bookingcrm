@@ -50,6 +50,14 @@ const updateMerchantSchema = z.object({
   // wizard before any credentials are entered. Actual credentials still come
   // through /merchant/payments/ipay88/connect or /payments/connect-account.
   paymentGateway: z.enum(["stripe", "ipay88"]).optional(),
+  // Operational vertical — gates clinical-record sub-modules (odontogram
+  // for dental, etc.). Owner-set via settings; super-admin can set during
+  // onboarding. Nullable explicitly so a clinic can clear it back to "no
+  // vertical-specific modules" if mis-classified.
+  vertical: z
+    .enum(["dental", "aesthetic", "dermatology", "spa", "general_medical"])
+    .nullable()
+    .optional(),
 });
 
 const upgradeToBrandSchema = z.object({
