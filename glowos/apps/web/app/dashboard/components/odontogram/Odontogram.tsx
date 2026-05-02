@@ -414,19 +414,27 @@ export function Odontogram({
         />
       </div>
 
-      {/* Footer: save + status (hidden when viewing a historical snapshot) */}
+      {/* Footer: save + status (hidden when viewing a historical snapshot)
+          parentRecordId is set ONLY when there's a non-locked
+          clinical_records row dated today (filtered by ClientFullDetail).
+          When undefined, the API auto-creates a fresh treatment_log row
+          on save, preserving past visit snapshots. The status text
+          previews which path the next save will take so the dentist
+          knows what to expect. */}
       {effectivelyEditable && (
         <div className="mt-4 flex items-center justify-between print:hidden">
           <span className="text-xs text-grey-45">
             {dirty
               ? parentRecordId
-                ? "Unsaved changes"
-                : "Unsaved changes — saving will create a new visit record"
+                ? "Unsaved changes — editing today's chart"
+                : "Unsaved changes — will save as a new visit record"
               : lastSavedKind === "new_visit"
                 ? "Saved as a new visit record"
                 : lastSavedKind === "amended"
                   ? "All changes saved"
-                  : "No changes yet"}
+                  : parentRecordId
+                    ? "Showing today's chart"
+                    : "Next save creates a new visit record"}
             {error && (
               <span className="text-semantic-danger ml-2">· {error}</span>
             )}
