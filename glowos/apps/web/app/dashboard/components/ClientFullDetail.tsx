@@ -1648,16 +1648,29 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
 
       {/* ── Dental Odontogram (MDC 2024) ──
           Self-hides for non-dental merchants via 403 from the API.
-          parentRecordId attaches the chart to an existing non-locked
-          clinical_records row when one exists; when omitted, the API
-          auto-creates a stub treatment_log on save so the dentist
-          doesn't have to create a separate consultation note first.
+          parentRecordId is filtered to **today's** non-locked records
+          only — yesterday's record carrying over would cause the next
+          save to overwrite yesterday's chart in place, destroying the
+          per-visit snapshot. Tomorrow's first save lands with no
+          parentRecordId, so the API auto-creates a new treatment_log
+          row and a new odontogram, preserving the historical chain.
           The callback refreshes our local clinical-records list so
           the auto-created visit appears in the timeline immediately. */}
       {!clinicalRecordsForbidden && (
         <Odontogram
           profileId={profileId}
-          parentRecordId={clinicalRecords.find((r) => !r.lockedAt && r.type !== 'amendment')?.id}
+          parentRecordId={clinicalRecords.find((r) => {
+            if (r.lockedAt || r.type === 'amendment') return false;
+            // Only consider records created today (local time). Tomorrow's
+            // first save then auto-creates a fresh visit record.
+            const recordDate = new Date(r.createdAt);
+            const today = new Date();
+            return (
+              recordDate.getFullYear() === today.getFullYear() &&
+              recordDate.getMonth() === today.getMonth() &&
+              recordDate.getDate() === today.getDate()
+            );
+          })?.id}
           canEdit={true}
           onAutoCreatedParentRecord={() => { void refreshClinicalRecords(); }}
         />
