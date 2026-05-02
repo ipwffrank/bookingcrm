@@ -1648,14 +1648,18 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
 
       {/* ── Dental Odontogram (MDC 2024) ──
           Self-hides for non-dental merchants via 403 from the API.
-          parentRecordId is the most recent non-locked clinical_records id;
-          when undefined the chart still loads read-only and prompts the user
-          to create a clinical record before saving the chart. */}
+          parentRecordId attaches the chart to an existing non-locked
+          clinical_records row when one exists; when omitted, the API
+          auto-creates a stub treatment_log on save so the dentist
+          doesn't have to create a separate consultation note first.
+          The callback refreshes our local clinical-records list so
+          the auto-created visit appears in the timeline immediately. */}
       {!clinicalRecordsForbidden && (
         <Odontogram
           profileId={profileId}
           parentRecordId={clinicalRecords.find((r) => !r.lockedAt && r.type !== 'amendment')?.id}
           canEdit={true}
+          onAutoCreatedParentRecord={() => { void refreshClinicalRecords(); }}
         />
       )}
 

@@ -35,12 +35,20 @@ interface OdontogramProps {
   /** client_profiles.id (NOT clients.id — the API resolves the join). */
   profileId: string;
   /**
-   * The most recent non-locked clinical_records id for this client. The
-   * odontogram saves attach to this record. When undefined, the chart
-   * renders read-only with a CTA to create a clinical record first.
+   * Optional: pre-existing clinical_records id this chart should attach
+   * to. When omitted (the common case for "I just want to chart this
+   * patient"), the API auto-creates a stub treatment_log record on save
+   * so the dentist doesn't have to create a separate consultation note
+   * first. The dentist can amend the auto-created record later.
    */
   parentRecordId?: string;
   canEdit: boolean;
+  /**
+   * Called after a successful save when the API auto-created the parent
+   * record. Lets ClientFullDetail refresh its clinical_records list so
+   * the new auto-created visit appears in the timeline immediately.
+   */
+  onAutoCreatedParentRecord?: () => void;
 }
 
 interface OdontogramApiResponse {
@@ -64,7 +72,12 @@ interface HistoryApiResponse {
   }>;
 }
 
-export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramProps) {
+export function Odontogram({
+  profileId,
+  parentRecordId,
+  canEdit,
+  onAutoCreatedParentRecord,
+}: OdontogramProps) {
   const [charting, setCharting] = useState<OdontogramCharting>({});
   const [notes, setNotes] = useState<string>("");
   const [editingTooth, setEditingTooth] = useState<FdiCode | null>(null);
@@ -72,6 +85,7 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [lastSavedKind, setLastSavedKind] = useState<"none" | "amended" | "new_visit">("none");
   // Single signal that drives "should we render at all". Set to true on 403
   // so non-dental merchants get a fully invisible component.
   const [forbidden, setForbidden] = useState(false);
@@ -81,13 +95,32 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
   const [previousVisitDate, setPreviousVisitDate] = useState<string | null>(null);
   const [showPrevious, setShowPrevious] = useState(false);
 
-  // ── Load latest chart for this client on mount ───────────────────────
+  // Charting history list (Q2 fix). Lazily fetched on first expand.
+  interface HistoryItem {
+    id: string;
+    clinical_record_id: string;
+    recorded_by_name: string;
+    created_at: string;
+    /** Cached count of teeth charted in this snapshot — for the list label. */
+    tooth_count: number;
+  }
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // When set, the chart renders read-only with the historical snapshot's data.
+  const [viewingHistoricalRecordId, setViewingHistoricalRecordId] = useState<string | null>(null);
+
+  // ── Load chart on mount or when switching between latest / historical ─
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    apiFetch(`/merchant/clients/${profileId}/odontogram`)
+    const url = viewingHistoricalRecordId
+      ? `/merchant/clients/${profileId}/odontogram?recordId=${viewingHistoricalRecordId}`
+      : `/merchant/clients/${profileId}/odontogram`;
+
+    apiFetch(url)
       .then((data: OdontogramApiResponse) => {
         if (cancelled) return;
         setCharting(data.charting ?? {});
@@ -110,7 +143,7 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
     return () => {
       cancelled = true;
     };
-  }, [profileId]);
+  }, [profileId, viewingHistoricalRecordId]);
 
   // ── Lazy-load the previous visit's chart when the toggle flips on ────
   useEffect(() => {
@@ -158,24 +191,94 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
   }
 
   async function save() {
-    if (!canEdit || !parentRecordId) return;
+    if (!canEdit) return;
     setSaving(true);
     setError(null);
     try {
-      await apiFetch(`/merchant/clients/${profileId}/odontogram`, {
+      // Send clinical_record_id ONLY when we have one — when absent the
+      // API auto-creates a stub treatment_log record and returns
+      // auto_created_parent_record=true so we can refresh ClientFullDetail's
+      // clinical-records list.
+      const payload: Record<string, unknown> = {
+        charting,
+        charting_notes: notes || undefined,
+      };
+      if (parentRecordId) payload.clinical_record_id = parentRecordId;
+
+      const result = (await apiFetch(`/merchant/clients/${profileId}/odontogram`, {
         method: "POST",
-        body: JSON.stringify({
-          clinical_record_id: parentRecordId,
-          charting,
-          charting_notes: notes || undefined,
-        }),
-      });
+        body: JSON.stringify(payload),
+      })) as { auto_created_parent_record?: boolean };
+
       setDirty(false);
+      // Invalidate the cached history list so the new save shows up next
+      // time the dentist expands it.
+      setHistory(null);
+      // Reset the cross-visit overlay cache so the next "show previous"
+      // refetches with the latest parent record excluded.
+      setPreviousChart(null);
+
+      if (result.auto_created_parent_record) {
+        setLastSavedKind("new_visit");
+        // Tell the host (ClientFullDetail) to refresh its clinical-records
+        // list so the new auto-created visit appears.
+        if (onAutoCreatedParentRecord) onAutoCreatedParentRecord();
+      } else {
+        setLastSavedKind("amended");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
+  }
+
+  // ── Charting history (Q2 fix) ────────────────────────────────────────
+  async function loadHistory() {
+    if (history !== null) return; // already loaded
+    setHistoryLoading(true);
+    try {
+      const data = (await apiFetch(
+        `/merchant/clients/${profileId}/odontogram/history?limit=12`,
+      )) as {
+        history: Array<{
+          id: string;
+          clinical_record_id: string;
+          charting: OdontogramCharting;
+          recorded_by_name: string;
+          created_at: string;
+        }>;
+      };
+      setHistory(
+        (data.history ?? []).map((h) => ({
+          id: h.id,
+          clinical_record_id: h.clinical_record_id,
+          recorded_by_name: h.recorded_by_name,
+          created_at: h.created_at,
+          tooth_count: Object.keys(h.charting ?? {}).length,
+        })),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function viewHistoricalSnapshot(recordId: string) {
+    if (dirty) {
+      const ok = window.confirm(
+        "You have unsaved chart changes. Switching to a historical snapshot will discard them. Continue?",
+      );
+      if (!ok) return;
+    }
+    setViewingHistoricalRecordId(recordId);
+    setShowPrevious(false);
+    setPreviousChart(null);
+  }
+
+  function returnToLatest() {
+    setViewingHistoricalRecordId(null);
   }
 
   // ── Render ───────────────────────────────────────────────────────────
@@ -190,6 +293,9 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
     );
   }
 
+  const isViewingHistorical = !!viewingHistoricalRecordId;
+  const effectivelyEditable = canEdit && !isViewingHistorical;
+
   return (
     <div className="bg-tone-surface rounded-xl border border-grey-15 p-5 odontogram-print-root">
       {/* Header */}
@@ -198,28 +304,30 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
           Dental Charting <span className="text-grey-45 font-normal">· FDI · MDC 2024</span>
         </h2>
         <div className="flex items-center gap-3 print:hidden">
-          {/* Toggle: show previous visit overlay */}
-          <label className="flex items-center gap-1.5 text-xs text-grey-70 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={showPrevious}
-              onChange={(e) => setShowPrevious(e.target.checked)}
-              className="accent-tone-sage"
-            />
-            <span>
-              Show previous visit
-              {showPrevious && previousVisitDate && (
-                <span className="text-grey-45 ml-1">
-                  ·{" "}
-                  {new Date(previousVisitDate).toLocaleDateString("en-SG", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </span>
-              )}
-            </span>
-          </label>
+          {/* Toggle: show previous visit overlay (hidden in historical mode) */}
+          {!isViewingHistorical && (
+            <label className="flex items-center gap-1.5 text-xs text-grey-70 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showPrevious}
+                onChange={(e) => setShowPrevious(e.target.checked)}
+                className="accent-tone-sage"
+              />
+              <span>
+                Show previous visit
+                {showPrevious && previousVisitDate && (
+                  <span className="text-grey-45 ml-1">
+                    ·{" "}
+                    {new Date(previousVisitDate).toLocaleDateString("en-SG", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                )}
+              </span>
+            </label>
+          )}
           {/* Print / Export PDF */}
           <button
             type="button"
@@ -232,6 +340,38 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
         </div>
       </div>
 
+      {/* Historical-mode banner */}
+      {isViewingHistorical && (
+        <div className="mb-4 rounded-lg bg-tone-surface-warm border border-grey-15 px-4 py-2.5 flex items-center justify-between gap-3 print:hidden">
+          <span className="text-xs text-grey-75">
+            Viewing a previous chart — read-only.{" "}
+            {history?.find((h) => h.clinical_record_id === viewingHistoricalRecordId) && (
+              <span className="text-grey-60">
+                Saved{" "}
+                {new Date(
+                  history.find((h) => h.clinical_record_id === viewingHistoricalRecordId)!.created_at,
+                ).toLocaleString("en-SG", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                by{" "}
+                {history.find((h) => h.clinical_record_id === viewingHistoricalRecordId)!.recorded_by_name}
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={returnToLatest}
+            className="text-xs font-medium text-tone-sage hover:text-tone-ink"
+          >
+            ← Back to latest
+          </button>
+        </div>
+      )}
+
       {/* Upper + lower jaws */}
       <div className="space-y-3 select-none overflow-x-auto">
         <ToothRow
@@ -240,7 +380,7 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
           right={PERMANENT_QUADRANTS.upperLeft}
           charting={charting}
           previousCharting={showPrevious ? previousChart ?? undefined : undefined}
-          onClickTooth={canEdit ? (fdi) => setEditingTooth(fdi) : undefined}
+          onClickTooth={effectivelyEditable ? (fdi) => setEditingTooth(fdi) : undefined}
         />
         <ToothRow
           label="Lower"
@@ -248,7 +388,7 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
           right={PERMANENT_QUADRANTS.lowerLeft}
           charting={charting}
           previousCharting={showPrevious ? previousChart ?? undefined : undefined}
-          onClickTooth={canEdit ? (fdi) => setEditingTooth(fdi) : undefined}
+          onClickTooth={effectivelyEditable ? (fdi) => setEditingTooth(fdi) : undefined}
         />
       </div>
 
@@ -267,23 +407,26 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
             setNotes(e.target.value);
             setDirty(true);
           }}
-          disabled={!canEdit}
+          disabled={!effectivelyEditable}
           className="w-full rounded-lg border border-grey-15 px-3 py-2 text-sm text-tone-ink outline-none focus:ring-1 focus:ring-tone-sage/30 disabled:bg-grey-5 disabled:cursor-not-allowed"
           rows={3}
           placeholder="e.g. Patient reports sensitivity on UL6. Plan: composite repair next visit."
         />
       </div>
 
-      {/* Footer: save + status */}
-      {canEdit && (
+      {/* Footer: save + status (hidden when viewing a historical snapshot) */}
+      {effectivelyEditable && (
         <div className="mt-4 flex items-center justify-between print:hidden">
           <span className="text-xs text-grey-45">
-            {!parentRecordId && (
-              <>
-                Create a clinical record above to save this chart.
-              </>
-            )}
-            {parentRecordId && (dirty ? "Unsaved changes" : "All changes saved")}
+            {dirty
+              ? parentRecordId
+                ? "Unsaved changes"
+                : "Unsaved changes — saving will create a new visit record"
+              : lastSavedKind === "new_visit"
+                ? "Saved as a new visit record"
+                : lastSavedKind === "amended"
+                  ? "All changes saved"
+                  : "No changes yet"}
             {error && (
               <span className="text-semantic-danger ml-2">· {error}</span>
             )}
@@ -291,13 +434,88 @@ export function Odontogram({ profileId, parentRecordId, canEdit }: OdontogramPro
           <button
             type="button"
             onClick={() => { void save(); }}
-            disabled={saving || !dirty || !parentRecordId}
+            disabled={saving || !dirty}
             className="px-4 py-2 rounded-lg bg-tone-ink text-tone-surface text-sm font-medium hover:bg-tone-ink/90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? "Saving…" : "Save chart"}
           </button>
         </div>
       )}
+
+      {/* Charting history (Q2) */}
+      <div className="mt-5 pt-4 border-t border-grey-10 print:hidden">
+        <button
+          type="button"
+          onClick={() => {
+            const next = !historyOpen;
+            setHistoryOpen(next);
+            if (next) void loadHistory();
+          }}
+          className="text-xs font-medium text-grey-70 hover:text-tone-ink flex items-center gap-1"
+        >
+          <span className={`inline-block transition-transform ${historyOpen ? "rotate-90" : ""}`}>›</span>
+          {historyOpen ? "Hide" : "Show"} charting history
+        </button>
+        {historyOpen && (
+          <div className="mt-3">
+            {historyLoading && (
+              <p className="text-xs text-grey-45">Loading history…</p>
+            )}
+            {!historyLoading && history && history.length === 0 && (
+              <p className="text-xs text-grey-45">No saved charts yet.</p>
+            )}
+            {!historyLoading && history && history.length > 0 && (
+              <ul className="space-y-1">
+                {history.map((h, idx) => {
+                  const isLatest = idx === 0 && !isViewingHistorical;
+                  const isCurrentlyViewing = h.clinical_record_id === viewingHistoricalRecordId;
+                  return (
+                    <li key={h.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (idx === 0 && !isViewingHistorical) return; // already on it
+                          if (idx === 0) returnToLatest();
+                          else viewHistoricalSnapshot(h.clinical_record_id);
+                        }}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-left text-xs transition-colors ${
+                          isCurrentlyViewing
+                            ? "bg-tone-sage/10 text-tone-ink"
+                            : isLatest
+                              ? "bg-grey-5 text-tone-ink"
+                              : "text-grey-70 hover:bg-grey-5"
+                        }`}
+                      >
+                        <span className="flex-1">
+                          {new Date(h.created_at).toLocaleString("en-SG", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                          <span className="text-grey-45 ml-2">· {h.recorded_by_name}</span>
+                        </span>
+                        <span className="text-grey-45">{h.tooth_count} teeth</span>
+                        {isLatest && (
+                          <span className="text-[10px] uppercase tracking-wider text-tone-sage font-medium">
+                            Latest
+                          </span>
+                        )}
+                        {isCurrentlyViewing && !isLatest && (
+                          <span className="text-[10px] uppercase tracking-wider text-tone-sage font-medium">
+                            Viewing
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Per-tooth editor modal */}
       {editingTooth && (

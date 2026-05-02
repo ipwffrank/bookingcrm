@@ -921,7 +921,11 @@ async function assertDentalVertical(merchantId: string): Promise<boolean> {
 }
 
 const upsertOdontogramSchema = z.object({
-  clinical_record_id: z.string().uuid(),
+  // Optional: when absent, the route auto-creates a stub clinical_records
+  // row of type='treatment_log' so the dentist can chart without creating
+  // a separate consultation note first. They can amend the auto-stub later
+  // to add proper notes if they want.
+  clinical_record_id: z.string().uuid().optional(),
   charting: z.record(z.string(), z.object({
     whole: z.string().optional(),
     surfaces: z.record(z.string(), z.array(z.string())).optional(),
@@ -1060,29 +1064,7 @@ clinicalRecordsRouter.post(
       return c.json({ error: "Not Found", message: "Client not found." }, 404);
     }
 
-    // Verify the parent clinical_records row belongs to this merchant + client.
-    const [parent] = await db
-      .select({ id: clinicalRecords.id, lockedAt: clinicalRecords.lockedAt })
-      .from(clinicalRecords)
-      .where(
-        and(
-          eq(clinicalRecords.id, body.clinical_record_id),
-          eq(clinicalRecords.merchantId, merchantId),
-          eq(clinicalRecords.clientId, clientId),
-        ),
-      )
-      .limit(1);
-    if (!parent) {
-      return c.json({ error: "Not Found", message: "Clinical record not found." }, 404);
-    }
-    if (parent.lockedAt) {
-      return c.json(
-        { error: "Conflict", message: "Clinical record is locked. Create an amendment first." },
-        409,
-      );
-    }
-
-    // Author identity for audit
+    // Author identity for audit (needed up front for the auto-stub path).
     const [author] = await db
       .select({ name: merchantUsers.name, email: merchantUsers.email })
       .from(merchantUsers)
@@ -1092,11 +1074,78 @@ clinicalRecordsRouter.post(
       return c.json({ error: "Unauthorized", message: "User not found." }, 401);
     }
 
+    // Resolve the parent clinical_records row. Two paths:
+    //   1. Caller passed clinical_record_id — verify it belongs to this
+    //      merchant+client and isn't locked.
+    //   2. Caller omitted it — auto-create a stub treatment_log record so
+    //      the dentist can chart without creating a separate note first.
+    //      The stub can be amended later (Add notes / change type) — the
+    //      audit chain remains intact because we use clinical_records'
+    //      existing append-only pattern.
+    let resolvedRecordId: string;
+    let recordWasAutoCreated = false;
+
+    if (body.clinical_record_id) {
+      const [parent] = await db
+        .select({ id: clinicalRecords.id, lockedAt: clinicalRecords.lockedAt })
+        .from(clinicalRecords)
+        .where(
+          and(
+            eq(clinicalRecords.id, body.clinical_record_id),
+            eq(clinicalRecords.merchantId, merchantId),
+            eq(clinicalRecords.clientId, clientId),
+          ),
+        )
+        .limit(1);
+      if (!parent) {
+        return c.json({ error: "Not Found", message: "Clinical record not found." }, 404);
+      }
+      if (parent.lockedAt) {
+        return c.json(
+          { error: "Conflict", message: "Clinical record is locked. Create an amendment first." },
+          409,
+        );
+      }
+      resolvedRecordId = parent.id;
+    } else {
+      // Auto-create a stub parent record dated now. type='treatment_log'
+      // is more permissive than 'consultation_note' (no implication that
+      // a full consultation occurred). Body is intentionally minimal —
+      // the dentist can amend it later with a richer narrative.
+      const [stub] = await db
+        .insert(clinicalRecords)
+        .values({
+          merchantId,
+          clientId,
+          type: "treatment_log",
+          title: "Dental charting visit",
+          body: "Charting recorded via odontogram. Amend this record to add visit notes, diagnosis, or treatment plan.",
+          recordedByUserId: userId,
+          recordedByName: author.name,
+          recordedByEmail: author.email,
+        })
+        .returning({ id: clinicalRecords.id });
+      resolvedRecordId = stub.id;
+      recordWasAutoCreated = true;
+
+      // Log the auto-creation of the parent record so the audit trail
+      // shows where it came from.
+      await db.insert(clinicalRecordAccessLog).values({
+        merchantId,
+        recordId: stub.id,
+        clientId,
+        userId,
+        userEmail: author.email,
+        action: "write",
+        ipAddress: clientIp(c),
+      });
+    }
+
     // Upsert (one row per clinical_record_id — see unique index)
     const [saved] = await db
       .insert(clinicalRecordOdontograms)
       .values({
-        clinicalRecordId: body.clinical_record_id,
+        clinicalRecordId: resolvedRecordId,
         merchantId,
         clientId,
         charting: body.charting as OdontogramCharting,
@@ -1120,10 +1169,10 @@ clinicalRecordsRouter.post(
       })
       .returning();
 
-    // Audit: log the write the same way the existing clinical-records routes do.
+    // Audit the chart write itself.
     await db.insert(clinicalRecordAccessLog).values({
       merchantId,
-      recordId: body.clinical_record_id,
+      recordId: resolvedRecordId,
       clientId,
       userId,
       userEmail: author.email,
@@ -1139,6 +1188,10 @@ clinicalRecordsRouter.post(
       perio_probing: saved.perioProbing,
       recorded_by_name: saved.recordedByName,
       updated_at: saved.updatedAt,
+      // Lets the front-end know to refresh its parent clinical_records
+      // list (a new record now exists) and to display a friendly
+      // "saved as new visit" status to the dentist.
+      auto_created_parent_record: recordWasAutoCreated,
     });
   },
 );
