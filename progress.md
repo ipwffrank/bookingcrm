@@ -1,9 +1,9 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 1 May 2026 (Session 23)**
+**Last updated: 2 May 2026 (Session 23, evening close)**
 
 ---
 
-## What's Completed (Session 23 — 1 May 2026)
+## What's Completed (Session 23 — 1–2 May 2026)
 
 Two PRs to main, both clean ships, plus one production-data cleanup. Today closes out the analytics-depth + group-scope arc that started in Session 22 (PR 4 utilization, then PRs 6/7/5a in interim work):
 
@@ -75,6 +75,31 @@ Built first-version sales deck targeting **Malaysian dental clinic owners**. 12-
 
 **Production notes:** real working WhatsApp QR on slide 12 (`https://wa.me/6591262212` with pre-filled "Hi Chrisrine, I'd like a GlowOS walkthrough" message), generated via Python `qrcode` lib with HIGH error correction + pure black/white + 4-module border for scan reliability. Contact: Chrisrine Soo, WhatsApp +65 9126 2212. Pilot length unified at 30 days throughout (initial draft had 14-day pilot + 30-day parallel run mismatch).
 
+### Evening — dental odontogram + MDC 2024 charting ✅ (PRs #80, #81, #82)
+
+Closed half of Frank's weekend dental-table-stakes commitment in one continuous evening push. Three PRs to main:
+
+**PR #80 — Vertical-aware clinical records + dental odontogram (foundation)**
+The big shape change: `merchants.vertical` column drives feature gating for clinical-record sub-modules. Dental clinics get the FDI odontogram; aesthetic / dermatology / spa / general_medical get nothing extra (those modules ship later). Migration `0020` adds the column + `clinical_record_odontograms` table with FDI two-digit charting per MDC 2024 spec — 32 permanent teeth, 13 whole-tooth statuses, 11 surface conditions across 5 surfaces, perio probing JSONB schema for the future, append-only with parent `clinical_records` row pulling its amendment chain in.
+
+API: three endpoints scoped under the existing `clinicalRecordsRouter` so they inherit owner/clinician role gate — `GET /odontogram`, `GET /odontogram/history`, `POST /odontogram`. Vertical guard returns 403 for non-dental.
+
+UI: `<Odontogram>` cluster (Odontogram + ToothCell + ToothEditorModal + types) mounted as a sibling section in `ClientFullDetail`. **Self-hides on 403** — no per-merchant prop plumbing, no `/merchant/me` lookup needed. Phase 4 of the original Saturday spec (extracting universal clinical-record sub-components into a slotted wrapper) was deferred — 3-4 hr of risky refactor work that doesn't unlock the dental feature; the spec lives in `~/Desktop/projects/bookingcrm - doc/saturday-mdc-clinical-spec/` for a follow-up.
+
+Three beat-kumoDent additions baked in: cross-visit overlay (toggle "Show previous visit" → renders prior chart at 30% opacity behind current), tablet-friendly touch targets (24×30 → 36×44 on `(pointer: coarse)` per Apple HIG / Material 44 px target), and Print / Export PDF (browser print dialog → "Save as PDF"). Settings UI got a **Clinical vertical** picker so owners can self-classify (or super-admins set during onboarding).
+
+**Production setup applied to Neon:** migration 0020 ran cleanly (7 statements, no errors). Aura's three branches tagged `vertical='aesthetic'` so the dental odontogram doesn't render on aesthetic-clinic client files. Migration hash `6adf4a65d44d892e8fc1c5d4755c76e2808b7224511f738118355b2e59460937` recorded in `drizzle.__drizzle_migrations` — `migration_count` now reads 21.
+
+**PR #81 — Odontogram UX fixes (auto-create parent + history view)**
+Smoke-test surfaced two friction points the original spec didn't anticipate:
+- Save was disabled until a parent `clinical_records` row existed, forcing the dentist to "+ New Clinical Record" → fill body → save → *then* chart. Two-step flow doesn't match the dentist's mental model ("I'm with a patient, update their teeth"). Fix: `clinical_record_id` is now optional on `POST /odontogram`. When absent, the route auto-creates a stub `treatment_log` row titled "Dental charting visit" so the chart has a parent. Dentist can amend the auto-stub later to add proper notes. Frontend always allows Save when chart is dirty; status flips to "Saved as a new visit record" on the auto-create path. ClientFullDetail's clinical-records timeline auto-refreshes via callback so the new visit appears immediately.
+- Past charts beyond the immediately-previous one were unreachable from the UI — only the cross-visit overlay surfaced history. Fix: collapsible "Show charting history" section below the chart. Lists past 12 odontograms with date, recorded-by, tooth count. Click any historical row → loads that snapshot in read-only mode with banner ("Viewing a previous chart — read-only · Saved {date} by {name}") + "Back to latest" button. Tooth clicks + notes textarea + Save button all gated to the historical-mode flag.
+
+**PR #82 — Day-boundary auto-snapshot (data-loss bug fix)**
+Frank caught a destructive bug by asking "if I add a new log tomorrow, would I see today's record?" The answer was: **no, today's chart would be silently overwritten** because `parentRecordId` resolved to the most-recent non-locked `clinical_records` row regardless of age, and the `clinical_record_odontograms` unique-per-record index meant tomorrow's save upserted onto yesterday's row in place. Fix: `ClientFullDetail` filters `parentRecordId` to records created **today** (local time). When the latest record is older, `parentRecordId` is undefined and the API auto-creates a fresh `treatment_log` on save — yesterday's snapshot preserved as its own historical entry. Footer status text previews the path so the dentist knows what's about to happen ("Editing today's chart" vs "Will save as a new visit record").
+
+**Net behavioural rule:** **same calendar day = amend, different day = snapshot.** Within-visit intra-edits stay on one row; cross-day edits create new visits. The "+ New Clinical Record" button is now genuinely optional — it's there if the dentist wants a richer note (consultation_note type with proper body) but the chart works whether they use it or not.
+
 ### Operational lessons logged
 
 - **UI scope drift is silent.** When the same logical resource has multiple rows with different scopes (branch + group), and the UI binds to one while the worker prefers the other, mismatches don't error — they just silently drop recipients. Audit pattern: any time a feature has two storage shapes (single-tenant + multi-tenant), the read/write/scheduled-job paths must all derive scope from the **same** decision function. `resolveActiveDigestScope()` is that single source of truth now; same pattern would help future features that grow from single → multi-tenant.
@@ -84,6 +109,11 @@ Built first-version sales deck targeting **Malaysian dental clinic owners**. 12-
 - **Code-faithful CSS mockups beat real screenshots for sales decks.** No browser chrome, no auth dance, no awkward cropping; the design agent reads the actual product components and reproduces them at higher visual fidelity than a screenshot would carry. Especially powerful when the agent can grep for palette tokens (`tone-ink`, `tone-sage`) and replicate exact component shapes — the deck visually echoes the product without requiring dev-server access.
 - **QR rendering for sales collateral has known gotchas.** Default sage-tinted ink on warm off-white doesn't scan reliably in print or on phones. Generate with: pure `#000` on `#fff`, HIGH error correction (vs MEDIUM), `box_size=12` minimum, `border=4` (4-module quiet zone), and ≥ 168×168 px display size. Even better: keep the URL short; long URLs make denser patterns that scan worse. wa.me links with pre-filled `text=` params are fine at HIGH error correction but borderline at MEDIUM.
 - **Sutherland-style copywriting via agent works when briefed deeply.** A 200-word brief listing his moves (reframe the problem, status not features, permission slip / face-saver, punch with small words, implied confession) plus the audience's tribal vocabulary (DSA, panel patient, scaling, MDC, MyInvois) plus an explicit anti-pattern list (no smile/teeth/drill puns, no "transform your practice") produced 12 candidates with multiple genuinely usable lines. The winning headline ("The clinic runs itself. You just take the credit.") was Sutherland's "status without effort" move encoded as a permission slip — not something a generic copy prompt would surface.
+- **Vertical-gated UI: gate at the API + self-hide on 403.** Beats prop plumbing through every parent component. The `<Odontogram>` mounts unconditionally in `ClientFullDetail`, fetches `/odontogram` on mount, and renders `null` when the API returns 403 because `merchants.vertical !== 'dental'`. No `/merchant/me` lookup, no per-feature flag plumbing, no "is this clinic dental?" prop drilling. Single source of truth lives where the data lives.
+- **Auto-create parent records is better UX than forcing manual creation** — applies generally to any "child resource needs a parent" pattern. The dentist's mental model is "click teeth, save". Forcing them to first create a clinical_records row was friction that didn't add value (the auto-stub treatment_log carries enough audit metadata to satisfy MDC). Same lesson as the digest auto-seed earlier this session: eager-create with sensible defaults beats prompt-on-first-action.
+- **Day-boundary as visit-boundary is a clean simplification.** When a feature has multi-version semantics (each visit = a snapshot, intra-visit edits = amend), comparing the loaded record's calendar date against today's calendar date is a robust + intuitive boundary. No timestamps, no thresholds, no "if last save was within 4 hours" heuristic. The dentist's mental model is "today's visit / yesterday's visit / last week's visit" — match it.
+- **Frontend types must be inlined when the client doesn't depend on the schema package.** `apps/web` doesn't import from `@glowos/db`; my first attempt at re-exporting odontogram types from there errored at typecheck. Inlined the types in `apps/web/app/dashboard/components/odontogram/types.ts` with a comment to keep them in sync with `packages/db/src/schema/clinical-records.ts`. Annoying but necessary; alternative would be promoting `@glowos/db` to a frontend dep, which pulls drizzle into the client bundle.
+- **Verify before assuming the database migration ran.** Smoke testing the new feature on prod requires confirming the schema change actually landed before the code deploy. Frank applied migration 0020 manually via Neon SQL Editor + recorded the hash in `drizzle.__drizzle_migrations` (Session 21 pattern). Verification queries against `information_schema.columns` + `pg_indexes` confirm column + table + index existence before any user-facing test. Saves the "why is the API returning 500?" panic.
 
 ### Memories saved
 
@@ -91,13 +121,21 @@ Built first-version sales deck targeting **Malaysian dental clinic owners**. 12-
 
 ### Roadmap — next slots
 
-**Weekend dental-table-stakes sprint (committed by Frank on 1 May):**
-The dental clinic deck flagged three table-stakes gaps for the MY ICP. Frank committed to closing them this weekend so the deck can flip from Framing A (front-of-house OS layered on top) to Framing B (full dental clinic OS):
-- **MyInvois (LHDN e-invoicing) integration** — ~~table-stakes for every MY clinic; both kumoDent and Kreloses lead with this~~
-- **MDC 2024 full-mouth charting / odontogram** — mandatory record-keeping mandate effective 1 Jan 2024; no structured perio/odontogram UI in GlowOS today
-- (Stretch) **Encryption at rest** for `clinical_records.body` via `pgcrypto` — PDPA Act 709 expectation
+**Weekend dental-table-stakes sprint (1 of 3 closed this evening):**
+- ✅ **MDC 2024 full-mouth charting / odontogram** — shipped this evening across PRs #80, #81, #82. Production-ready, vertical-gated, with cross-visit overlay + day-boundary auto-snapshot + history view + auto-stub parent record on save.
+- ⏳ **MyInvois (LHDN e-invoicing) integration** — Saturday morning's main lift. Real LHDN sandbox API integration + signed-XML invoice submission + status webhooks. Once shipped, the deck story shifts from Framing A to Framing B.
+- ⏳ (Stretch) **Encryption at rest** for `clinical_records.body` via `pgcrypto` — PDPA Act 709 expectation. Schema migration trivial; harder bit is the read/write round-trip + key management.
 
-Once shipped: revise slide 9's small-print disclaimer ("MDC 2024 charting on roadmap") and slide 10's comparison table (kumoDent's local-fit advantage closes), and re-pitch as a full PMS replacement instead of a complement.
+After MyInvois ships: revise slide 9's small-print disclaimer (MDC 2024 charting line is already obsolete; replace with confident copy), update slide 10's vs-alternatives table (kumoDent's local-fit advantage on MDC closes once MyInvois lands), and re-pitch as full PMS replacement.
+
+**Phase 2 dental workflow streamliners (post-Saturday):**
+- **Treatment plan generation from chart** (~1 wk) — biggest revenue lever for dental clinics; click missing tooth → suggested treatment options with cost line items + panel-coverage breakdown
+- **AI-driven recall from chart findings** (~3 days) — mark a tooth `caries` + `extraction_indicated` → automatic WhatsApp recall via the existing automations table
+- **Radiograph anchoring** (~1 wk) — attach X-rays to specific FDI codes; satisfies MDC "investigations" line item with structure
+- **Patient-side e-consent** (~1 wk) — WhatsApp link → patient signs on their phone → signed PDF auto-attached
+- **Cross-clinic patient history (group-scope)** (~3 days) — multi-branch dental chains see one chart history across branches
+- **Periodontal probing UI** — schema supports it (`perio_probing` JSONB), no UI yet
+- **MDC audit report generator** (~2 days) — auto-PDF the last 12 months of clinical records in MDC's prescribed format for MOH inspections
 
 **PR 5c — Outlier flagging in AI prompt (deferred from PR 5):** add prompt logic so Gemini calls out which branch is dragging the group rate down. Per-branch metrics already flow into the AI prompt via `groupContext + perBranchMetrics`; just needs prompt engineering to surface outliers explicitly. Useful once a group has 5+ branches.
 
