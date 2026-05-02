@@ -8,6 +8,20 @@ import {
   boolean,
 } from "drizzle-orm/pg-core";
 
+// Vertical drives feature gating for clinical-record sub-modules
+// (odontogram for dental, body chart for aesthetic, skin atlas for derma —
+// the latter two not yet built). Different from `category` which is the
+// public-facing service-type label; vertical is operationally significant
+// because it dictates which clinical UI a clinic gets.
+export const merchantVertical = [
+  "dental",
+  "aesthetic",
+  "dermatology",
+  "spa",
+  "general_medical",
+] as const;
+export type MerchantVertical = (typeof merchantVertical)[number];
+
 export const merchants = pgTable("merchants", {
   id: uuid("id").primaryKey().defaultRandom(),
   slug: varchar("slug", { length: 100 }).notNull().unique(),
@@ -20,6 +34,11 @@ export const merchants = pgTable("merchants", {
   email: varchar("email", { length: 255 }),
   category: varchar("category", { length: 50 })
     .$type<"hair_salon" | "nail_studio" | "spa" | "massage" | "beauty_centre" | "restaurant" | "beauty_clinic" | "medical_clinic" | "other">(),
+  // Operational vertical — gates clinical-record sub-modules (odontogram
+  // for dental, etc.). NULL means no vertical-specific modules render
+  // (e.g. hair salon). Set explicitly via merchant settings or super-admin.
+  vertical: varchar("vertical", { length: 20 })
+    .$type<MerchantVertical>(),
   logoUrl: text("logo_url"),
   coverPhotoUrl: text("cover_photo_url"),
   timezone: varchar("timezone", { length: 50 }).notNull().default("Asia/Singapore"),

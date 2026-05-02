@@ -9,6 +9,7 @@ import { PrivatePhoto } from './PrivatePhoto';
 import { BookingForm } from '../bookings/BookingForm';
 import { CheckoutModal } from './CheckoutModal';
 import { CancelBookingDialog, describeRefund } from './CancelBookingDialog';
+import { Odontogram } from './odontogram/Odontogram';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1644,6 +1645,19 @@ export function ClientFullDetail({ profileId, compact: _compact }: { profileId: 
           </>
         )}
       </div>
+
+      {/* ── Dental Odontogram (MDC 2024) ──
+          Self-hides for non-dental merchants via 403 from the API.
+          parentRecordId is the most recent non-locked clinical_records id;
+          when undefined the chart still loads read-only and prompts the user
+          to create a clinical record before saving the chart. */}
+      {!clinicalRecordsForbidden && (
+        <Odontogram
+          profileId={profileId}
+          parentRecordId={clinicalRecords.find((r) => !r.lockedAt && r.type !== 'amendment')?.id}
+          canEdit={true}
+        />
+      )}
 
       {/* ── Package Activity ── */}
       {activityEvents.length > 0 && (

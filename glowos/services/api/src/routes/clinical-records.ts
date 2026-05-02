@@ -7,6 +7,7 @@ import {
   db,
   clinicalRecords,
   clinicalRecordAccessLog,
+  clinicalRecordOdontograms,
   clientProfiles,
   merchantUsers,
   clients,
@@ -16,6 +17,8 @@ import {
   clientPackages,
   packageSessions,
   reviews,
+  type OdontogramCharting,
+  type PerioProbingChart,
 } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
@@ -887,5 +890,257 @@ clinicalRecordsRouter.get("/:profileId/data-export", async (c) => {
   );
   return c.json(payload);
 });
+
+// ─── Dental odontogram (MDC 2024) ────────────────────────────────────────
+//
+// Three endpoints scoped to dental merchants only. Vertical guard rejects
+// non-dental merchants with 403 — UI uses that signal to render a
+// fallback rather than mounting the chart.
+//
+//   GET  /merchant/clients/:profileId/odontogram
+//        → latest snapshot for this client (across visits) or for a
+//          specific recordId via ?recordId=.
+//
+//   GET  /merchant/clients/:profileId/odontogram/history?limit=N&beforeRecordId=
+//        → latest N snapshots in descending chronological order. Used
+//          for the cross-visit overlay ("show previous visit" toggle).
+//
+//   POST /merchant/clients/:profileId/odontogram
+//        → upsert a chart tied to a clinical_records row. Locked records
+//          are rejected — caller must amend the record first.
+//
+// Auth: piggybacks on this router's owner/clinician role gate above.
+
+async function assertDentalVertical(merchantId: string): Promise<boolean> {
+  const [m] = await db
+    .select({ vertical: merchants.vertical })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+  return m?.vertical === "dental";
+}
+
+const upsertOdontogramSchema = z.object({
+  clinical_record_id: z.string().uuid(),
+  charting: z.record(z.string(), z.object({
+    whole: z.string().optional(),
+    surfaces: z.record(z.string(), z.array(z.string())).optional(),
+    notes: z.string().optional(),
+  })),
+  charting_notes: z.string().optional().nullable(),
+  perio_probing: z.record(z.string(), z.object({
+    mesial_buccal: z.number(),
+    mid_buccal: z.number(),
+    distal_buccal: z.number(),
+    mesial_lingual: z.number(),
+    mid_lingual: z.number(),
+    distal_lingual: z.number(),
+    bop: z.record(z.string(), z.boolean()).optional(),
+    recession: z.record(z.string(), z.number()).optional(),
+  })).optional().nullable(),
+});
+
+clinicalRecordsRouter.get("/:profileId/odontogram", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const profileId = c.req.param("profileId")!;
+  const recordId = c.req.query("recordId");
+
+  if (!(await assertDentalVertical(merchantId))) {
+    return c.json(
+      { error: "Forbidden", message: "Odontogram is available only for dental clinics." },
+      403,
+    );
+  }
+
+  const clientId = await resolveClientId(profileId, merchantId);
+  if (!clientId) {
+    return c.json({ error: "Not Found", message: "Client not found." }, 404);
+  }
+
+  const baseFilters = [
+    eq(clinicalRecordOdontograms.merchantId, merchantId),
+    eq(clinicalRecordOdontograms.clientId, clientId),
+  ];
+  const filters = recordId
+    ? [...baseFilters, eq(clinicalRecordOdontograms.clinicalRecordId, recordId)]
+    : baseFilters;
+
+  const [row] = await db
+    .select()
+    .from(clinicalRecordOdontograms)
+    .where(and(...filters))
+    .orderBy(desc(clinicalRecordOdontograms.createdAt))
+    .limit(1);
+
+  if (!row) {
+    return c.json(
+      { charting: {}, charting_notes: null, perio_probing: null },
+      200,
+    );
+  }
+
+  return c.json({
+    id: row.id,
+    clinical_record_id: row.clinicalRecordId,
+    charting: row.charting,
+    charting_notes: row.chartingNotes,
+    perio_probing: row.perioProbing,
+    recorded_by_name: row.recordedByName,
+    recorded_at: row.createdAt,
+    updated_at: row.updatedAt,
+  });
+});
+
+clinicalRecordsRouter.get("/:profileId/odontogram/history", async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const profileId = c.req.param("profileId")!;
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "2", 10), 12);
+  const beforeRecordId = c.req.query("beforeRecordId");
+
+  if (!(await assertDentalVertical(merchantId))) {
+    return c.json(
+      { error: "Forbidden", message: "Odontogram is available only for dental clinics." },
+      403,
+    );
+  }
+
+  const clientId = await resolveClientId(profileId, merchantId);
+  if (!clientId) {
+    return c.json({ error: "Not Found", message: "Client not found." }, 404);
+  }
+
+  // Fetch limit + 1 to allow filtering out beforeRecordId without short-changing N.
+  const fetchLimit = beforeRecordId ? limit + 1 : limit;
+  let rows = await db
+    .select()
+    .from(clinicalRecordOdontograms)
+    .where(
+      and(
+        eq(clinicalRecordOdontograms.merchantId, merchantId),
+        eq(clinicalRecordOdontograms.clientId, clientId),
+      ),
+    )
+    .orderBy(desc(clinicalRecordOdontograms.createdAt))
+    .limit(fetchLimit);
+
+  if (beforeRecordId) {
+    rows = rows.filter((r) => r.clinicalRecordId !== beforeRecordId).slice(0, limit);
+  }
+
+  return c.json({
+    history: rows.map((r) => ({
+      id: r.id,
+      clinical_record_id: r.clinicalRecordId,
+      charting: r.charting,
+      charting_notes: r.chartingNotes,
+      recorded_by_name: r.recordedByName,
+      created_at: r.createdAt,
+    })),
+  });
+});
+
+clinicalRecordsRouter.post(
+  "/:profileId/odontogram",
+  zValidator(upsertOdontogramSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const userId = c.get("userId")!;
+    const profileId = c.req.param("profileId")!;
+    const body = c.get("body") as z.infer<typeof upsertOdontogramSchema>;
+
+    if (!(await assertDentalVertical(merchantId))) {
+      return c.json(
+        { error: "Forbidden", message: "Odontogram is available only for dental clinics." },
+        403,
+      );
+    }
+
+    const clientId = await resolveClientId(profileId, merchantId);
+    if (!clientId) {
+      return c.json({ error: "Not Found", message: "Client not found." }, 404);
+    }
+
+    // Verify the parent clinical_records row belongs to this merchant + client.
+    const [parent] = await db
+      .select({ id: clinicalRecords.id, lockedAt: clinicalRecords.lockedAt })
+      .from(clinicalRecords)
+      .where(
+        and(
+          eq(clinicalRecords.id, body.clinical_record_id),
+          eq(clinicalRecords.merchantId, merchantId),
+          eq(clinicalRecords.clientId, clientId),
+        ),
+      )
+      .limit(1);
+    if (!parent) {
+      return c.json({ error: "Not Found", message: "Clinical record not found." }, 404);
+    }
+    if (parent.lockedAt) {
+      return c.json(
+        { error: "Conflict", message: "Clinical record is locked. Create an amendment first." },
+        409,
+      );
+    }
+
+    // Author identity for audit
+    const [author] = await db
+      .select({ name: merchantUsers.name, email: merchantUsers.email })
+      .from(merchantUsers)
+      .where(eq(merchantUsers.id, userId))
+      .limit(1);
+    if (!author) {
+      return c.json({ error: "Unauthorized", message: "User not found." }, 401);
+    }
+
+    // Upsert (one row per clinical_record_id — see unique index)
+    const [saved] = await db
+      .insert(clinicalRecordOdontograms)
+      .values({
+        clinicalRecordId: body.clinical_record_id,
+        merchantId,
+        clientId,
+        charting: body.charting as OdontogramCharting,
+        chartingNotes: body.charting_notes ?? null,
+        perioProbing: (body.perio_probing as PerioProbingChart) ?? null,
+        recordedByUserId: userId,
+        recordedByName: author.name,
+        recordedByEmail: author.email,
+      })
+      .onConflictDoUpdate({
+        target: clinicalRecordOdontograms.clinicalRecordId,
+        set: {
+          charting: body.charting as OdontogramCharting,
+          chartingNotes: body.charting_notes ?? null,
+          perioProbing: (body.perio_probing as PerioProbingChart) ?? null,
+          recordedByUserId: userId,
+          recordedByName: author.name,
+          recordedByEmail: author.email,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    // Audit: log the write the same way the existing clinical-records routes do.
+    await db.insert(clinicalRecordAccessLog).values({
+      merchantId,
+      recordId: body.clinical_record_id,
+      clientId,
+      userId,
+      userEmail: author.email,
+      action: "write",
+      ipAddress: clientIp(c),
+    });
+
+    return c.json({
+      id: saved.id,
+      clinical_record_id: saved.clinicalRecordId,
+      charting: saved.charting,
+      charting_notes: saved.chartingNotes,
+      perio_probing: saved.perioProbing,
+      recorded_by_name: saved.recordedByName,
+      updated_at: saved.updatedAt,
+    });
+  },
+);
 
 export { clinicalRecordsRouter };

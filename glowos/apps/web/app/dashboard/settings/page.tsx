@@ -11,6 +11,11 @@ import { AnalyticsDigestTab } from './components/AnalyticsDigestTab';
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type MerchantCategory = 'restaurant' | 'hair_salon' | 'beauty_clinic' | 'medical_clinic' | 'spa' | 'nail_studio' | 'massage' | 'other';
+// Operational vertical drives feature gating for clinical-record sub-modules
+// (e.g. dental odontogram). Distinct from `category` which is the public
+// service-type label. Only set for clinics where it matters; left null
+// otherwise (hair salon, restaurant, etc. don't need a vertical).
+type MerchantVertical = 'dental' | 'aesthetic' | 'dermatology' | 'spa' | 'general_medical';
 type NoShowCharge = 'full' | 'partial' | 'none';
 
 interface Merchant {
@@ -24,6 +29,7 @@ interface Merchant {
   phone: string | null;
   email: string | null;
   category: MerchantCategory | null;
+  vertical: MerchantVertical | null;
   logoUrl: string | null;
   operatingHours: Record<string, { open: string; close: string; closed: boolean }> | null;
   cancellationPolicy: {
@@ -60,6 +66,7 @@ interface ProfileForm {
   phone: string;
   email: string;
   category: MerchantCategory | '';
+  vertical: MerchantVertical | '';
   logoUrl: string;
 }
 
@@ -99,6 +106,14 @@ const CATEGORY_OPTIONS: { value: MerchantCategory; label: string }[] = [
   { value: 'nail_studio', label: 'Nail Studio' },
   { value: 'massage', label: 'Massage / Physiotherapy' },
   { value: 'other', label: 'Other' },
+];
+
+const VERTICAL_OPTIONS: { value: MerchantVertical; label: string; hint: string }[] = [
+  { value: 'dental', label: 'Dental', hint: 'Enables FDI odontogram + MDC 2024 charting' },
+  { value: 'aesthetic', label: 'Aesthetic', hint: 'For Botox / fillers / laser clinics (body chart coming soon)' },
+  { value: 'dermatology', label: 'Dermatology', hint: 'For derma clinics (skin atlas coming soon)' },
+  { value: 'spa', label: 'Spa / Wellness', hint: 'No vertical-specific clinical modules today' },
+  { value: 'general_medical', label: 'General Medical', hint: 'For GP-style clinics' },
 ];
 
 // ─── Toast ─────────────────────────────────────────────────────────────────────
@@ -171,6 +186,7 @@ function ProfileTab({
     phone: merchant.phone ?? '',
     email: merchant.email ?? '',
     category: merchant.category ?? '',
+    vertical: merchant.vertical ?? '',
     logoUrl: merchant.logoUrl ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -186,7 +202,9 @@ function ProfileTab({
     setError('');
     const token = localStorage.getItem('access_token');
     try {
-      const payload: Record<string, string> = {};
+      // Mixed-value payload: vertical can legitimately be null when the
+      // owner clears it. Other string fields stay strings.
+      const payload: Record<string, string | null> = {};
       if (form.name.trim()) payload.name = form.name.trim();
       if (form.description.trim()) payload.description = form.description.trim();
       if (form.addressLine1.trim()) payload.addressLine1 = form.addressLine1.trim();
@@ -195,6 +213,11 @@ function ProfileTab({
       if (form.phone.trim()) payload.phone = form.phone.trim();
       if (form.email.trim()) payload.email = form.email.trim();
       if (form.category) payload.category = form.category;
+      // Vertical can be cleared back to null. Only send when it changed
+      // so we don't blow away an unrelated update.
+      if (form.vertical !== (merchant.vertical ?? '')) {
+        payload.vertical = form.vertical || null;
+      }
       if (form.logoUrl.trim()) payload.logoUrl = form.logoUrl.trim();
 
       await apiFetch('/merchant/me', {
@@ -262,6 +285,22 @@ function ProfileTab({
                 <option key={c.value} value={c.value}>{c.label}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className={labelCls}>Clinical vertical</label>
+            <select
+              value={form.vertical}
+              onChange={(e) => setField('vertical', e.target.value as MerchantVertical | '')}
+              className={inputCls}
+            >
+              <option value="">Not applicable (no clinical modules)</option>
+              {VERTICAL_OPTIONS.map((v) => (
+                <option key={v.value} value={v.value}>{v.label} — {v.hint}</option>
+              ))}
+            </select>
+            <p className="text-xs text-grey-60 mt-1.5">
+              Determines which clinical-record modules appear on a client&apos;s file. Dental enables the FDI odontogram. Leave blank if your business doesn&apos;t need clinical modules.
+            </p>
           </div>
           <div>
             <label className={labelCls}>Logo URL</label>
