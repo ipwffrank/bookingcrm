@@ -29,6 +29,7 @@ staffAuthRouter.get("/logins", async (c) => {
       staffId: merchantUsers.staffId,
       email: merchantUsers.email,
       role: merchantUsers.role,
+      secondaryRole: merchantUsers.secondaryRole,
     })
     .from(merchantUsers)
     .where(eq(merchantUsers.merchantId, merchantId));
@@ -192,6 +193,63 @@ staffAuthRouter.patch("/:id/role", zValidator(updateRoleSchema), async (c) => {
   }
 
   return c.json({ user: { id: user.id, role: body.role } });
+});
+
+// PATCH /merchant/staff/:id/secondary-role — set or clear the secondary
+// role. Owner-only. The secondary role grants the union of its
+// permissions on top of the primary role; a clinician who is also the
+// firm's manager passes manager-gated routes via the secondary role
+// without losing clinical_records.*.
+//
+// Pass `secondary_role: null` to clear it.
+const updateSecondaryRoleSchema = z.object({
+  secondary_role: z.enum(["staff", "manager", "clinician", "owner"]).nullable(),
+}).strict();
+
+staffAuthRouter.patch("/:id/secondary-role", zValidator(updateSecondaryRoleSchema), async (c) => {
+  const callerRole = c.get("userRole");
+  const callerSecondary = c.get("userSecondaryRole");
+  // Only the literal owner — primary OR secondary — can edit secondary
+  // roles. Mirrors the primary-role gate above.
+  if (callerRole !== "owner" && callerSecondary !== "owner") {
+    return c.json(
+      { error: "Forbidden", message: "Only the owner can change team roles" },
+      403,
+    );
+  }
+  const merchantId = c.get("merchantId")!;
+  const staffId = c.req.param("id");
+  const body = c.get("body") as z.infer<typeof updateSecondaryRoleSchema>;
+
+  const [user] = await db
+    .select({
+      id: merchantUsers.id,
+      role: merchantUsers.role,
+    })
+    .from(merchantUsers)
+    .where(and(eq(merchantUsers.staffId, staffId!), eq(merchantUsers.merchantId, merchantId)))
+    .limit(1);
+
+  if (!user) {
+    return c.json({ error: "Not Found", message: "No login found for this staff member" }, 404);
+  }
+
+  // Reject same-as-primary — the DB CHECK constraint would reject it
+  // anyway, but a clean 400 is friendlier than a generic constraint
+  // violation surfacing to the UI.
+  if (body.secondary_role !== null && body.secondary_role === user.role) {
+    return c.json(
+      { error: "Bad Request", message: "Secondary role must differ from primary role" },
+      400,
+    );
+  }
+
+  await db
+    .update(merchantUsers)
+    .set({ secondaryRole: body.secondary_role })
+    .where(eq(merchantUsers.id, user.id));
+
+  return c.json({ user: { id: user.id, role: user.role, secondaryRole: body.secondary_role } });
 });
 
 export { staffAuthRouter };

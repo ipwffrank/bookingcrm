@@ -413,10 +413,12 @@ function StaffCard({
   deleting,
   loginEmail,
   loginRole,
+  loginSecondaryRole,
   callerIsOwner,
   onCreateLogin,
   onResetPassword,
   onChangeRole,
+  onChangeSecondaryRole,
 }: {
   member: StaffMember;
   services: ServiceOption[];
@@ -425,10 +427,12 @@ function StaffCard({
   deleting: boolean;
   loginEmail?: string;
   loginRole?: 'staff' | 'manager' | 'clinician' | 'owner';
+  loginSecondaryRole?: 'staff' | 'manager' | 'clinician' | 'owner' | null;
   callerIsOwner: boolean;
   onCreateLogin: () => void;
   onResetPassword: () => void;
   onChangeRole: (role: 'staff' | 'manager' | 'clinician') => void;
+  onChangeSecondaryRole: (role: 'staff' | 'manager' | 'clinician' | 'owner' | null) => void;
 }) {
   const assignedServices = services.filter((s) => member.service_ids.includes(s.id));
 
@@ -476,6 +480,11 @@ function StaffCard({
                   Owner
                 </span>
               )}
+              {loginSecondaryRole && (
+                <span className="text-xs text-grey-75 bg-grey-5 px-2 py-0.5 rounded-full border border-grey-15">
+                  + {loginSecondaryRole.charAt(0).toUpperCase() + loginSecondaryRole.slice(1)}
+                </span>
+              )}
               <button
                 onClick={onResetPassword}
                 className="text-xs text-grey-60 hover:text-grey-75 underline"
@@ -487,10 +496,33 @@ function StaffCard({
                   value={loginRole ?? 'staff'}
                   onChange={(e) => onChangeRole(e.target.value as 'staff' | 'manager' | 'clinician')}
                   className="text-xs border border-grey-15 rounded px-1.5 py-0.5"
+                  title="Primary role"
                 >
                   <option value="staff">Staff</option>
                   <option value="manager">Manager</option>
                   <option value="clinician">Clinician</option>
+                </select>
+              )}
+              {/* Secondary role — owner can grant a second authority on top
+                  of the primary role. Most common case: a clinician who
+                  also manages or owns the firm. Disabled options are the
+                  one matching the primary role (the DB CHECK constraint
+                  rejects same-as-primary anyway). */}
+              {callerIsOwner && (
+                <select
+                  value={loginSecondaryRole ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onChangeSecondaryRole(v === '' ? null : (v as 'staff' | 'manager' | 'clinician' | 'owner'));
+                  }}
+                  className="text-xs border border-grey-15 rounded px-1.5 py-0.5"
+                  title="Secondary role (optional) — adds permissions on top of the primary role"
+                >
+                  <option value="">+ Secondary…</option>
+                  <option value="owner" disabled={loginRole === 'owner'}>Owner</option>
+                  <option value="manager" disabled={loginRole === 'manager'}>Manager</option>
+                  <option value="clinician" disabled={loginRole === 'clinician'}>Clinician</option>
+                  <option value="staff" disabled={loginRole === 'staff'}>Staff</option>
                 </select>
               )}
             </div>
@@ -545,7 +577,7 @@ export default function StaffPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [staffLogins, setStaffLogins] = useState<Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }>>({});
+  const [staffLogins, setStaffLogins] = useState<Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner'; secondaryRole?: 'staff' | 'manager' | 'clinician' | 'owner' | null }>>({});
   const [callerRole, setCallerRole] = useState<'staff' | 'manager' | 'clinician' | 'owner' | null>(null);
 
   useEffect(() => {
@@ -561,7 +593,11 @@ export default function StaffPage() {
   async function changeRole(staffId: string, newRole: 'staff' | 'manager' | 'clinician') {
     const current = staffLogins[staffId];
     if (!current) return;
-    setStaffLogins((prev) => ({ ...prev, [staffId]: { ...current, role: newRole } }));
+    // If the new primary role equals the existing secondary role, clear
+    // the secondary — same value on both is meaningless and the DB CHECK
+    // constraint would reject it on the next save anyway.
+    const nextSecondary = current.secondaryRole === newRole ? null : current.secondaryRole;
+    setStaffLogins((prev) => ({ ...prev, [staffId]: { ...current, role: newRole, secondaryRole: nextSecondary } }));
     try {
       await apiFetch(`/merchant/staff/${staffId}/role`, {
         method: 'PATCH',
@@ -571,6 +607,25 @@ export default function StaffPage() {
       // Revert optimistic update
       setStaffLogins((prev) => ({ ...prev, [staffId]: current }));
       const msg = err instanceof ApiError ? err.message ?? 'Failed to change role' : 'Failed to change role';
+      alert(msg);
+    }
+  }
+
+  async function changeSecondaryRole(
+    staffId: string,
+    newSecondary: 'staff' | 'manager' | 'clinician' | 'owner' | null,
+  ) {
+    const current = staffLogins[staffId];
+    if (!current) return;
+    setStaffLogins((prev) => ({ ...prev, [staffId]: { ...current, secondaryRole: newSecondary } }));
+    try {
+      await apiFetch(`/merchant/staff/${staffId}/secondary-role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ secondary_role: newSecondary }),
+      });
+    } catch (err) {
+      setStaffLogins((prev) => ({ ...prev, [staffId]: current }));
+      const msg = err instanceof ApiError ? err.message ?? 'Failed to change secondary role' : 'Failed to change secondary role';
       alert(msg);
     }
   }
@@ -608,9 +663,9 @@ export default function StaffPage() {
         setStaffList(staffData.staff ?? []);
         setServices(servicesData.services ?? []);
         // Fetch which staff have logins
-        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }> }) => {
-          const map: Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner' }> = {};
-          (d.logins ?? []).forEach((l) => { if (l.staffId) map[l.staffId] = { email: l.email, role: l.role }; });
+        apiFetch('/merchant/staff/logins').then((d: { logins: Array<{ staffId: string; email: string; role: 'staff' | 'manager' | 'clinician' | 'owner'; secondaryRole?: 'staff' | 'manager' | 'clinician' | 'owner' | null }> }) => {
+          const map: Record<string, { email: string; role: 'staff' | 'manager' | 'clinician' | 'owner'; secondaryRole?: 'staff' | 'manager' | 'clinician' | 'owner' | null }> = {};
+          (d.logins ?? []).forEach((l) => { if (l.staffId) map[l.staffId] = { email: l.email, role: l.role, secondaryRole: l.secondaryRole ?? null }; });
           setStaffLogins(map);
         }).catch(() => {});
       })
@@ -702,10 +757,12 @@ export default function StaffPage() {
               deleting={deleting === member.id}
               loginEmail={staffLogins[member.id]?.email}
               loginRole={staffLogins[member.id]?.role}
+              loginSecondaryRole={staffLogins[member.id]?.secondaryRole ?? null}
               callerIsOwner={callerRole === 'owner'}
               onCreateLogin={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: '', password: '' }); setLoginError(''); }}
               onResetPassword={() => { setLoginModal({ staffId: member.id, name: member.name }); setLoginForm({ email: staffLogins[member.id]?.email ?? '', password: '' }); setLoginError(''); }}
               onChangeRole={(newRole) => changeRole(member.id, newRole)}
+              onChangeSecondaryRole={(newSecondary) => changeSecondaryRole(member.id, newSecondary)}
             />
           ))}
         </div>
