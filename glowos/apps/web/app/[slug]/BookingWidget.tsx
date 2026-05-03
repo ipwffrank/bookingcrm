@@ -82,7 +82,7 @@ interface Merchant {
   addressLine2: string | null;
   postalCode: string | null;
   timezone: string;
-  country?: 'SG' | 'MY' | null;
+  country?: 'SG' | 'MY' | 'HK' | null;
   paymentEnabled?: boolean;
   paymentGateway?: 'stripe' | 'ipay88';
   operatingHours?: Record<string, { open: string; close: string; closed: boolean }> | null;

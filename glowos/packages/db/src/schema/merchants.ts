@@ -62,7 +62,7 @@ export const merchants = pgTable("merchants", {
   country: varchar("country", { length: 2 })
     .notNull()
     .default("SG")
-    .$type<"SG" | "MY">(),
+    .$type<"SG" | "MY" | "HK">(),
   gbpPlaceId: varchar("gbp_place_id", { length: 255 }),
   // Set when the merchant confirms they've pasted the public booking URL into
   // their Google Business Profile's Booking link field. Powers the /super GBP

@@ -61,7 +61,7 @@ interface PurchaseResponse {
 interface Props {
   slug: string;
   packages: PackageTemplate[];
-  defaultCountry: 'SG' | 'MY';
+  defaultCountry: 'SG' | 'MY' | 'HK';
   paymentEnabled: boolean;
   consultServiceId: string | null;
 }
@@ -165,7 +165,7 @@ function PurchaseWizard({
 }: {
   pkg: PackageTemplate;
   slug: string;
-  defaultCountry: 'SG' | 'MY';
+  defaultCountry: 'SG' | 'MY' | 'HK';
   paymentEnabled: boolean;
   staff: SalonStaff[];
   servicesById: Map<string, SalonService>;
