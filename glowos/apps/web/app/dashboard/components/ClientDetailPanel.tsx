@@ -21,7 +21,17 @@ function formatDate(iso: string | null) {
 
 // ─── Drawer wrapper ────────────────────────────────────────────────────────────
 
-function DrawerShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function DrawerShell({
+  title,
+  onClose,
+  headerAction,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  headerAction?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   // ESC-to-close
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
@@ -33,17 +43,71 @@ function DrawerShell({ title, onClose, children }: { title: string; onClose: () 
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="fixed inset-0 bg-tone-ink/30" onClick={onClose} />
       <aside className="relative bg-tone-surface shadow-2xl w-full lg:max-w-3xl sm:max-w-xl z-10 h-full overflow-y-auto flex flex-col">
-        <div className="sticky top-0 bg-tone-surface border-b border-grey-5 px-5 py-3 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-tone-surface border-b border-grey-5 px-5 py-3 flex items-center justify-between z-10 gap-3">
           <h2 className="text-base font-semibold text-tone-ink">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md text-grey-50 hover:text-tone-ink hover:bg-grey-10">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {headerAction}
+            <button onClick={onClose} className="p-1.5 rounded-md text-grey-50 hover:text-tone-ink hover:bg-grey-10">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="flex-1">{children}</div>
       </aside>
     </div>
+  );
+}
+
+// ─── Single-client PDF export button (used in the drawer header) ───────────────
+//
+// Same idempotent fetch-blob-and-open-tab pattern as the receipt button.
+// Surfaces inline in the header so the user doesn't have to hunt for it.
+
+function ExportClientPdfButton({ profileId }: { profileId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onExport() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`${apiUrl}/merchant/clients/${profileId}/profile-pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={onExport}
+        disabled={busy}
+        title="Generate a clean, branded PDF of this client's full profile."
+        className="px-3 py-1.5 rounded-lg text-xs font-medium text-tone-ink bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        </svg>
+        {busy ? 'Generating…' : 'Export PDF'}
+      </button>
+      {err && <span className="text-[10px] text-semantic-danger">{err}</span>}
+    </>
   );
 }
 
@@ -67,7 +131,11 @@ function Spinner() {
 
 export function ClientDetailPanel({ profileId, onClose }: { profileId: string; onClose: () => void }) {
   return (
-    <DrawerShell title="Client" onClose={onClose}>
+    <DrawerShell
+      title="Client"
+      onClose={onClose}
+      headerAction={<ExportClientPdfButton profileId={profileId} />}
+    >
       <div id="client-profile-print-root" className="p-5">
         <ClientFullDetail profileId={profileId} />
       </div>

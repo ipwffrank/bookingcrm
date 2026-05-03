@@ -161,6 +161,11 @@ export default function ClientsPage() {
   const [tierFilter, setTierFilter] = useState('');
   const [churnFilter, setChurnFilter] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  // Bulk-export selection state. Rows are selected by checkbox; "Select all"
+  // toggles every visible (filtered) row at once.
+  const [selectedForExport, setSelectedForExport] = useState<Set<string>>(new Set());
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [bulkExportError, setBulkExportError] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 350);
 
   // VIP tier summary counts
@@ -221,6 +226,72 @@ export default function ClientsPage() {
       void fetchClients();
     }
   }, [debouncedSearch, tierFilter, churnFilter, fetchClients, loading]);
+
+  // ─── Bulk-export helpers ─────────────────────────────────────────────
+  const visibleIds = clients.map((c) => c.profile.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedForExport.has(id));
+  const someVisibleSelected = !allVisibleSelected && visibleIds.some((id) => selectedForExport.has(id));
+
+  function toggleOne(profileId: string) {
+    setSelectedForExport((prev) => {
+      const next = new Set(prev);
+      if (next.has(profileId)) next.delete(profileId);
+      else next.add(profileId);
+      return next;
+    });
+  }
+  function toggleAllVisible() {
+    setSelectedForExport((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  }
+  function clearSelection() {
+    setSelectedForExport(new Set());
+  }
+
+  async function exportSelected() {
+    if (selectedForExport.size === 0) return;
+    setBulkExporting(true);
+    setBulkExportError(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`${apiUrl}/merchant/clients/profile-pdf-bulk`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ profile_ids: Array.from(selectedForExport) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `Bulk export failed (${res.status})`);
+      }
+      // Download the combined PDF rather than open inline — bulk reports
+      // are typically saved/shared, not previewed inline.
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Filename comes from Content-Disposition; browsers respect it on download.
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (err) {
+      setBulkExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setBulkExporting(false);
+    }
+  }
 
   return (
     <>
@@ -315,11 +386,56 @@ export default function ClientsPage() {
       )}
 
       {!loading && !error && clients.length > 0 && (
+        <>
+          {/* Bulk-action toolbar — only visible when at least one row selected.
+              Sticky above the table so the user keeps it in view while scrolling
+              through long client lists. */}
+          {selectedForExport.size > 0 && (
+            <div className="sticky top-0 z-10 mb-3 rounded-xl border border-tone-sage/40 bg-tone-sage/10 px-4 py-2.5 flex items-center justify-between gap-3">
+              <span className="text-sm text-tone-ink font-medium">
+                {selectedForExport.size} client{selectedForExport.size === 1 ? '' : 's'} selected
+              </span>
+              <div className="flex items-center gap-2">
+                {bulkExportError && (
+                  <span className="text-xs text-semantic-danger">{bulkExportError}</span>
+                )}
+                <button
+                  onClick={clearSelection}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-grey-70 hover:text-tone-ink hover:bg-grey-5 transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => { void exportSelected(); }}
+                  disabled={bulkExporting}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-tone-surface bg-tone-ink hover:bg-tone-ink/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  {bulkExporting ? 'Generating PDF…' : `Export ${selectedForExport.size} as PDF`}
+                </button>
+              </div>
+            </div>
+          )}
         <div className="bg-tone-surface rounded-xl border border-grey-15 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-grey-5 bg-grey-5">
+                  <th className="px-4 py-3 w-10">
+                    {/* Indeterminate checkbox: ticks visibly when all visible
+                        rows are selected; shows a dash via the indeterminate
+                        attribute when only some are. Click toggles all. */}
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={allVisibleSelected}
+                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+                      onChange={toggleAllVisible}
+                      className="w-4 h-4 accent-tone-ink cursor-pointer"
+                    />
+                  </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide">Client</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden sm:table-cell">VIP</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-grey-60 uppercase tracking-wide hidden md:table-cell">Last Visit</th>
@@ -332,9 +448,18 @@ export default function ClientsPage() {
                 {clients.map((row) => (
                   <tr
                     key={row.profile.id}
-                    className="hover:bg-grey-5 transition-colors cursor-pointer"
+                    className={`hover:bg-grey-5 transition-colors cursor-pointer ${selectedForExport.has(row.profile.id) ? 'bg-tone-sage/5' : ''}`}
                     onClick={() => setSelectedProfileId(row.profile.id)}
                   >
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${row.client.name ?? row.client.phone}`}
+                        checked={selectedForExport.has(row.profile.id)}
+                        onChange={() => toggleOne(row.profile.id)}
+                        className="w-4 h-4 accent-tone-ink cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
@@ -376,6 +501,7 @@ export default function ClientsPage() {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {selectedProfileId && (
