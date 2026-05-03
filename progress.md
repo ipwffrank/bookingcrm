@@ -1,5 +1,82 @@
 # GlowOS MVP — Progress Tracker
-**Last updated: 2 May 2026 (Session 23, evening close)**
+**Last updated: 3 May 2026 (Session 24, MyInvois foundation + strategic pivot)**
+
+---
+
+## What's Completed (Session 24 — 3 May 2026)
+
+**Two outcomes from one Sunday-night session:** (1) shipped the MyInvois foundation slice (PR #84 — auth + schema), then (2) made a deliberate scope pivot away from finishing MyInvois next.
+
+### MyInvois foundation ✅ (PR #84)
+
+Built the bottom 20% of the LHDN MyInvois e-invoicing integration:
+
+- **Migration 0021** — three new tables: `merchant_myinvois_configs` (per-merchant LHDN credentials, env, cert metadata, cached token), `invoices` (canonical record with denormalized issuer/buyer snapshots, dual LHDN ids — submission_uid for batch + uuid per doc, full state machine for the async validation lifecycle, document type enum supporting invoice / credit_note / debit_note / refund_note / self_billed), `invoice_line_items` (separate table not JSONB so per-line analytics stays queryable). 695 lines of SQL + Drizzle types.
+- **OAuth2 auth + token cache** at `services/api/src/lib/myinvois.ts` — POST `/connect/token` with client_credentials grant, ~60min TTL, 60s refresh buffer, cache persisted to `merchant_myinvois_configs.cached_access_token`. Platform vs per-clinic credential resolution: prefers `cfg.client_id/secret` when present, falls back to `MYINVOIS_{SANDBOX|PROD}_CLIENT_*` env vars (intermediary mode default).
+- **`buildAuthHeaders()` helper** — injects `onbehalfof: <clinic-TIN>` automatically when running platform-level so LHDN attributes the submission to the clinic.
+- **Three endpoints** at `services/api/src/routes/myinvois.ts` — `GET /merchant/myinvois/config` (secrets redacted), `PUT /merchant/myinvois/config` (owner-only upsert), `POST /merchant/myinvois/test-connection` (forces token fetch; surfaces clinic-readable error so onboarding doesn't need support escalation).
+
+**Deliberately NOT in scope:** UBL 2.1 JSON document builder, XAdES signing pipeline, submit/cancel/refund endpoints, poll worker, onboarding wizard UI, cert metadata extraction. Research flagged signing canonicalization as the dominant engineering risk + cert procurement adds 1-4 wk per clinic regardless of code readiness.
+
+**Migration 0021 NOT applied to prod Neon** — deliberately deferred (see strategic pivot below). Hash `5c69969664ec65e95b6862f20f5291345b199820f8493869365e81c17ef05a83` queued for whenever the MY-specific layer ships.
+
+### Strategic pivot — universal receipt feature first, MyInvois as country add-on
+
+Mid-build realization, driven by Frank's TAM breakdown: only ~25% of the target client base is Malaysian. The other 75% is HK + SG. E-invoicing reality across the three:
+
+| Country | Mandatory? | Real-world need |
+|---|---|---|
+| Malaysia | Yes — MyInvois Phase 4 mandate, RM1M-RM5M revenue, since 1 Jan 2026 | Compliance must-have. The 2-week build I started. |
+| Singapore | InvoiceNow only mandatory for **GST-registered businesses** ($1M+ revenue threshold). Connects via Access Points (Storecove etc.), not direct to IRAS. | Most dental/aesthetic clinics under threshold → fully optional today. |
+| Hong Kong | **Nothing.** No e-invoicing regime, no rollout dates from IRD. | PDF receipt is the actual workflow. |
+
+So building MyInvois next means doing 2 weeks of complex compliance work that serves 25% of clients, while the 75% needs are met by a much simpler universal feature: a clean PDF receipt with WhatsApp/email delivery + audit trail.
+
+**Decision:** ship a universal receipt/invoice generator next session that serves 100% of clinics across all three markets. MyInvois becomes a **country-gated paid add-on** for MY clinics specifically, sitting on top of the foundation that just landed in PR #84 (which is why we still merged the foundation rather than dropping it).
+
+The schema landed in 0021 already supports the universal use case — the LHDN-specific columns (`lhdn_uuid`, `submitted_document_payload`, `document_hash`, etc.) just stay null for non-MY invoices. The auth-cache code at `lib/myinvois.ts` only runs when a clinic explicitly enables MyInvois via the (future) toggle.
+
+### Next session — universal receipt/invoice generator
+
+Scope:
+1. Auto-generate branded PDF receipt on booking payment completion
+2. Per-merchant sequential invoice numbers (e.g. `LMK-2026-0001`)
+3. WhatsApp delivery + email backup with PDF attached
+4. Re-download from client profile in dashboard
+5. Configurable SST / GST line item handling per merchant
+6. "Print receipt" button on the booking page
+7. Apply migration 0021 to prod Neon — the `invoices` + `invoice_line_items` tables become the storage layer for the universal feature too
+
+Estimate: ~1 week of focused work. Demoable to any clinic in any of the three markets.
+
+### Roadmap — next slots
+
+**Universal receipt/invoice generator (next session, ~1 week)** — see scope above. Replaces the originally-planned MyInvois Phase 2.
+
+**MyInvois Phase 2 (deferred until first paying MY clinic asks)** — UBL builder + XAdES signing pipeline + submit/poll worker + onboarding wizard + cert procurement help. Foundation already landed in PR #84.
+
+**InvoiceNow for SG (deferred, maybe never)** — only if a paying SG GST-registered clinic asks. Most won't. Storecove Access Point integration if it happens.
+
+**PR 5c — Outlier flagging in AI prompt (still deferred from PR 5):** add prompt logic so Gemini calls out which branch is dragging the group rate down.
+
+**Carried tech debt:**
+- Tests + CI gating for new aggregator code paths
+- Photo-during-record-creation drag-and-drop
+- Granular RBAC: clinician role separate from manager
+- Photo attachment storage migration to private bucket + signed URLs
+- Encryption at rest for `clinical_records.body` AND `merchant_myinvois_configs.client_secret` / `digital_certificate_password` via `pgcrypto`
+- SendGrid sender authentication (DNS-blocked)
+
+### Operational lessons logged
+
+- **Build the bottom 20% first when the top 80% has procurement/research blockers.** MyInvois has signing canonicalization complexity (no Node.js reference) AND per-clinic cert procurement (1-4 wk per clinic). Even a complete pipeline can't be smoke-tested until at least one cert exists somewhere. Foundation slice (auth + schema + token cache) is the right thing to ship — it's small, reviewable, doesn't depend on cert availability, and unblocks the next layer when those external blockers resolve.
+- **TAM breakdown is a forcing function for scope discipline.** Three jurisdictions, three regulatory regimes, three integration cost profiles — pretending they're "one e-invoicing feature" leads to over-engineering for the loudest jurisdiction. Pivoting to the universal feature first means 100% client coverage with 1-week effort vs 25% client coverage with 2-week effort. The MY layer becomes a country add-on, not a foundational rebuild.
+- **Don't merge a feature half-built unless its parts are independently useful.** PR #84's auth-cache + schema is independently useful for the universal receipt feature (the schema is the right shape) and for the eventual MY add-on. Hence merge. If the work were "half a signing pipeline" — useless on its own — it'd belong in a long-running branch instead.
+- **Migration applied to prod ≠ feature shipped.** Don't apply the migration when the feature it supports is deferred. The migration sits in source control + reads correctly, but production schema stays stable until there's a clear consumer. Keeps the prod schema close to what's actually used and makes rollback (or pivot, like tonight) cheaper.
+
+### Memories saved
+
+- (none new — Session 24 guidance is captured in this progress.md entry + updated MEMORY index)
 
 ---
 
