@@ -125,6 +125,40 @@ function BookingCard({
     }
   }
 
+  // Receipt: idempotent generate-or-fetch via POST /from-booking/:id, then
+  // download the PDF blob with auth and open in a new tab. The PDF endpoint
+  // can't be opened via plain window.open() because it requires the bearer
+  // token in headers — fetch + blob URL is the standard pattern.
+  async function handleReceipt() {
+    setActing('receipt');
+    try {
+      const created = (await apiFetch(`/merchant/invoices/from-booking/${booking.id}`, {
+        method: 'POST',
+      })) as { invoice_id: string };
+      const invoiceId = created.invoice_id;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const token = localStorage.getItem('access_token');
+      const pdfRes = await fetch(`${apiUrl}/merchant/invoices/${invoiceId}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pdfRes.ok) {
+        const body = await pdfRes.json().catch(() => ({}));
+        alert(`Couldn't generate receipt: ${body.message ?? pdfRes.statusText}`);
+        return;
+      }
+      const blob = await pdfRes.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      // Revoke after a delay so the new tab has time to load it.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate receipt';
+      alert(msg);
+    } finally {
+      setActing(null);
+    }
+  }
+
   const canConfirm = booking.status === 'pending';
   // Check-in is allowed from both 'confirmed' and 'pending' — checking a
   // pending client in implicitly confirms them at the counter.
@@ -237,6 +271,16 @@ function BookingCard({
                 className="px-2.5 py-1 rounded-lg text-xs font-medium text-semantic-danger border border-semantic-danger/30 hover:bg-semantic-danger/5 disabled:opacity-50 transition-colors"
               >
                 Cancel
+              </button>
+            )}
+            {booking.status === 'completed' && (
+              <button
+                onClick={() => { void handleReceipt(); }}
+                disabled={acting !== null}
+                title="Generate or re-open the receipt PDF for this booking. Idempotent — re-clicking returns the same invoice."
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-tone-ink bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 disabled:opacity-50 transition-colors"
+              >
+                {acting === 'receipt' ? '...' : 'Receipt'}
               </button>
             )}
           </div>

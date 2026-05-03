@@ -6,6 +6,8 @@ import {
   timestamp,
   jsonb,
   boolean,
+  integer,
+  numeric,
 } from "drizzle-orm/pg-core";
 
 // Vertical drives feature gating for clinical-record sub-modules
@@ -83,6 +85,20 @@ export const merchants = pgTable("merchants", {
   // banner in the merchant dashboard and is settable from `/super/merchants`.
   // Independent of subscription_tier — pilot merchants can be on any tier.
   isPilot: boolean("is_pilot").notNull().default(false),
+  // ─── Universal receipt/invoice settings ────────────────────────────
+  // Drives the universal receipt generator (PDF + WhatsApp/email delivery
+  // — slice 2). Tax fields are optional; merchants without GST/SST simply
+  // leave them null and no tax line renders on the receipt.
+  invoicePrefix: varchar("invoice_prefix", { length: 20 }).notNull().default("INV"),
+  taxLabel: varchar("tax_label", { length: 20 }),  // 'GST' | 'SST' | 'Service Tax' | ...
+  taxRatePct: numeric("tax_rate_pct", { precision: 5, scale: 2 }),
+  taxRegistrationNumber: varchar("tax_registration_number", { length: 50 }),
+  invoiceFooterText: text("invoice_footer_text"),
+  // Atomic counter for sequential invoice numbers. Increment via
+  // `UPDATE merchants SET next_invoice_sequence = next_invoice_sequence + 1
+  //  WHERE id = $1 RETURNING next_invoice_sequence - 1` so concurrent
+  // issuances can't collide. Format: '{invoicePrefix}-{seq:000000}'.
+  nextInvoiceSequence: integer("next_invoice_sequence").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
