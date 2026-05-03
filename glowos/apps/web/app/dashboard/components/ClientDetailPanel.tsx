@@ -79,9 +79,34 @@ function Spinner() {
 
 // ─── Merchant-mode panel: full client detail (delegates to ClientFullDetail) ───
 
+function ExpandToFullPageButton({ profileId, onClose }: { profileId: string; onClose: () => void }) {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        router.push(`/dashboard/clients/${profileId}`);
+        onClose();
+      }}
+      title="Expand this client profile to a full-page view"
+      aria-label="Expand to full page"
+      className="p-1.5 rounded-md text-grey-50 hover:text-tone-ink hover:bg-grey-10 transition-colors"
+    >
+      {/* Diagonal arrows-out icon — universally read as "expand / open in new view". */}
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 8.25V6a2.25 2.25 0 0 1 2.25-2.25h2.25M3 15.75V18a2.25 2.25 0 0 0 2.25 2.25h2.25m9-16.5H18A2.25 2.25 0 0 1 20.25 6v2.25M16.5 20.25H18A2.25 2.25 0 0 0 20.25 18v-2.25" />
+      </svg>
+    </button>
+  );
+}
+
 export function ClientDetailPanel({ profileId, onClose }: { profileId: string; onClose: () => void }) {
   return (
-    <DrawerShell title="Client" onClose={onClose}>
+    <DrawerShell
+      title="Client"
+      onClose={onClose}
+      headerAction={<ExpandToFullPageButton profileId={profileId} onClose={onClose} />}
+    >
       <div id="client-profile-print-root" className="p-5">
         <ClientFullDetail profileId={profileId} />
       </div>
