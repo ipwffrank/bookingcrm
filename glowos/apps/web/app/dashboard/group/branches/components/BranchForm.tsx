@@ -48,7 +48,7 @@ export interface BranchFormProps {
 interface State {
   name: string;
   slug: string;
-  country: 'SG' | 'MY';
+  country: 'SG' | 'MY' | 'HK';
   category: Category | '';
   addressLine1: string;
   addressLine2: string;
@@ -79,7 +79,7 @@ export function BranchForm({ mode, merchantId, onClose, onSaved }: BranchFormPro
         setState({
           name: m.name ?? '',
           slug: m.slug ?? '',
-          country: (m.country ?? 'MY') as 'SG' | 'MY',
+          country: (m.country ?? 'MY') as 'SG' | 'MY' | 'HK',
           category: (m.category ?? '') as Category | '',
           addressLine1: m.addressLine1 ?? '',
           addressLine2: m.addressLine2 ?? '',
@@ -129,7 +129,10 @@ export function BranchForm({ mode, merchantId, onClose, onSaved }: BranchFormPro
     }
   }
 
-  const tz = state.country === 'MY' ? 'Asia/Kuala_Lumpur' : 'Asia/Singapore';
+  const tz =
+    state.country === 'MY' ? 'Asia/Kuala_Lumpur'
+    : state.country === 'HK' ? 'Asia/Hong_Kong'
+    : 'Asia/Singapore';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-tone-ink/30 px-4" role="dialog">
@@ -176,11 +179,12 @@ export function BranchForm({ mode, merchantId, onClose, onSaved }: BranchFormPro
                 required={mode === 'create'}
                 disabled={mode === 'edit'}
                 value={state.country}
-                onChange={(e) => set('country', e.target.value as 'SG' | 'MY')}
+                onChange={(e) => set('country', e.target.value as 'SG' | 'MY' | 'HK')}
                 className={`${inputCls} ${mode === 'edit' ? 'bg-grey-10 text-grey-50' : ''}`}
               >
                 <option value="MY">Malaysia</option>
                 <option value="SG">Singapore</option>
+                <option value="HK">Hong Kong</option>
               </select>
             </Field>
 

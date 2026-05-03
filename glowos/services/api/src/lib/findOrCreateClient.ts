@@ -19,7 +19,7 @@ export async function findOrCreateClient(
   rawPhone: string,
   name?: string,
   rawEmail?: string,
-  defaultCountry: "SG" | "MY" = "SG"
+  defaultCountry: "SG" | "MY" | "HK" = "SG"
 ): Promise<{ id: string }> {
   const phone = normalizePhone(rawPhone, defaultCountry);
   if (!phone) throw new Error("Invalid phone number");

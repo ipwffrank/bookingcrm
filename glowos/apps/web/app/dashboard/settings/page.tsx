@@ -53,7 +53,7 @@ interface Merchant {
   } | null;
   gbpBookingLinkConnectedAt: string | null;
   subscriptionTier?: 'starter' | 'multibranch';
-  country?: 'SG' | 'MY';
+  country?: 'SG' | 'MY' | 'HK';
   paymentGateway?: 'stripe' | 'ipay88';
   ipay88MerchantCode?: string | null;
 }

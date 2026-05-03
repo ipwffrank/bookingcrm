@@ -22,7 +22,7 @@ interface QuoteData {
     slug: string;
     name: string;
     logoUrl: string | null;
-    country: 'SG' | 'MY' | null;
+    country: 'SG' | 'MY' | 'HK' | null;
   };
   client: { name: string | null };
 }

@@ -602,7 +602,7 @@ analyticsDigestRouter.post(
     }
 
     const [merchant] = await db
-      .select({ name: merchants.name, slug: merchants.slug, category: merchants.category })
+      .select({ name: merchants.name, slug: merchants.slug, category: merchants.category, country: merchants.country })
       .from(merchants)
       .where(eq(merchants.id, merchantId))
       .limit(1);
@@ -772,6 +772,15 @@ analyticsDigestRouter.post(
       });
     }
 
+    // Currency derived from merchant.country. Group digests still use the
+    // anchor merchant's country (the row we loaded above) — mixed-country
+    // groups are rare; if/when they arise we'll add a per-branch currency
+    // column to the rolled-up table.
+    const currency: "SGD" | "MYR" | "HKD" =
+      merchant.country === "MY" ? "MYR"
+      : merchant.country === "HK" ? "HKD"
+      : "SGD";
+
     const { subject, html } = renderDigestEmail({
       merchantName: displayName,
       frequency,
@@ -784,6 +793,7 @@ analyticsDigestRouter.post(
       rebookLag,
       groupContext,
       perBranchMetrics,
+      currency,
     });
 
     // PDF attachment — non-fatal: if rendering fails the email still
@@ -804,6 +814,7 @@ analyticsDigestRouter.post(
         rebookLag,
         groupContext,
         perBranchMetrics,
+        currency,
       });
       pdfFilename = digestPdfFilename({ merchantName: displayName, periodLabel });
     } catch (err) {

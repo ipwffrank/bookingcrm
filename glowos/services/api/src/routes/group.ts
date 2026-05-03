@@ -41,7 +41,7 @@ const createBranchSchema = z.object({
     .min(3)
     .max(100)
     .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, "slug must be lowercase letters, numbers, dashes; no leading/trailing dash"),
-  country: z.enum(["SG", "MY"]),
+  country: z.enum(["SG", "MY", "HK"]),
   category: z
     .enum([
       "hair_salon",
@@ -515,7 +515,12 @@ groupRouter.post("/branches", zValidator(createBranchSchema), async (c) => {
     return c.json({ error: "Conflict", message: "Slug already taken" }, 409);
   }
 
-  const timezone = body.country === "MY" ? "Asia/Kuala_Lumpur" : "Asia/Singapore";
+  // Same country → defaults map as /auth/signup. HK gets Stripe + HK
+  // timezone; no native HK gateway in scope today.
+  const timezone =
+    body.country === "MY" ? "Asia/Kuala_Lumpur"
+    : body.country === "HK" ? "Asia/Hong_Kong"
+    : "Asia/Singapore";
   const paymentGateway = body.country === "MY" ? "ipay88" : "stripe";
 
   const [created] = await db
@@ -1129,7 +1134,10 @@ groupRouter.get("/analytics/export-pdf", async (c) => {
   const firstCountry = allBranches.length > 0
     ? (await db.select({ country: merchants.country }).from(merchants).where(eq(merchants.id, allBranches[0].merchantId)).limit(1))[0]?.country
     : "SG";
-  const currency: "SGD" | "MYR" = firstCountry === "MY" ? "MYR" : "SGD";
+  const currency: "SGD" | "MYR" | "HKD" =
+    firstCountry === "MY" ? "MYR"
+    : firstCountry === "HK" ? "HKD"
+    : "SGD";
 
   // Prior period mirrors per-merchant route: same span immediately preceding.
   const span = to.getTime() - from.getTime();

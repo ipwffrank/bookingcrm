@@ -12,7 +12,7 @@ type FormData = {
   password: string;
   salon_name: string;
   salon_category: string;
-  country: 'SG' | 'MY';
+  country: 'SG' | 'MY' | 'HK';
 };
 
 type FieldError = Partial<Record<keyof FormData, string>>;
@@ -229,15 +229,16 @@ export default function SignupPage() {
               </label>
               <select
                 value={form.country}
-                onChange={(e) => setForm((prev) => ({ ...prev, country: e.target.value as 'SG' | 'MY' }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, country: e.target.value as 'SG' | 'MY' | 'HK' }))}
                 className="w-full rounded-lg border border-grey-30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-tone-sage transition"
               >
                 <option value="SG">Singapore (SG)</option>
                 <option value="MY">Malaysia (MY)</option>
+                <option value="HK">Hong Kong (HK)</option>
               </select>
               <p className="text-xs text-grey-60 mt-1">
                 Determines default payment gateway, currency, and timezone.
-                MY merchants default to iPay88; SG merchants default to Stripe.
+                MY merchants default to iPay88; SG and HK merchants default to Stripe.
               </p>
             </div>
 

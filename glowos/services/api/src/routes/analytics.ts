@@ -1081,7 +1081,10 @@ analyticsRouter.get("/export-pdf", requireMerchant, async (c) => {
     return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
   }
 
-  const currency = merchant.country === "MY" ? "MYR" : "SGD";
+  const currency: "SGD" | "MYR" | "HKD" =
+    merchant.country === "MY" ? "MYR"
+    : merchant.country === "HK" ? "HKD"
+    : "SGD";
 
   // Fetch all data in parallel — same aggregator the email digest uses
   // for the headline KPIs, plus a few dashboard-specific datasets.

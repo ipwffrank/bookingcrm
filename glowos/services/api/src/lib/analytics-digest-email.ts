@@ -38,6 +38,11 @@ interface Args {
   metrics: DigestMetrics;
   dashboardUrl: string;
   unsubscribeNote?: string;
+  // Currency derived from merchant.country (MY → MYR, HK → HKD,
+  // everything else → SGD). Optional for backward compat with callers
+  // that haven't been updated yet — defaults to SGD, matching prior
+  // hard-coded behaviour.
+  currency?: "SGD" | "MYR" | "HKD";
   // For yearly + monthly we render the date range as e.g. "April 2026"
   // or "2026" for compactness. Computed in the worker so timezone is
   // applied uniformly.
@@ -88,10 +93,18 @@ function toneColour(tone: Delta["tone"]): string {
   return COLOURS.grey60;
 }
 
-function fmtSgd(n: number): string {
-  if (n >= 100000) return `S$${(n / 1000).toFixed(0)}k`;
-  if (n >= 10000) return `S$${(n / 1000).toFixed(1)}k`;
-  return `S$${Math.round(n).toLocaleString("en-SG")}`;
+// Money formatter — the function name stayed `fmtSgd` for git diff
+// readability, but it now respects the passed currency. Default SGD is
+// kept so legacy callsites still work; new callsites should pass the
+// currency derived from merchant.country.
+function fmtSgd(n: number, currency: "SGD" | "MYR" | "HKD" = "SGD"): string {
+  const sym =
+    currency === "MYR" ? "RM"
+    : currency === "HKD" ? "HK$"
+    : "S$";
+  if (n >= 100000) return `${sym}${(n / 1000).toFixed(0)}k`;
+  if (n >= 10000) return `${sym}${(n / 1000).toFixed(1)}k`;
+  return `${sym}${Math.round(n).toLocaleString("en-SG")}`;
 }
 
 function fmtPct(rate: number): string {
@@ -310,6 +323,7 @@ function escapeHtml(s: string): string {
 
 export function renderDigestEmail(args: Args): { subject: string; html: string } {
   const { merchantName, frequency, metrics: m, dashboardUrl, periodLabel } = args;
+  const currency = args.currency ?? "SGD";
 
   const revD = deltaPct(m.revenueSgd, m.prior.revenueSgd);
   const bkD = deltaPct(m.bookingsCount, m.prior.bookingsCount);
@@ -330,14 +344,14 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
     if (m.noShowRate > 0.08) {
       return `No-shows at ${fmtPct(m.noShowRate)}`;
     }
-    return `${m.bookingsCount} bookings · ${fmtSgd(m.revenueSgd)}`;
+    return `${m.bookingsCount} bookings · ${fmtSgd(m.revenueSgd, currency)}`;
   })();
   const subject = `Analytics Digest · ${periodLabel} — ${subjectLead}`;
 
   const heroRow = `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px 0">
       <tr>
-        ${heroCard("Revenue", fmtSgd(m.revenueSgd), deltaCell(revD, true))}
+        ${heroCard("Revenue", fmtSgd(m.revenueSgd, currency), deltaCell(revD, true))}
         ${heroCard("Bookings", String(m.bookingsCount), deltaCell(bkD, true))}
         ${heroCard("No-show rate", fmtPct(m.noShowRate), deltaCell(nsD, false))}
       </tr>
@@ -346,7 +360,7 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
 
   // Group-scope per-branch table. Renders only when groupContext present.
   const perBranchTable = args.groupContext && args.perBranchMetrics && args.perBranchMetrics.length > 0
-    ? renderPerBranchTable(args.perBranchMetrics, m)
+    ? renderPerBranchTable(args.perBranchMetrics, m, currency)
     : "";
 
   const grid = `
@@ -413,7 +427,7 @@ export function renderDigestEmail(args: Args): { subject: string; html: string }
     highlights.push(
       highlightLine(
         "💰",
-        `Top service: <strong>${m.highlights.topServiceByRevenue.name}</strong> — ${fmtSgd(m.highlights.topServiceByRevenue.revenueSgd)}`,
+        `Top service: <strong>${m.highlights.topServiceByRevenue.name}</strong> — ${fmtSgd(m.highlights.topServiceByRevenue.revenueSgd, currency)}`,
       ),
     );
   }
@@ -497,7 +511,11 @@ export function formatPeriodLabel(args: {
   return periodStart.toLocaleDateString("en-SG", { year: "numeric" });
 }
 
-function renderPerBranchTable(perBranch: PerBranchMetrics[], groupTotal: DigestMetrics): string {
+function renderPerBranchTable(
+  perBranch: PerBranchMetrics[],
+  groupTotal: DigestMetrics,
+  currency: "SGD" | "MYR" | "HKD",
+): string {
   const sorted = [...perBranch].sort((a, b) => b.metrics.revenueSgd - a.metrics.revenueSgd);
   const topRevenueId = sorted[0]?.merchantId;
 
@@ -511,7 +529,7 @@ function renderPerBranchTable(perBranch: PerBranchMetrics[], groupTotal: DigestM
           ${escapeHtml(b.merchantName)}
         </td>
         <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; text-align:right; color:${revenueColour};">
-          ${fmtSgd(b.metrics.revenueSgd)}
+          ${fmtSgd(b.metrics.revenueSgd, currency)}
         </td>
         <td style="padding:8px 4px; border-bottom:1px solid ${COLOURS.grey15}; text-align:right; color:${COLOURS.ink};">
           ${b.metrics.bookingsCount}
@@ -529,7 +547,7 @@ function renderPerBranchTable(perBranch: PerBranchMetrics[], groupTotal: DigestM
         Group total
       </td>
       <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; text-align:right; color:${COLOURS.ink}; font-weight:600;">
-        ${fmtSgd(groupTotal.revenueSgd)}
+        ${fmtSgd(groupTotal.revenueSgd, currency)}
       </td>
       <td style="padding:10px 4px; border-top:2px solid ${COLOURS.ink}; text-align:right; color:${COLOURS.ink}; font-weight:600;">
         ${groupTotal.bookingsCount}

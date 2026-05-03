@@ -66,11 +66,14 @@ const signupSchema = z.object({
         "Invalid business category",
     }),
   }),
-  // Country drives the auto-default for payment_gateway (MY → ipay88,
-  // SG → stripe). Optional on the wire so legacy callers without a country
-  // field continue to work — defaults to SG, matching the merchants schema
-  // default. New MY signups are expected to send 'MY' explicitly.
-  country: z.enum(["SG", "MY"]).optional().default("SG"),
+  // Country drives the auto-default for payment_gateway and timezone.
+  // MY → ipay88 + Asia/Kuala_Lumpur (native FPX / Touch'n Go / DuitNow).
+  // SG → stripe + Asia/Singapore.
+  // HK → stripe + Asia/Hong_Kong (no native HK gateway in scope today;
+  //   Stripe handles HKD card payments out of the box).
+  // Optional on the wire so legacy callers without a country field
+  // continue to work — defaults to SG.
+  country: z.enum(["SG", "MY", "HK"]).optional().default("SG"),
 });
 
 const loginSchema = z.object({
@@ -106,13 +109,17 @@ auth.post("/signup", zValidator(signupSchema), async (c) => {
   const slug = await ensureUniqueSlug(baseSlug, db);
 
   // Create merchant
-  // Auto-default the payment gateway based on country: MY merchants get
-  // ipay88 (native FPX / Touch'n Go / DuitNow / GrabPay MY rails); SG and
-  // anything else fall through to the schema default of stripe. Mirrors the
-  // pattern used in POST /group/branches.
+  // Auto-default the payment gateway and timezone based on country.
+  // MY merchants get ipay88 (native FPX / Touch'n Go / DuitNow / GrabPay
+  // MY rails); SG and HK fall through to Stripe (HK gets Stripe HKD card
+  // payments out of the box; no native HK gateway in scope today).
+  // Mirrors the pattern used in POST /group/branches.
   const paymentGateway: "stripe" | "ipay88" =
     body.country === "MY" ? "ipay88" : "stripe";
-  const timezone = body.country === "MY" ? "Asia/Kuala_Lumpur" : "Asia/Singapore";
+  const timezone =
+    body.country === "MY" ? "Asia/Kuala_Lumpur"
+    : body.country === "HK" ? "Asia/Hong_Kong"
+    : "Asia/Singapore";
 
   const [merchant] = await db
     .insert(merchants)

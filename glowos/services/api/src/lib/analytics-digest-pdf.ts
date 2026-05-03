@@ -29,6 +29,10 @@ interface Args {
   metrics: DigestMetrics;
   aiProseMd?: string;
   dashboardUrl: string;
+  // Currency derived from merchant.country (MY → MYR, HK → HKD,
+  // everything else → SGD). Optional for backward compat — defaults
+  // to SGD, matching prior hard-coded behaviour.
+  currency?: "SGD" | "MYR" | "HKD";
   utilization?: UtilizationResult;
   cohortRetention?: CohortRetentionResult;
   rebookLag?: RebookLagResult;
@@ -50,10 +54,16 @@ const COLOURS = {
   danger: "#a13b3b",
 } as const;
 
-function fmtSgd(n: number): string {
-  if (n >= 100000) return `S$${(n / 1000).toFixed(0)}k`;
-  if (n >= 10000) return `S$${(n / 1000).toFixed(1)}k`;
-  return `S$${Math.round(n).toLocaleString("en-SG")}`;
+// Money formatter — name kept as `fmtSgd` for diff readability, but
+// it now respects the passed currency. Default SGD for legacy callsites.
+function fmtSgd(n: number, currency: "SGD" | "MYR" | "HKD" = "SGD"): string {
+  const sym =
+    currency === "MYR" ? "RM"
+    : currency === "HKD" ? "HK$"
+    : "S$";
+  if (n >= 100000) return `${sym}${(n / 1000).toFixed(0)}k`;
+  if (n >= 10000) return `${sym}${(n / 1000).toFixed(1)}k`;
+  return `${sym}${Math.round(n).toLocaleString("en-SG")}`;
 }
 
 function fmtPct(rate: number): string {
@@ -139,6 +149,7 @@ function parseAiProse(markdown: string): { suggestions: string[]; wins: string[]
  */
 export async function renderDigestPdf(args: Args): Promise<Buffer> {
   const { merchantName, frequency, periodLabel, metrics: m, aiProseMd, dashboardUrl } = args;
+  const currency = args.currency ?? "SGD";
 
   const doc = new PDFDocument({
     size: "A4",
@@ -190,7 +201,7 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
   const bkD = deltaPct(m.bookingsCount, m.prior.bookingsCount);
   const nsD = deltaPct(m.noShowRate, m.prior.noShowRate);
 
-  drawHeroCard(doc, 50, heroY, heroCardWidth, heroCardHeight, "REVENUE", fmtSgd(m.revenueSgd), revD, true);
+  drawHeroCard(doc, 50, heroY, heroCardWidth, heroCardHeight, "REVENUE", fmtSgd(m.revenueSgd, currency), revD, true);
   drawHeroCard(doc, 50 + heroCardWidth + 8, heroY, heroCardWidth, heroCardHeight, "BOOKINGS", String(m.bookingsCount), bkD, true);
   drawHeroCard(doc, 50 + 2 * (heroCardWidth + 8), heroY, heroCardWidth, heroCardHeight, "NO-SHOW RATE", fmtPct(m.noShowRate), nsD, false);
 
@@ -198,7 +209,7 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
 
   // Per-branch table for group-scope digests.
   if (args.groupContext && args.perBranchMetrics && args.perBranchMetrics.length > 0) {
-    drawPerBranchTable(doc, args.perBranchMetrics, m);
+    drawPerBranchTable(doc, args.perBranchMetrics, m, currency);
     doc.moveDown(1);
   }
 
@@ -308,7 +319,7 @@ export async function renderDigestPdf(args: Args): Promise<Buffer> {
       drawBullet(
         doc,
         "•",
-        `Top service: ${m.highlights.topServiceByRevenue.name} — ${fmtSgd(m.highlights.topServiceByRevenue.revenueSgd)}`,
+        `Top service: ${m.highlights.topServiceByRevenue.name} — ${fmtSgd(m.highlights.topServiceByRevenue.revenueSgd, currency)}`,
       );
     }
     doc.moveDown(1);
@@ -556,6 +567,7 @@ function drawPerBranchTable(
   doc: PDFKit.PDFDocument,
   perBranch: PerBranchMetrics[],
   groupTotal: DigestMetrics,
+  currency: "SGD" | "MYR" | "HKD",
 ): void {
   const sorted = [...perBranch].sort((a, b) => b.metrics.revenueSgd - a.metrics.revenueSgd);
   const topRevenueId = sorted[0]?.merchantId;
@@ -585,7 +597,7 @@ function drawPerBranchTable(
     const revenueColour = isTopRevenue ? COLOURS.sage : COLOURS.ink;
 
     doc.fillColor(COLOURS.ink).text(branch.merchantName, PAGE_LEFT, y, { width: colWidths[0], lineBreak: false });
-    doc.fillColor(revenueColour).text(fmtSgd(branch.metrics.revenueSgd), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
+    doc.fillColor(revenueColour).text(fmtSgd(branch.metrics.revenueSgd, currency), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
     doc.fillColor(COLOURS.ink).text(String(branch.metrics.bookingsCount), PAGE_LEFT + colWidths[0] + colWidths[1], y, { width: colWidths[2], align: "right", lineBreak: false });
     doc.fillColor(noShowColour).text(fmtPct(branch.metrics.noShowRate), PAGE_LEFT + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3], align: "right", lineBreak: false });
 
@@ -602,7 +614,7 @@ function drawPerBranchTable(
   y += 8;
   doc.font("Helvetica-Bold").fillColor(COLOURS.ink);
   doc.text("Group total", PAGE_LEFT, y, { width: colWidths[0], lineBreak: false });
-  doc.text(fmtSgd(groupTotal.revenueSgd), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
+  doc.text(fmtSgd(groupTotal.revenueSgd, currency), PAGE_LEFT + colWidths[0], y, { width: colWidths[1], align: "right", lineBreak: false });
   doc.text(String(groupTotal.bookingsCount), PAGE_LEFT + colWidths[0] + colWidths[1], y, { width: colWidths[2], align: "right", lineBreak: false });
   doc.text(fmtPct(groupTotal.noShowRate), PAGE_LEFT + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3], align: "right", lineBreak: false });
 
