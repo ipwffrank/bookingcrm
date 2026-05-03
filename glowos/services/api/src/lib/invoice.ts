@@ -46,6 +46,18 @@ export class InvoiceError extends Error {
   }
 }
 
+// Country → ISO 4217 currency code. Used by the universal receipt flow
+// so an SG merchant's invoice renders as SGD, MY as MYR, HK as HKD —
+// the previous implementation hardcoded MYR for everyone, which was a
+// hangover from the MyInvois-first scoping. Default falls through to
+// MYR to preserve historical behaviour for any country code we don't
+// explicitly support yet.
+function currencyForCountry(country: string | null | undefined): string {
+  if (country === "SG") return "SGD";
+  if (country === "HK") return "HKD";
+  return "MYR";
+}
+
 // ─── Atomic invoice number generation ────────────────────────────────────
 
 /**
@@ -316,8 +328,10 @@ export async function createInvoiceFromBooking(
         buyerCity: buyer.city ?? null,
         buyerState: buyer.state ?? null,
         buyerCountry: buyer.country ?? merchant.country ?? "MY",
-        // Document metadata
-        currency: "MYR",
+        // Document metadata — currency derives from the issuer (merchant)
+        // country, NOT the buyer country. A MY clinic invoicing an SG
+        // tourist still issues an MYR invoice; the buyer pays MYR.
+        currency: currencyForCountry(merchant.country),
         issuedAt,
         paymentMode: booking.paymentMethod ?? null,
         // Totals

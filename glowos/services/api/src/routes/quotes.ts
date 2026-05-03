@@ -283,9 +283,12 @@ publicQuotesRouter.post("/:token/accept", zValidator(acceptSchema), async (c) =>
     startTime.getTime() + (svc.durationMinutes + svc.bufferMinutes) * 60_000,
   );
 
-  // Load merchant for Stripe account
+  // Load merchant for Stripe account + country (drives currency).
   const [merchant] = await db
-    .select({ stripeAccountId: merchants.stripeAccountId })
+    .select({
+      stripeAccountId: merchants.stripeAccountId,
+      country: merchants.country,
+    })
     .from(merchants)
     .where(eq(merchants.id, row.merchantId))
     .limit(1);
@@ -336,13 +339,20 @@ publicQuotesRouter.post("/:token/accept", zValidator(acceptSchema), async (c) =>
   // Mint a Stripe PaymentIntent for the accept page to drive the Payment
   // Element. amount is in cents (Stripe convention). Metadata carries the
   // quote_id + booking_id so the mark-paid endpoint + webhook can reconcile.
+  // Currency derives from merchant country — Stripe expects lowercase
+  // ISO 4217 (sgd / myr / hkd). Defaults to sgd for unknown countries to
+  // preserve historical behaviour.
   const amountCents = Math.round(parseFloat(String(row.priceSgd)) * 100);
+  const stripeCurrency =
+    merchant.country === "MY" ? "myr"
+    : merchant.country === "HK" ? "hkd"
+    : "sgd";
   let clientSecret: string | null = null;
   try {
     const intent = await stripe.paymentIntents.create(
       {
         amount: amountCents,
-        currency: "sgd",
+        currency: stripeCurrency,
         automatic_payment_methods: { enabled: true },
         metadata: {
           quote_id: row.id,

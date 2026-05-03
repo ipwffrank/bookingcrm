@@ -467,13 +467,26 @@ paymentsRouter.post("/:slug/create-payment-intent", zValidator(createPaymentInte
 
   // 6. Create Stripe PaymentIntent — Connect destination charge when the
   // merchant has a connected account, otherwise the platform account.
+  // Currency derives from merchant country. Stripe expects lowercase
+  // ISO 4217. Defaults to sgd to preserve historical behaviour.
+  const stripeCurrency =
+    merchant.country === "MY" ? "myr"
+    : merchant.country === "HK" ? "hkd"
+    : "sgd";
   const baseParams: Stripe.PaymentIntentCreateParams = {
     amount: amountCents,
-    currency: "sgd",
+    currency: stripeCurrency,
     customer: stripeCustomerId,
     description: `${service.name} at ${merchant.name}`,
     statement_descriptor_suffix: merchant.name.slice(0, 22),
-    payment_method_types: ["card", "paynow", "grabpay"],
+    // Payment methods: PayNow is SG-only; GrabPay covers SG/MY. HK has
+    // neither, so we fall back to card-only there. Card always works.
+    payment_method_types:
+      merchant.country === "HK"
+        ? ["card"]
+        : merchant.country === "MY"
+          ? ["card", "grabpay"]
+          : ["card", "paynow", "grabpay"],
     metadata: {
       booking_source: body.booking_source,
       merchant_id: merchant.id,
