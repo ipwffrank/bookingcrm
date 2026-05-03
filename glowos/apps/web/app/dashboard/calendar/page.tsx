@@ -175,6 +175,12 @@ export default function CalendarPage() {
   const [cancelWaivePolicy, setCancelWaivePolicy] = useState(false);
   const [cancelSaving, setCancelSaving] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Receipt generation flow — fires for completed bookings via the
+  // universal-receipt endpoint. POST is idempotent (returns the existing
+  // invoice when one exists), then the PDF is fetched as a blob with the
+  // bearer token and opened in a new tab.
+  const [receiptSaving, setReceiptSaving] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
   const [showDutyModal, setShowDutyModal] = useState(false);
   const [editDuty,      setEditDuty]      = useState<Duty | null>(null);
   const [dutyForm,      setDutyForm]      = useState({ staffId: '', date: '', startTime: '09:00', endTime: '17:00', notes: '' });
@@ -495,6 +501,36 @@ export default function CalendarPage() {
       setRescheduleError(err instanceof Error ? err.message : 'Failed to reschedule');
     } finally {
       setRescheduleSaving(false);
+    }
+  }
+
+  // ── Receipt — generate-or-fetch PDF for a completed booking ───────────────────
+  async function handleReceipt() {
+    if (!selBooking) return;
+    setReceiptSaving(true);
+    setReceiptError(null);
+    try {
+      const created = (await apiFetch(`/merchant/invoices/from-booking/${selBooking.id}`, {
+        method: 'POST',
+      })) as { invoice_id: string };
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const token = localStorage.getItem('access_token');
+      const pdfRes = await fetch(`${apiUrl}/merchant/invoices/${created.invoice_id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pdfRes.ok) {
+        const body = await pdfRes.json().catch(() => ({}));
+        throw new Error(body.message ?? `Receipt download failed (${pdfRes.status})`);
+      }
+      const blob = await pdfRes.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      // Free the blob URL after the new tab has had time to load.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (err) {
+      setReceiptError(err instanceof Error ? err.message : 'Failed to generate receipt');
+    } finally {
+      setReceiptSaving(false);
     }
   }
 
@@ -1779,6 +1815,27 @@ export default function CalendarPage() {
                       Cancel
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Completed: receipt generation. Re-clicking is idempotent —
+                  the universal-receipt endpoint surfaces the existing invoice
+                  rather than re-issuing. */}
+              {selBooking.status === 'completed' && (
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={handleReceipt}
+                    disabled={receiptSaving}
+                    className="w-full py-2 text-tone-ink text-xs font-semibold rounded-lg bg-tone-sage/15 hover:bg-tone-sage/30 border border-tone-sage/40 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/>
+                    </svg>
+                    {receiptSaving ? 'Generating receipt…' : 'Generate Receipt PDF'}
+                  </button>
+                  {receiptError && (
+                    <p className="text-[11px] text-semantic-danger mt-1">{receiptError}</p>
+                  )}
                 </div>
               )}
 
