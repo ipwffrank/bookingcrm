@@ -3,8 +3,39 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '../../../../lib/api';
 
-const CATEGORIES = ["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"] as const;
-type Category = typeof CATEGORIES[number];
+// Mirrors signup + settings categories. Clinical categories
+// (aesthetic_clinic, dermatology_clinic, dental_clinic, medical_gp) imply a
+// `vertical` server-side at /group/branches POST. Legacy values
+// (beauty_centre, beauty_clinic, medical_clinic) kept for backward compat
+// with existing branches; new branches should pick the specific replacement.
+const CATEGORY_OPTIONS: Array<{ value: string; label: string; group: 'service' | 'clinical' | 'other' }> = [
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop', group: 'service' },
+  { value: 'nail_studio', label: 'Nail Studio', group: 'service' },
+  { value: 'beauty_salon', label: 'Beauty / Facial Salon', group: 'service' },
+  { value: 'massage', label: 'Massage / Physiotherapy', group: 'service' },
+  { value: 'spa', label: 'Spa / Wellness Centre', group: 'service' },
+  { value: 'restaurant', label: 'Restaurant / F&B', group: 'service' },
+  { value: 'aesthetic_clinic', label: 'Aesthetic Clinic', group: 'clinical' },
+  { value: 'dermatology_clinic', label: 'Dermatology Clinic', group: 'clinical' },
+  { value: 'dental_clinic', label: 'Dental Clinic', group: 'clinical' },
+  { value: 'medical_gp', label: 'Medical / GP Clinic', group: 'clinical' },
+  { value: 'other', label: 'Other', group: 'other' },
+];
+type Category =
+  | 'hair_salon'
+  | 'nail_studio'
+  | 'spa'
+  | 'massage'
+  | 'beauty_centre'
+  | 'restaurant'
+  | 'beauty_clinic'
+  | 'beauty_salon'
+  | 'medical_clinic'
+  | 'aesthetic_clinic'
+  | 'dermatology_clinic'
+  | 'dental_clinic'
+  | 'medical_gp'
+  | 'other';
 
 export interface BranchFormProps {
   mode: 'create' | 'edit';
@@ -160,7 +191,19 @@ export function BranchForm({ mode, merchantId, onClose, onSaved }: BranchFormPro
                 className={inputCls}
               >
                 <option value="">—</option>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                <optgroup label="Service businesses">
+                  {CATEGORY_OPTIONS.filter((c) => c.group === 'service').map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Clinical">
+                  {CATEGORY_OPTIONS.filter((c) => c.group === 'clinical').map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </optgroup>
+                {CATEGORY_OPTIONS.filter((c) => c.group === 'other').map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
             </Field>
 
