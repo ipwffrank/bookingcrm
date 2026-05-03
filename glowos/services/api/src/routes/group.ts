@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { randomBytes } from "node:crypto";
 import { eq, inArray, and, gte, lt, sum, count, countDistinct, desc, or, ilike, sql } from "drizzle-orm";
-import { db, merchants, merchantUsers, bookings, clients, brandInvites } from "@glowos/db";
+import { db, merchants, merchantUsers, bookings, clients, brandInvites, groups } from "@glowos/db";
 import { generateAccessToken, generateRefreshToken } from "../lib/jwt.js";
 import { requireGroupAccess } from "../middleware/groupAuth.js";
 import type { AppVariables } from "../lib/types.js";
@@ -11,7 +11,10 @@ import {
   aggregateUtilizationForGroup,
   aggregateCohortRetentionForGroup,
   aggregateRebookLagForGroup,
+  computeDigestMetricsForGroup,
+  resolveBranchesForGroup,
 } from "../lib/analytics-aggregator.js";
+import { renderGroupAnalyticsPdf, groupAnalyticsPdfFilename } from "../lib/group-analytics-pdf.js";
 
 type AppContext = Context<{ Variables: AppVariables }>;
 
@@ -1086,6 +1089,91 @@ groupRouter.get("/analytics/rebook-lag", async (c) => {
       cohort: b.metrics.cohort,
       headline: b.metrics.headline,
     })),
+  });
+});
+
+// ─── GET /group/analytics/export-pdf ─────────────────────────────────────────
+// Server-rendered group/brand analytics PDF. Mirrors the per-merchant
+// /merchant/analytics/export-pdf flow but the centerpiece is a per-branch
+// comparison table showing how each branch contributes to the group total.
+
+groupRouter.get("/analytics/export-pdf", async (c) => {
+  const groupId = c.get("groupId")!;
+  let from: Date, to: Date;
+  try {
+    ({ from, to } = parseDateRange(c.req.query("from"), c.req.query("to")));
+  } catch {
+    return c.json({ error: "Bad Request", message: "Invalid date format. Use ISO 8601 (e.g. 2026-01-01)" }, 400);
+  }
+
+  const periodLabel = `${from.toLocaleDateString("en-SG", { day: "numeric", month: "short" })} – ${to.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`;
+
+  const [group] = await db
+    .select({ name: groups.name })
+    .from(groups)
+    .where(eq(groups.id, groupId))
+    .limit(1);
+
+  if (!group) {
+    return c.json({ error: "Not Found", message: "Group not found" }, 404);
+  }
+
+  // Resolve branches up-front so we can compute omittedBranchCount honestly.
+  // computeDigestMetricsForGroup already drops branches that fail aggregation;
+  // diffing the count against this list gives us the omitted total.
+  const allBranches = await resolveBranchesForGroup(groupId);
+
+  // Currency follows the FIRST branch's country (group-level country isn't
+  // modelled today). Mixed-country groups are rare; if they exist, the
+  // first branch wins. Future: per-branch row currencies if needed.
+  const firstCountry = allBranches.length > 0
+    ? (await db.select({ country: merchants.country }).from(merchants).where(eq(merchants.id, allBranches[0].merchantId)).limit(1))[0]?.country
+    : "SG";
+  const currency: "SGD" | "MYR" = firstCountry === "MY" ? "MYR" : "SGD";
+
+  // Prior period mirrors per-merchant route: same span immediately preceding.
+  const span = to.getTime() - from.getTime();
+  const priorPeriodEnd = new Date(from.getTime());
+  const priorPeriodStart = new Date(from.getTime() - span);
+
+  const [groupMetrics, utilization, cohortRetention, rebookLag] = await Promise.all([
+    computeDigestMetricsForGroup({ groupId, periodStart: from, periodEnd: to }),
+    aggregateUtilizationForGroup({
+      groupId,
+      periodStart: from,
+      periodEnd: to,
+      priorPeriodStart,
+      priorPeriodEnd,
+    }).catch(() => null),
+    aggregateCohortRetentionForGroup({ groupId, periodStart: from, periodEnd: to }).catch(() => null),
+    aggregateRebookLagForGroup({ groupId, periodStart: from, periodEnd: to }).catch(() => null),
+  ]);
+
+  const omittedBranchCount = Math.max(0, allBranches.length - groupMetrics.perBranch.length);
+
+  const pdf = await renderGroupAnalyticsPdf({
+    groupName: group.name,
+    currency,
+    periodLabel,
+    periodStart: from,
+    periodEnd: to,
+    metrics: groupMetrics.group,
+    utilization: utilization?.group ?? null,
+    cohortRetention: cohortRetention?.group ?? null,
+    rebookLag: rebookLag?.group ?? null,
+    perBranch: groupMetrics.perBranch,
+    omittedBranchCount,
+  });
+
+  const filename = groupAnalyticsPdfFilename({ groupName: group.name, periodLabel });
+  return new Response(new Uint8Array(pdf), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": String(pdf.length),
+      "Cache-Control": "no-store",
+    },
   });
 });
 
