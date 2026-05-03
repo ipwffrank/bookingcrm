@@ -395,9 +395,32 @@ function drawClientProfileSection(
     doc.y += 14;
   } else {
     drawBookingTable(doc, past, { showStatus: true });
+    // Total spent: sum of priceSgd over completed bookings (cancelled +
+    // no-show explicitly excluded — those didn't generate revenue).
+    const totalSpent = past
+      .filter((r) => r.booking.status === "completed")
+      .reduce((sum, r) => sum + parseFloat(r.booking.priceSgd), 0);
+    if (totalSpent > 0) {
+      drawTotalsRow(doc, totalSpent, past.filter((r) => r.booking.status === "completed").length);
+    }
   }
 
-  // ─── Clinical records (consultation notes, treatment logs, etc.) ─────
+  // ─── Treatment Log (booking staffNotes from completed bookings) ──────
+  // Different from Clinical Records (the formal append-only audit chain).
+  // Treatment log here = per-booking notes the staff captured at the
+  // chair/treatment moment. Many clinics use staffNotes for procedure
+  // detail that doesn't merit a full clinical_records entry.
+  const treatmentLogEntries = recentBookings.filter(
+    (r) => r.booking.status === "completed" && r.booking.staffNotes && r.booking.staffNotes.trim() !== "",
+  );
+  if (treatmentLogEntries.length > 0) {
+    doc.y += 10;
+    if (doc.y > PAGE_BOTTOM - 100) { doc.addPage(); doc.y = 60; }
+    drawSectionHeading(doc, `Treatment Log (${treatmentLogEntries.length})`);
+    drawTreatmentLog(doc, treatmentLogEntries);
+  }
+
+  // ─── Clinical records (consultation notes, prescriptions, amendments) ─
   if (data.clinicalRecords.length > 0) {
     doc.y += 10;
     if (doc.y > PAGE_BOTTOM - 100) { doc.addPage(); doc.y = 60; }
@@ -408,9 +431,116 @@ function drawClientProfileSection(
   // ─── Dental charting (only when merchant.vertical='dental') ──────────
   if (data.latestOdontogram) {
     doc.y += 10;
-    if (doc.y > PAGE_BOTTOM - 120) { doc.addPage(); doc.y = 60; }
+    if (doc.y > PAGE_BOTTOM - 200) { doc.addPage(); doc.y = 60; }
     drawSectionHeading(doc, "Dental Charting (latest snapshot)");
     drawOdontogramSummary(doc, data.latestOdontogram);
+  }
+}
+
+// ─── Service-history total row ──────────────────────────────────────────
+
+function drawTotalsRow(
+  doc: PDFKit.PDFDocument,
+  totalSpent: number,
+  completedCount: number,
+): void {
+  // Sage-tinted strip below the table — visually distinct from row hairlines.
+  doc.y += 4;
+  const stripY = doc.y;
+  const stripH = 24;
+  doc
+    .fillColor("#456466" + "10") // tone-sage @ 6%
+    .strokeColor(COLOURS.sage)
+    .lineWidth(0.5)
+    .roundedRect(PAGE_LEFT, stripY, PAGE_RIGHT - PAGE_LEFT, stripH, 4)
+    .fillAndStroke();
+
+  doc
+    .fillColor(COLOURS.grey60)
+    .fontSize(9)
+    .font("Helvetica-Bold")
+    .text(
+      `TOTAL — ${completedCount} completed visit${completedCount === 1 ? "" : "s"}`,
+      PAGE_LEFT + 12,
+      stripY + 8,
+      { characterSpacing: 1 },
+    );
+  doc
+    .fillColor(COLOURS.ink)
+    .fontSize(13)
+    .font("Helvetica-Bold")
+    .text(
+      `S$${totalSpent.toLocaleString("en-SG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      PAGE_RIGHT - 12 - 100,
+      stripY + 6,
+      { width: 100, align: "right" },
+    );
+  doc.x = PAGE_LEFT;
+  doc.y = stripY + stripH;
+}
+
+// ─── Treatment log (per-booking staff notes) ────────────────────────────
+
+function drawTreatmentLog(
+  doc: PDFKit.PDFDocument,
+  entries: BookingWithLookups[],
+): void {
+  for (const r of entries) {
+    if (doc.y > PAGE_BOTTOM - 60) { doc.addPage(); doc.y = 60; }
+
+    const rowY = doc.y;
+    const dateStr = formatDate(new Date(r.booking.startTime));
+
+    doc
+      .fillColor(COLOURS.grey90)
+      .fontSize(10)
+      .font("Helvetica")
+      .text(dateStr, PAGE_LEFT, rowY, { width: 85 });
+
+    const bodyX = PAGE_LEFT + 100;
+    const bodyW = PAGE_RIGHT - bodyX;
+
+    // Service name + staff name on a single line
+    doc
+      .fillColor(COLOURS.ink)
+      .fontSize(10.5)
+      .font("Helvetica-Bold")
+      .text(r.service.name, bodyX, rowY, {
+        width: bodyW,
+        ellipsis: true,
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOURS.grey60)
+      .fontSize(9)
+      .font("Helvetica")
+      .text(`with ${r.staffMember.name}`, bodyX, rowY + 13, { width: bodyW });
+
+    // Notes excerpt
+    const notes = (r.booking.staffNotes ?? "").trim();
+    const excerpt = truncate(notes, 320);
+    if (excerpt) {
+      doc.y = rowY + 27;
+      doc
+        .fillColor(COLOURS.grey70)
+        .fontSize(10)
+        .font("Helvetica")
+        .text(excerpt, bodyX, doc.y, {
+          width: bodyW,
+          lineGap: 1.5,
+        });
+    }
+
+    doc.x = PAGE_LEFT;
+    doc.y += 8;
+
+    doc
+      .strokeColor(COLOURS.grey10)
+      .lineWidth(0.3)
+      .moveTo(PAGE_LEFT, doc.y)
+      .lineTo(PAGE_RIGHT, doc.y)
+      .stroke();
+    doc.y += 8;
   }
 }
 
@@ -560,6 +690,161 @@ function clinicalRecordTypeLabel(type: string): string {
   }
 }
 
+// ─── Tooth chart visual (drawn with pdfkit primitives) ──────────────────
+// Two rows of 16 small rectangles (upper + lower jaws) with a midline gap.
+// Per-tooth visual treatment:
+//   - whole=missing/extracted   → grey fill + crossed-out X
+//   - whole=crown/rct_crown     → sage fill (covered)
+//   - surface conditions        → small dot (caries=warn, restoration=ink)
+// Footer: legend strip with the four most-common findings.
+
+const TOOTH_W = 14;
+const TOOTH_H = 20;
+const TOOTH_GAP = 2;
+const ROW_GAP = 8;
+const MIDLINE_GAP = 8;
+
+const PERMANENT_QUADRANTS = {
+  upperRight: ["18", "17", "16", "15", "14", "13", "12", "11"],
+  upperLeft: ["21", "22", "23", "24", "25", "26", "27", "28"],
+  lowerRight: ["48", "47", "46", "45", "44", "43", "42", "41"],
+  lowerLeft: ["31", "32", "33", "34", "35", "36", "37", "38"],
+} as const;
+
+function drawToothChart(
+  doc: PDFKit.PDFDocument,
+  charting: Record<string, {
+    whole?: string;
+    surfaces?: Record<string, string[]>;
+    notes?: string;
+  }>,
+  yStart: number,
+): number {
+  // Compute total chart width to centre it on the page.
+  const rowW = TOOTH_W * 16 + TOOTH_GAP * 14 + MIDLINE_GAP;
+  const startX = PAGE_LEFT + (PAGE_RIGHT - PAGE_LEFT - rowW) / 2;
+
+  function drawTooth(fdi: string, x: number, y: number) {
+    const t = charting[fdi];
+    const status = t?.whole;
+    const isMissing = status === "missing" || status === "extracted";
+
+    // Fill + outline
+    let fillColor = "#ffffff";
+    if (status === "crown" || status === "rct_crown") fillColor = COLOURS.sage;
+    else if (status === "implant") fillColor = COLOURS.ink;
+    else if (isMissing) fillColor = COLOURS.grey20;
+
+    doc
+      .strokeColor(COLOURS.grey20)
+      .lineWidth(0.5)
+      .fillColor(fillColor)
+      .roundedRect(x, y, TOOTH_W, TOOTH_H, 1.5)
+      .fillAndStroke();
+
+    if (isMissing) {
+      // X overlay
+      doc.strokeColor(COLOURS.grey45).lineWidth(0.7);
+      doc.moveTo(x + 1, y + 1).lineTo(x + TOOTH_W - 1, y + TOOTH_H - 1).stroke();
+      doc.moveTo(x + TOOTH_W - 1, y + 1).lineTo(x + 1, y + TOOTH_H - 1).stroke();
+    }
+
+    // Surface dots — first condition wins per surface for the dot colour.
+    if (!isMissing && t?.surfaces) {
+      const surfacePoints: Record<string, [number, number]> = {
+        M: [x + 2, y + TOOTH_H / 2],
+        D: [x + TOOTH_W - 2, y + TOOTH_H / 2],
+        B: [x + TOOTH_W / 2, y + 2],
+        L: [x + TOOTH_W / 2, y + TOOTH_H - 2],
+        O: [x + TOOTH_W / 2, y + TOOTH_H / 2],
+        I: [x + TOOTH_W / 2, y + TOOTH_H / 2],
+      };
+      for (const [surf, conds] of Object.entries(t.surfaces)) {
+        const pt = surfacePoints[surf];
+        if (!pt || !conds || conds.length === 0) continue;
+        const cond = conds[0];
+        let dotColor = COLOURS.grey45;
+        if (cond === "caries" || cond === "fracture" || cond === "attrition" || cond === "erosion") {
+          dotColor = COLOURS.warn;
+        } else if (cond === "amalgam" || cond === "composite" || cond === "gic") {
+          dotColor = COLOURS.ink;
+        } else if (cond === "sealant") {
+          dotColor = COLOURS.sage;
+        }
+        doc.fillColor(dotColor).circle(pt[0], pt[1], 1.1).fill();
+      }
+    }
+
+    // FDI number label below the tooth
+    doc
+      .fillColor(COLOURS.grey45)
+      .fontSize(6)
+      .font("Helvetica")
+      .text(fdi, x, y + TOOTH_H + 1, { width: TOOTH_W, align: "center" });
+  }
+
+  function drawRow(left: readonly string[], right: readonly string[], y: number) {
+    let x = startX;
+    for (const fdi of left) {
+      drawTooth(fdi, x, y);
+      x += TOOTH_W + TOOTH_GAP;
+    }
+    // Midline divider
+    doc
+      .strokeColor(COLOURS.grey20)
+      .lineWidth(0.5)
+      .moveTo(x + MIDLINE_GAP / 2, y - 2)
+      .lineTo(x + MIDLINE_GAP / 2, y + TOOTH_H + 2)
+      .stroke();
+    x += MIDLINE_GAP;
+    for (const fdi of right) {
+      drawTooth(fdi, x, y);
+      x += TOOTH_W + TOOTH_GAP;
+    }
+  }
+
+  // Upper row label
+  doc
+    .fillColor(COLOURS.grey60)
+    .fontSize(7)
+    .font("Helvetica")
+    .text("UPPER", PAGE_LEFT, yStart + TOOTH_H / 2 - 3, { characterSpacing: 1 });
+
+  drawRow(PERMANENT_QUADRANTS.upperRight, PERMANENT_QUADRANTS.upperLeft, yStart);
+  const lowerY = yStart + TOOTH_H + 12 + ROW_GAP;
+  doc
+    .fillColor(COLOURS.grey60)
+    .fontSize(7)
+    .font("Helvetica")
+    .text("LOWER", PAGE_LEFT, lowerY + TOOTH_H / 2 - 3, { characterSpacing: 1 });
+  drawRow(PERMANENT_QUADRANTS.lowerRight, PERMANENT_QUADRANTS.lowerLeft, lowerY);
+
+  const chartBottom = lowerY + TOOTH_H + 12;
+
+  // Legend
+  const legendY = chartBottom + 4;
+  const legendX = startX;
+  doc.fontSize(7.5).font("Helvetica").fillColor(COLOURS.grey60);
+  let lx = legendX;
+  function legendItem(swatchFn: () => void, label: string) {
+    swatchFn();
+    doc.fillColor(COLOURS.grey60).text(label, lx + 9, legendY - 1, { lineBreak: false });
+    lx += 9 + doc.widthOfString(label) + 12;
+  }
+  legendItem(() => doc.fillColor(COLOURS.warn).circle(lx + 3, legendY + 3, 2.2).fill(), "Caries");
+  legendItem(() => doc.fillColor(COLOURS.ink).circle(lx + 3, legendY + 3, 2.2).fill(), "Restoration");
+  legendItem(() => {
+    doc.fillColor(COLOURS.sage).strokeColor(COLOURS.grey20).lineWidth(0.5)
+      .roundedRect(lx, legendY, 6, 6, 1).fillAndStroke();
+  }, "Crown");
+  legendItem(() => {
+    doc.fillColor(COLOURS.grey20).strokeColor(COLOURS.grey45).lineWidth(0.5)
+      .roundedRect(lx, legendY, 6, 6, 1).fillAndStroke();
+  }, "Missing");
+
+  return legendY + 12; // returned y-cursor, ready for next content
+}
+
 // ─── Odontogram summary (dental clinics only) ───────────────────────────
 
 function drawOdontogramSummary(
@@ -607,6 +892,14 @@ function drawOdontogramSummary(
     );
   doc.x = PAGE_LEFT;
   doc.y += 16;
+
+  // ── Visual tooth chart ─────────────────────────────────────────────
+  // Centred two-row dentition (FDI 18-11 | 21-28 upper, 48-41 | 31-38 lower)
+  // with status fills and surface dots. Renders the chart in-line; the
+  // helper returns the new y-cursor below the legend.
+  const afterChart = drawToothChart(doc, charting, doc.y);
+  doc.x = PAGE_LEFT;
+  doc.y = afterChart + 6;
 
   // Tooth count + finding summary lines
   doc
@@ -869,8 +1162,16 @@ function statusColorFor(status: string): string {
 }
 
 function drawFooter(doc: PDFKit.PDFDocument): void {
-  // Render PDPA notice + page numbers on every existing page using bufferPages.
+  // Render PDPA notice + page numbers on every existing page using
+  // bufferPages. CRITICAL: every text() call must include `lineBreak: false`
+  // and `height: 1` so pdfkit doesn't think the footer overflowed and add
+  // a new page. Without those flags, writing at any y > pageHeight - margin
+  // (842 - 50 = 792 for default A4) silently spawns a fresh page per call —
+  // resulting in N extra blank pages per N footer calls.
   const range = doc.bufferedPageRange();
+  const footerY = 800; // safe: well within content area, far enough from bottom edge to read clean
+  const baseOpts = { lineBreak: false, height: 1 } as const;
+
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
     doc
@@ -880,14 +1181,14 @@ function drawFooter(doc: PDFKit.PDFDocument): void {
       .text(
         "Confidential — PDPA Act 709 protected · Generated by GlowOS",
         PAGE_LEFT,
-        820,
-        { width: PAGE_RIGHT - PAGE_LEFT, align: "left" },
+        footerY,
+        { width: PAGE_RIGHT - PAGE_LEFT, align: "left", ...baseOpts },
       );
     doc.text(
       `Page ${i - range.start + 1} of ${range.count}`,
       PAGE_LEFT,
-      820,
-      { width: PAGE_RIGHT - PAGE_LEFT, align: "right" },
+      footerY,
+      { width: PAGE_RIGHT - PAGE_LEFT, align: "right", ...baseOpts },
     );
   }
 }
