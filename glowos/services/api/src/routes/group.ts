@@ -1134,7 +1134,10 @@ groupRouter.get("/analytics/export-pdf", async (c) => {
   const firstCountry = allBranches.length > 0
     ? (await db.select({ country: merchants.country }).from(merchants).where(eq(merchants.id, allBranches[0].merchantId)).limit(1))[0]?.country
     : "SG";
-  const currency: "SGD" | "MYR" = firstCountry === "MY" ? "MYR" : "SGD";
+  const currency: "SGD" | "MYR" | "HKD" =
+    firstCountry === "MY" ? "MYR"
+    : firstCountry === "HK" ? "HKD"
+    : "SGD";
 
   // Prior period mirrors per-merchant route: same span immediately preceding.
   const span = to.getTime() - from.getTime();

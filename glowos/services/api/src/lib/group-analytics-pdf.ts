@@ -24,7 +24,7 @@ interface PerBranch {
 
 export interface GroupAnalyticsPdfArgs {
   groupName: string;
-  currency: "SGD" | "MYR";
+  currency: "SGD" | "MYR" | "HKD";
   periodLabel: string;
   periodStart: Date;
   periodEnd: Date;
@@ -56,8 +56,11 @@ const COLOURS = {
 const PAGE_LEFT = 50;
 const PAGE_RIGHT_PAD = 50;
 
-function fmtMoney(n: number, currency: "SGD" | "MYR"): string {
-  const sym = currency === "MYR" ? "RM" : "S$";
+function fmtMoney(n: number, currency: "SGD" | "MYR" | "HKD"): string {
+  const sym =
+    currency === "MYR" ? "RM"
+    : currency === "HKD" ? "HK$"
+    : "S$";
   if (n >= 100000) return `${sym}${(n / 1000).toFixed(0)}k`;
   if (n >= 10000) return `${sym}${(n / 1000).toFixed(1)}k`;
   return `${sym}${Math.round(n).toLocaleString("en-SG")}`;
@@ -483,7 +486,7 @@ function drawPerBranchTable(
   doc: PDFKit.PDFDocument,
   perBranch: PerBranch[],
   groupTotal: DigestMetrics,
-  currency: "SGD" | "MYR",
+  currency: "SGD" | "MYR" | "HKD",
 ): void {
   const sorted = [...perBranch].sort((a, b) => b.metrics.revenueSgd - a.metrics.revenueSgd);
   const topRevenueId = sorted[0]?.merchantId;
