@@ -17,15 +17,26 @@ type FormData = {
 
 type FieldError = Partial<Record<keyof FormData, string>>;
 
-const CATEGORIES = [
-  { value: 'restaurant', label: 'Restaurant / F&B' },
-  { value: 'hair_salon', label: 'Hair Salon / Barbershop' },
-  { value: 'beauty_clinic', label: 'Beauty / Facial Clinic' },
-  { value: 'medical_clinic', label: 'Medical / Dental Clinic' },
-  { value: 'spa', label: 'Spa / Wellness Centre' },
-  { value: 'nail_studio', label: 'Nail Studio' },
-  { value: 'massage', label: 'Massage / Physiotherapy' },
-  { value: 'other', label: 'Other' },
+// Clinical categories (the second group below) imply a clinical `vertical`
+// on the merchant record — set server-side in /auth/signup so dental
+// odontogram, aesthetic charting etc. light up from day one without a
+// post-signup settings round-trip. Non-clinical categories leave
+// vertical = NULL.
+const CATEGORIES: Array<{ value: string; label: string; group: 'service' | 'clinical' | 'other' }> = [
+  // Service businesses (no clinical vertical)
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop', group: 'service' },
+  { value: 'nail_studio', label: 'Nail Studio', group: 'service' },
+  { value: 'beauty_salon', label: 'Beauty / Facial Salon', group: 'service' },
+  { value: 'massage', label: 'Massage / Physiotherapy', group: 'service' },
+  { value: 'spa', label: 'Spa / Wellness Centre', group: 'service' },
+  { value: 'restaurant', label: 'Restaurant / F&B', group: 'service' },
+  // Clinical businesses (each implies a vertical)
+  { value: 'aesthetic_clinic', label: 'Aesthetic Clinic', group: 'clinical' },
+  { value: 'dermatology_clinic', label: 'Dermatology Clinic', group: 'clinical' },
+  { value: 'dental_clinic', label: 'Dental Clinic', group: 'clinical' },
+  { value: 'medical_gp', label: 'Medical / GP Clinic', group: 'clinical' },
+  // Catch-all
+  { value: 'other', label: 'Other', group: 'other' },
 ];
 
 export default function SignupPage() {
@@ -187,7 +198,21 @@ export default function SignupPage() {
                 }`}
               >
                 <option value="">Select a category…</option>
-                {CATEGORIES.map((c) => (
+                <optgroup label="Service businesses">
+                  {CATEGORIES.filter((c) => c.group === 'service').map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Clinical">
+                  {CATEGORIES.filter((c) => c.group === 'clinical').map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
+                {CATEGORIES.filter((c) => c.group === 'other').map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label}
                   </option>

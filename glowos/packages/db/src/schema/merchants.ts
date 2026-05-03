@@ -35,7 +35,22 @@ export const merchants = pgTable("merchants", {
   phone: varchar("phone", { length: 20 }),
   email: varchar("email", { length: 255 }),
   category: varchar("category", { length: 50 })
-    .$type<"hair_salon" | "nail_studio" | "spa" | "massage" | "beauty_centre" | "restaurant" | "beauty_clinic" | "medical_clinic" | "other">(),
+    .$type<
+      | "hair_salon"
+      | "nail_studio"
+      | "spa"
+      | "massage"
+      | "beauty_centre"
+      | "restaurant"
+      | "beauty_clinic"
+      | "beauty_salon"
+      | "medical_clinic"
+      | "aesthetic_clinic"
+      | "dermatology_clinic"
+      | "dental_clinic"
+      | "medical_gp"
+      | "other"
+    >(),
   // Operational vertical — gates clinical-record sub-modules (odontogram
   // for dental, etc.). NULL means no vertical-specific modules render
   // (e.g. hair salon). Set explicitly via merchant settings or super-admin.

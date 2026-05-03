@@ -15,6 +15,17 @@ import {
 
 type AppContext = Context<{ Variables: AppVariables }>;
 
+// Same map used at /auth/signup. Branches in a clinical category get their
+// `vertical` set on create so dental odontogram, aesthetic charting etc. light
+// up immediately without a post-signup settings round-trip.
+const CATEGORY_TO_VERTICAL: Record<string, "dental" | "aesthetic" | "dermatology" | "spa" | "general_medical"> = {
+  dental_clinic: "dental",
+  aesthetic_clinic: "aesthetic",
+  dermatology_clinic: "dermatology",
+  medical_gp: "general_medical",
+  spa: "spa",
+};
+
 const groupRouter = new Hono<{ Variables: AppVariables }>();
 
 groupRouter.use("*", requireGroupAccess);
@@ -29,7 +40,22 @@ const createBranchSchema = z.object({
     .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, "slug must be lowercase letters, numbers, dashes; no leading/trailing dash"),
   country: z.enum(["SG", "MY"]),
   category: z
-    .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"])
+    .enum([
+      "hair_salon",
+      "nail_studio",
+      "spa",
+      "massage",
+      "beauty_centre",
+      "restaurant",
+      "beauty_clinic",
+      "beauty_salon",
+      "medical_clinic",
+      "aesthetic_clinic",
+      "dermatology_clinic",
+      "dental_clinic",
+      "medical_gp",
+      "other",
+    ])
     .optional(),
   addressLine1: z.string().max(255).optional(),
   addressLine2: z.string().max(255).optional(),
@@ -46,7 +72,22 @@ const viewAsBranchSchema = z.object({
 const updateBranchSchema = z
   .object({
     name: z.string().trim().min(1).max(255),
-    category: z.enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"]),
+    category: z.enum([
+      "hair_salon",
+      "nail_studio",
+      "spa",
+      "massage",
+      "beauty_centre",
+      "restaurant",
+      "beauty_clinic",
+      "beauty_salon",
+      "medical_clinic",
+      "aesthetic_clinic",
+      "dermatology_clinic",
+      "dental_clinic",
+      "medical_gp",
+      "other",
+    ]),
     addressLine1: z.string().max(255).nullable(),
     addressLine2: z.string().max(255).nullable(),
     postalCode: z.string().max(10).nullable(),
@@ -484,6 +525,9 @@ groupRouter.post("/branches", zValidator(createBranchSchema), async (c) => {
       paymentGateway,
       groupId,
       ...(body.category ? { category: body.category } : {}),
+      ...(body.category && CATEGORY_TO_VERTICAL[body.category]
+        ? { vertical: CATEGORY_TO_VERTICAL[body.category] }
+        : {}),
       ...(body.addressLine1 !== undefined ? { addressLine1: body.addressLine1 } : {}),
       ...(body.addressLine2 !== undefined ? { addressLine2: body.addressLine2 } : {}),
       ...(body.postalCode !== undefined ? { postalCode: body.postalCode } : {}),

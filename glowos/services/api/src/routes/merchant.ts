@@ -29,7 +29,22 @@ const updateMerchantSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email().optional(),
   category: z
-    .enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"])
+    .enum([
+      "hair_salon",
+      "nail_studio",
+      "spa",
+      "massage",
+      "beauty_centre",
+      "restaurant",
+      "beauty_clinic",
+      "beauty_salon",
+      "medical_clinic",
+      "aesthetic_clinic",
+      "dermatology_clinic",
+      "dental_clinic",
+      "medical_gp",
+      "other",
+    ])
     .optional(),
   timezone: z.string().optional(),
   logoUrl: z.string().url().optional().or(z.literal("")),

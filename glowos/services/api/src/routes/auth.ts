@@ -15,6 +15,17 @@ import type { AppVariables } from "../lib/types.js";
 const RESET_TOKEN_TTL_MINUTES = 30;
 const RESET_TOKEN_BYTES = 32;
 
+// Maps the customer-facing signup category to the operational `vertical`
+// that gates clinical sub-modules (odontogram for dental, etc.). Categories
+// not listed here leave vertical = NULL (no vertical-specific modules).
+const CATEGORY_TO_VERTICAL: Record<string, "dental" | "aesthetic" | "dermatology" | "spa" | "general_medical"> = {
+  dental_clinic: "dental",
+  aesthetic_clinic: "aesthetic",
+  dermatology_clinic: "dermatology",
+  medical_gp: "general_medical",
+  spa: "spa",
+};
+
 function hashToken(plain: string): string {
   return createHash("sha256").update(plain).digest("hex");
 }
@@ -29,10 +40,30 @@ const signupSchema = z.object({
   phone: z.string().min(1, "Phone number is required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   salon_name: z.string().min(1, "Salon name is required"),
-  salon_category: z.enum(["hair_salon", "nail_studio", "spa", "massage", "beauty_centre", "restaurant", "beauty_clinic", "medical_clinic", "other"], {
+  // Clinical categories (aesthetic_clinic, dermatology_clinic, dental_clinic,
+  // medical_gp) imply a `vertical` on the merchant record — see
+  // CATEGORY_TO_VERTICAL below. Legacy values (beauty_centre, beauty_clinic,
+  // medical_clinic) are kept for backward compat with existing rows; the
+  // signup form no longer surfaces them.
+  salon_category: z.enum([
+    "hair_salon",
+    "nail_studio",
+    "spa",
+    "massage",
+    "beauty_centre",
+    "restaurant",
+    "beauty_clinic",
+    "beauty_salon",
+    "medical_clinic",
+    "aesthetic_clinic",
+    "dermatology_clinic",
+    "dental_clinic",
+    "medical_gp",
+    "other",
+  ], {
     errorMap: () => ({
       message:
-        "Invalid business category. Must be one of: hair_salon, nail_studio, spa, massage, beauty_centre, restaurant, beauty_clinic, medical_clinic, other",
+        "Invalid business category",
     }),
   }),
   // Country drives the auto-default for payment_gateway (MY → ipay88,
@@ -89,6 +120,7 @@ auth.post("/signup", zValidator(signupSchema), async (c) => {
       slug,
       name: body.salon_name,
       category: body.salon_category,
+      vertical: CATEGORY_TO_VERTICAL[body.salon_category] ?? null,
       email: body.email,
       phone: body.phone,
       country: body.country,

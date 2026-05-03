@@ -10,7 +10,21 @@ import { AnalyticsDigestTab } from './components/AnalyticsDigestTab';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type MerchantCategory = 'restaurant' | 'hair_salon' | 'beauty_clinic' | 'medical_clinic' | 'spa' | 'nail_studio' | 'massage' | 'other';
+type MerchantCategory =
+  | 'restaurant'
+  | 'hair_salon'
+  | 'beauty_clinic'
+  | 'beauty_salon'
+  | 'medical_clinic'
+  | 'aesthetic_clinic'
+  | 'dermatology_clinic'
+  | 'dental_clinic'
+  | 'medical_gp'
+  | 'spa'
+  | 'nail_studio'
+  | 'massage'
+  | 'beauty_centre'
+  | 'other';
 // Operational vertical drives feature gating for clinical-record sub-modules
 // (e.g. dental odontogram). Distinct from `category` which is the public
 // service-type label. Only set for clinics where it matters; left null
@@ -97,15 +111,22 @@ const TABS: Tab[] = [
   { id: 'compliance', label: 'PDPA Compliance' },
 ];
 
-const CATEGORY_OPTIONS: { value: MerchantCategory; label: string }[] = [
-  { value: 'restaurant', label: 'Restaurant / F&B' },
-  { value: 'hair_salon', label: 'Hair Salon / Barbershop' },
-  { value: 'beauty_clinic', label: 'Beauty / Facial Clinic' },
-  { value: 'medical_clinic', label: 'Medical / Dental Clinic' },
-  { value: 'spa', label: 'Spa / Wellness Centre' },
-  { value: 'nail_studio', label: 'Nail Studio' },
-  { value: 'massage', label: 'Massage / Physiotherapy' },
-  { value: 'other', label: 'Other' },
+// Categories mirror the signup form. Clinical categories (aesthetic_clinic,
+// dermatology_clinic, dental_clinic, medical_gp) imply a `vertical` server-
+// side at signup; on this settings page the vertical is shown in its own
+// dropdown so owners can adjust it independently if needed.
+const CATEGORY_OPTIONS: { value: MerchantCategory; label: string; group: 'service' | 'clinical' | 'other' }[] = [
+  { value: 'hair_salon', label: 'Hair Salon / Barbershop', group: 'service' },
+  { value: 'nail_studio', label: 'Nail Studio', group: 'service' },
+  { value: 'beauty_salon', label: 'Beauty / Facial Salon', group: 'service' },
+  { value: 'massage', label: 'Massage / Physiotherapy', group: 'service' },
+  { value: 'spa', label: 'Spa / Wellness Centre', group: 'service' },
+  { value: 'restaurant', label: 'Restaurant / F&B', group: 'service' },
+  { value: 'aesthetic_clinic', label: 'Aesthetic Clinic', group: 'clinical' },
+  { value: 'dermatology_clinic', label: 'Dermatology Clinic', group: 'clinical' },
+  { value: 'dental_clinic', label: 'Dental Clinic', group: 'clinical' },
+  { value: 'medical_gp', label: 'Medical / GP Clinic', group: 'clinical' },
+  { value: 'other', label: 'Other', group: 'other' },
 ];
 
 const VERTICAL_OPTIONS: { value: MerchantVertical; label: string; hint: string }[] = [
@@ -281,7 +302,17 @@ function ProfileTab({
               className={inputCls}
             >
               <option value="">Select category...</option>
-              {CATEGORY_OPTIONS.map((c) => (
+              <optgroup label="Service businesses">
+                {CATEGORY_OPTIONS.filter((c) => c.group === 'service').map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Clinical">
+                {CATEGORY_OPTIONS.filter((c) => c.group === 'clinical').map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </optgroup>
+              {CATEGORY_OPTIONS.filter((c) => c.group === 'other').map((c) => (
                 <option key={c.value} value={c.value}>{c.label}</option>
               ))}
             </select>
