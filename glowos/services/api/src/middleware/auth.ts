@@ -37,6 +37,7 @@ export async function requireMerchant(c: AppContext, next: Next) {
       isActive: merchantUsers.isActive,
       merchantId: merchantUsers.merchantId,
       role: merchantUsers.role,
+      secondaryRole: merchantUsers.secondaryRole,
       staffId: merchantUsers.staffId,
       brandAdminGroupId: merchantUsers.brandAdminGroupId,
     })
@@ -85,6 +86,7 @@ export async function requireMerchant(c: AppContext, next: Next) {
   c.set("userId", user.id);
   c.set("merchantId", user.merchantId);
   c.set("userRole", user.role);
+  if (user.secondaryRole) c.set("userSecondaryRole", user.secondaryRole);
   if (user.staffId) c.set("staffId", user.staffId);
 
   // Forward superadmin claims. Re-validate against the allowlist on every
@@ -166,8 +168,16 @@ export function requireRole(...roles: string[]) {
     }
 
     const userRole = c.get("userRole");
+    const userSecondaryRole = c.get("userSecondaryRole");
 
-    if (!userRole || !roles.includes(userRole)) {
+    // Either the primary OR the secondary role qualifies. A clinician who
+    // is also the firm's manager passes a manager-only gate; same for the
+    // reverse direction.
+    const matches =
+      (userRole && roles.includes(userRole)) ||
+      (userSecondaryRole && roles.includes(userSecondaryRole));
+
+    if (!matches) {
       return c.json(
         {
           error: "Forbidden",
@@ -181,11 +191,16 @@ export function requireRole(...roles: string[]) {
   };
 }
 
-// New: blocks staff role, allows owner + manager only
+// Blocks staff role, allows owner + manager (OR clinician-with-manager-or-
+// owner-secondary, etc. — a user passes if EITHER role is owner/manager).
 export function requireAdmin() {
   return async function (c: AppContext, next: Next) {
     const userRole = c.get("userRole");
-    if (!userRole || !["owner", "manager"].includes(userRole)) {
+    const userSecondaryRole = c.get("userSecondaryRole");
+    const isAdmin =
+      (userRole && ["owner", "manager"].includes(userRole)) ||
+      (userSecondaryRole && ["owner", "manager"].includes(userSecondaryRole));
+    if (!isAdmin) {
       return c.json({ error: "Forbidden", message: "Admin access required. Requires owner or manager role." }, 403);
     }
     await next();
@@ -242,8 +257,17 @@ function hasPermission(role: string, permission: string): boolean {
 export function requirePermission(permission: string) {
   return async function (c: AppContext, next: Next) {
     const userRole = c.get("userRole");
+    const userSecondaryRole = c.get("userSecondaryRole");
 
-    if (!userRole || !hasPermission(userRole, permission)) {
+    // Effective permissions = union of both roles' grants. A clinician
+    // (clinical_records.*) who is also the firm's manager
+    // (analytics.read, etc.) gets both — a single dropdown wouldn't
+    // capture this.
+    const granted =
+      (userRole && hasPermission(userRole, permission)) ||
+      (userSecondaryRole && hasPermission(userSecondaryRole, permission));
+
+    if (!granted) {
       return c.json(
         {
           error: "Forbidden",
