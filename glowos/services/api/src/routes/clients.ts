@@ -1,7 +1,22 @@
 import { Hono } from "hono";
 import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions, waitlist, merchants } from "@glowos/db";
+import {
+  db,
+  clients,
+  clientProfiles,
+  bookings,
+  services,
+  staff,
+  clientPackages,
+  packageSessions,
+  waitlist,
+  merchants,
+  loyaltyTransactions,
+  loyaltyPrograms,
+  clinicalRecords,
+  clinicalRecordOdontograms,
+} from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
@@ -442,6 +457,59 @@ async function loadClientProfileData(args: {
       ),
     );
 
+  // Loyalty: balance = SUM(amount) for this (merchant, client). Program
+  // row is optional — when off, we still show the current balance because
+  // it's historical.
+  const [loyaltyBal] = await db
+    .select({
+      balance: sql<number>`coalesce(sum(${loyaltyTransactions.amount}), 0)::int`,
+    })
+    .from(loyaltyTransactions)
+    .where(
+      and(
+        eq(loyaltyTransactions.merchantId, args.merchantId),
+        eq(loyaltyTransactions.clientId, row.profile.clientId),
+      ),
+    );
+  const [loyaltyProgram] = await db
+    .select()
+    .from(loyaltyPrograms)
+    .where(eq(loyaltyPrograms.merchantId, args.merchantId))
+    .limit(1);
+
+  // Clinical records: latest 10, excluding amendments (display latest
+  // revision via amendsId chain). Body excerpts get truncated at the
+  // PDF layer to keep section bounded.
+  const clinicalRows = await db
+    .select()
+    .from(clinicalRecords)
+    .where(
+      and(
+        eq(clinicalRecords.merchantId, args.merchantId),
+        eq(clinicalRecords.clientId, row.profile.clientId),
+      ),
+    )
+    .orderBy(desc(clinicalRecords.createdAt))
+    .limit(10);
+
+  // Odontogram: only when this merchant is in the dental vertical.
+  // Latest snapshot only — full history would balloon the PDF.
+  let latestOdontogram: typeof clinicalRecordOdontograms.$inferSelect | null = null;
+  if (merchant.vertical === "dental") {
+    const [latest] = await db
+      .select()
+      .from(clinicalRecordOdontograms)
+      .where(
+        and(
+          eq(clinicalRecordOdontograms.merchantId, args.merchantId),
+          eq(clinicalRecordOdontograms.clientId, row.profile.clientId),
+        ),
+      )
+      .orderBy(desc(clinicalRecordOdontograms.createdAt))
+      .limit(1);
+    latestOdontogram = latest ?? null;
+  }
+
   return {
     merchant,
     profile: row.profile,
@@ -455,6 +523,14 @@ async function loadClientProfileData(args: {
       service: { id: b.service.id, name: b.service.name },
       staffMember: { id: b.staffMember.id, name: b.staffMember.name },
     })) satisfies BookingWithLookups[],
+    loyalty: {
+      balance: Number(loyaltyBal?.balance ?? 0),
+      enabled: loyaltyProgram?.enabled ?? false,
+      pointsPerDollar: loyaltyProgram?.pointsPerDollar ?? null,
+      pointsPerDollarRedeem: loyaltyProgram?.pointsPerDollarRedeem ?? null,
+    },
+    clinicalRecords: clinicalRows,
+    latestOdontogram,
   };
 }
 

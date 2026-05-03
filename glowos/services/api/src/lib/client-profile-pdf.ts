@@ -21,7 +21,16 @@
  */
 
 import PDFDocument from "pdfkit";
-import type { clients, clientProfiles, bookings, services, staff, merchants } from "@glowos/db";
+import type {
+  clients,
+  clientProfiles,
+  bookings,
+  services,
+  staff,
+  merchants,
+  clinicalRecords,
+  clinicalRecordOdontograms,
+} from "@glowos/db";
 
 // ─── Palette (mirrors restricted dashboard palette) ─────────────────────
 
@@ -52,11 +61,20 @@ type ClientRow = typeof clients.$inferSelect;
 type BookingRow = typeof bookings.$inferSelect;
 type ServiceRow = typeof services.$inferSelect;
 type StaffRow = typeof staff.$inferSelect;
+type ClinicalRecordRow = typeof clinicalRecords.$inferSelect;
+type OdontogramRow = typeof clinicalRecordOdontograms.$inferSelect;
 
 export interface BookingWithLookups {
   booking: BookingRow;
   service: { id: string; name: string };
   staffMember: { id: string; name: string };
+}
+
+export interface LoyaltySummary {
+  balance: number;
+  enabled: boolean;
+  pointsPerDollar: number | null;
+  pointsPerDollarRedeem: number | null;
 }
 
 export interface ClientProfileData {
@@ -68,6 +86,9 @@ export interface ClientProfileData {
   lastVisitAt: string | null;
   noShowCount: number;
   recentBookings: BookingWithLookups[];
+  loyalty: LoyaltySummary;
+  clinicalRecords: ClinicalRecordRow[];
+  latestOdontogram: OdontogramRow | null;
 }
 
 // ─── Single-client renderer ─────────────────────────────────────────────
@@ -336,7 +357,16 @@ function drawClientProfileSection(
     lastVisitAt,
   });
 
-  doc.y += 24;
+  doc.y += 16;
+
+  // ─── Loyalty snapshot (inline strip) ─────────────────────────────────
+  // Always renders if a balance exists OR the program is enabled — even a
+  // zero balance on an enabled program is information ("never earned, never
+  // redeemed").
+  if (data.loyalty.balance > 0 || data.loyalty.enabled) {
+    drawLoyaltyStrip(doc, data.loyalty);
+    doc.y += 16;
+  }
 
   // ─── Upcoming appointments table ─────────────────────────────────────
   const now = new Date();
@@ -366,6 +396,294 @@ function drawClientProfileSection(
   } else {
     drawBookingTable(doc, past, { showStatus: true });
   }
+
+  // ─── Clinical records (consultation notes, treatment logs, etc.) ─────
+  if (data.clinicalRecords.length > 0) {
+    doc.y += 10;
+    if (doc.y > PAGE_BOTTOM - 100) { doc.addPage(); doc.y = 60; }
+    drawSectionHeading(doc, `Clinical Records (${data.clinicalRecords.length})`);
+    drawClinicalRecords(doc, data.clinicalRecords);
+  }
+
+  // ─── Dental charting (only when merchant.vertical='dental') ──────────
+  if (data.latestOdontogram) {
+    doc.y += 10;
+    if (doc.y > PAGE_BOTTOM - 120) { doc.addPage(); doc.y = 60; }
+    drawSectionHeading(doc, "Dental Charting (latest snapshot)");
+    drawOdontogramSummary(doc, data.latestOdontogram);
+  }
+}
+
+// ─── Loyalty strip ──────────────────────────────────────────────────────
+
+function drawLoyaltyStrip(doc: PDFKit.PDFDocument, loy: LoyaltySummary): void {
+  const stripY = doc.y;
+  const stripH = 56;
+  doc
+    .strokeColor(COLOURS.grey20)
+    .lineWidth(0.5)
+    .roundedRect(PAGE_LEFT, stripY, PAGE_RIGHT - PAGE_LEFT, stripH, 6)
+    .stroke();
+
+  doc
+    .fillColor(COLOURS.grey60)
+    .fontSize(8.5)
+    .font("Helvetica")
+    .text("LOYALTY POINTS", PAGE_LEFT + 16, stripY + 12, { characterSpacing: 1.2 });
+  doc
+    .fillColor(COLOURS.ink)
+    .fontSize(20)
+    .font("Helvetica-Bold")
+    .text(loy.balance.toLocaleString("en-SG"), PAGE_LEFT + 16, stripY + 26);
+
+  // Right-side: redeemable value when program config is known
+  if (loy.pointsPerDollarRedeem && loy.pointsPerDollarRedeem > 0) {
+    const redeemableSgd = Math.floor(loy.balance / loy.pointsPerDollarRedeem);
+    doc
+      .fillColor(COLOURS.grey60)
+      .fontSize(8.5)
+      .font("Helvetica")
+      .text("REDEEMABLE", PAGE_RIGHT - 16, stripY + 12, {
+        width: 200,
+        align: "right",
+        characterSpacing: 1.2,
+      });
+    doc
+      .fillColor(COLOURS.sage)
+      .fontSize(15)
+      .font("Helvetica-Bold")
+      .text(`S$${redeemableSgd}`, PAGE_RIGHT - 16, stripY + 28, {
+        width: 200,
+        align: "right",
+      });
+    doc
+      .fillColor(COLOURS.grey45)
+      .fontSize(8)
+      .font("Helvetica")
+      .text(
+        `${loy.pointsPerDollarRedeem} pts = S$1 · earn ${loy.pointsPerDollar ?? "—"}/SGD`,
+        PAGE_LEFT + 16,
+        stripY + 46,
+        { width: PAGE_RIGHT - PAGE_LEFT - 32 },
+      );
+  }
+  doc.x = PAGE_LEFT;
+  doc.y = stripY + stripH;
+}
+
+// ─── Clinical records list ──────────────────────────────────────────────
+
+function drawClinicalRecords(
+  doc: PDFKit.PDFDocument,
+  records: ClinicalRecordRow[],
+): void {
+  for (const r of records) {
+    if (doc.y > PAGE_BOTTOM - 80) { doc.addPage(); doc.y = 60; }
+
+    const rowYStart = doc.y;
+    const dateStr = formatDate(new Date(r.createdAt));
+    const typeLabel = clinicalRecordTypeLabel(r.type);
+
+    // Date column (left, fixed width)
+    doc
+      .fillColor(COLOURS.grey90)
+      .fontSize(10)
+      .font("Helvetica")
+      .text(dateStr, PAGE_LEFT, rowYStart, { width: 85 });
+
+    // Type pill + author + body excerpt — all in the right-hand column
+    const bodyX = PAGE_LEFT + 100;
+    const bodyW = PAGE_RIGHT - bodyX;
+
+    doc
+      .fillColor(COLOURS.sage)
+      .fontSize(8.5)
+      .font("Helvetica-Bold")
+      .text(typeLabel.toUpperCase(), bodyX, rowYStart, {
+        width: bodyW,
+        characterSpacing: 1.2,
+      });
+    doc.y += 12;
+
+    if (r.title) {
+      doc
+        .fillColor(COLOURS.ink)
+        .fontSize(11)
+        .font("Helvetica-Bold")
+        .text(r.title, bodyX, doc.y, { width: bodyW });
+    }
+
+    // Body excerpt — truncated to keep the section bounded.
+    const excerpt = truncate(r.body ?? "", 280);
+    if (excerpt) {
+      doc
+        .fillColor(COLOURS.grey70)
+        .fontSize(10)
+        .font("Helvetica")
+        .text(excerpt, bodyX, doc.y, {
+          width: bodyW,
+          lineGap: 1.5,
+        });
+    }
+
+    // Footer line: recorded by + amendment marker
+    const footerLine = [`by ${r.recordedByName}`, r.amendsId ? "amendment" : null]
+      .filter(Boolean)
+      .join(" · ");
+    doc
+      .fillColor(COLOURS.grey45)
+      .fontSize(8.5)
+      .font("Helvetica-Oblique")
+      .text(footerLine, bodyX, doc.y + 2, { width: bodyW });
+
+    doc.x = PAGE_LEFT;
+    doc.y += 16;
+
+    // Hairline between records
+    doc
+      .strokeColor(COLOURS.grey10)
+      .lineWidth(0.3)
+      .moveTo(PAGE_LEFT, doc.y)
+      .lineTo(PAGE_RIGHT, doc.y)
+      .stroke();
+    doc.y += 8;
+  }
+}
+
+function clinicalRecordTypeLabel(type: string): string {
+  switch (type) {
+    case "consultation_note": return "Consultation";
+    case "treatment_log": return "Treatment";
+    case "prescription": return "Prescription";
+    case "amendment": return "Amendment";
+    default: return type;
+  }
+}
+
+// ─── Odontogram summary (dental clinics only) ───────────────────────────
+
+function drawOdontogramSummary(
+  doc: PDFKit.PDFDocument,
+  ondg: OdontogramRow,
+): void {
+  const startY = doc.y;
+  const charting = (ondg.charting ?? {}) as Record<string, {
+    whole?: string;
+    surfaces?: Record<string, string[]>;
+    notes?: string;
+  }>;
+
+  // Tally findings: count teeth by whole-tooth status + count surface
+  // condition occurrences.
+  const wholeStatusCounts: Record<string, number> = {};
+  const surfaceCondCounts: Record<string, number> = {};
+  let toothCount = 0;
+
+  for (const fdi of Object.keys(charting)) {
+    const t = charting[fdi];
+    if (!t) continue;
+    toothCount += 1;
+    if (t.whole) {
+      wholeStatusCounts[t.whole] = (wholeStatusCounts[t.whole] ?? 0) + 1;
+    }
+    if (t.surfaces) {
+      for (const surfConds of Object.values(t.surfaces)) {
+        for (const c of surfConds ?? []) {
+          surfaceCondCounts[c] = (surfaceCondCounts[c] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  // Header strip — date + recorded by
+  doc
+    .fillColor(COLOURS.grey60)
+    .fontSize(9)
+    .font("Helvetica")
+    .text(
+      `Recorded ${formatDate(new Date(ondg.createdAt))} by ${ondg.recordedByName}`,
+      PAGE_LEFT,
+      startY,
+    );
+  doc.x = PAGE_LEFT;
+  doc.y += 16;
+
+  // Tooth count + finding summary lines
+  doc
+    .fillColor(COLOURS.ink)
+    .fontSize(11)
+    .font("Helvetica")
+    .text(
+      `${toothCount} tooth ${toothCount === 1 ? "annotation" : "annotations"} on this snapshot.`,
+      PAGE_LEFT,
+      doc.y,
+    );
+  doc.x = PAGE_LEFT;
+  doc.y += 14;
+
+  // Whole-tooth breakdown (e.g. "2 missing · 1 crown · 1 implant")
+  const wholeBits: string[] = [];
+  for (const [status, count] of Object.entries(wholeStatusCounts)) {
+    if (status === "present") continue;
+    wholeBits.push(`${count} ${prettyToothStatus(status)}`);
+  }
+  if (wholeBits.length > 0) {
+    doc
+      .fillColor(COLOURS.grey70)
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Tooth status: ${wholeBits.join(" · ")}`, PAGE_LEFT, doc.y, {
+        width: PAGE_RIGHT - PAGE_LEFT,
+      });
+    doc.x = PAGE_LEFT;
+    doc.y += 14;
+  }
+
+  // Surface conditions breakdown
+  const surfBits: string[] = [];
+  for (const [cond, count] of Object.entries(surfaceCondCounts)) {
+    surfBits.push(`${count} ${cond}`);
+  }
+  if (surfBits.length > 0) {
+    doc
+      .fillColor(COLOURS.grey70)
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Surface findings: ${surfBits.join(" · ")}`, PAGE_LEFT, doc.y, {
+        width: PAGE_RIGHT - PAGE_LEFT,
+      });
+    doc.x = PAGE_LEFT;
+    doc.y += 14;
+  }
+
+  if (ondg.chartingNotes) {
+    doc.y += 4;
+    doc
+      .fillColor(COLOURS.grey60)
+      .fontSize(8.5)
+      .font("Helvetica-Bold")
+      .text("CHARTING NOTES", PAGE_LEFT, doc.y, { characterSpacing: 1.2 });
+    doc.y += 12;
+    doc
+      .fillColor(COLOURS.grey90)
+      .fontSize(10)
+      .font("Helvetica-Oblique")
+      .text(ondg.chartingNotes, PAGE_LEFT, doc.y, {
+        width: PAGE_RIGHT - PAGE_LEFT,
+        lineGap: 1.5,
+      });
+    doc.x = PAGE_LEFT;
+    doc.y += doc.heightOfString(ondg.chartingNotes, { width: PAGE_RIGHT - PAGE_LEFT });
+  }
+}
+
+function prettyToothStatus(status: string): string {
+  return status.replace(/_/g, " ");
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max).trimEnd() + "…";
 }
 
 // ─── Drawing helpers ────────────────────────────────────────────────────
@@ -433,26 +751,39 @@ function drawBookingTable(
   opts: { showStatus: boolean },
 ): void {
   const colDate = PAGE_LEFT;
-  const colService = PAGE_LEFT + 80;
+  const colService = PAGE_LEFT + 90;
   const colStaff = PAGE_LEFT + 290;
   const colPrice = PAGE_RIGHT - 110;
-  const colStatus = PAGE_RIGHT - 50;
-  const rowH = 18;
+  const colStatus = PAGE_RIGHT - 60;
+  // Single-line rows. Time stamp is dropped — clinic owners care about
+  // dates, and stacking date+time was causing visual overlap with the
+  // next row's content.
+  const rowH = 22;
+  const headerH = 16;
 
   // Column header
+  const headerY = doc.y;
   doc
     .fillColor(COLOURS.grey60)
     .fontSize(8.5)
     .font("Helvetica-Bold");
-  doc.text("DATE", colDate, doc.y, { characterSpacing: 1, width: 70 });
-  doc.text("SERVICE", colService, doc.y - 11, { characterSpacing: 1, width: colStaff - colService - 8 });
-  doc.text("STAFF", colStaff, doc.y - 11, { characterSpacing: 1, width: colPrice - colStaff - 8 });
-  doc.text("PRICE", colPrice, doc.y - 11, { characterSpacing: 1, width: 50, align: "right" });
+  doc.text("DATE", colDate, headerY, { characterSpacing: 1, width: 80 });
+  doc.text("SERVICE", colService, headerY, { characterSpacing: 1, width: colStaff - colService - 8 });
+  doc.text("STAFF", colStaff, headerY, { characterSpacing: 1, width: colPrice - colStaff - 8 });
+  doc.text("PRICE", colPrice, headerY, { characterSpacing: 1, width: 50, align: "right" });
   if (opts.showStatus) {
-    doc.text("STATUS", colStatus, doc.y - 11, { characterSpacing: 1, width: 50, align: "right" });
+    doc.text("STATUS", colStatus, headerY, { characterSpacing: 1, width: 60, align: "right" });
   }
   doc.x = PAGE_LEFT;
-  doc.y += 6;
+  doc.y = headerY + headerH;
+
+  // Hairline under header
+  doc
+    .strokeColor(COLOURS.grey20)
+    .lineWidth(0.5)
+    .moveTo(PAGE_LEFT, doc.y - 2)
+    .lineTo(PAGE_RIGHT, doc.y - 2)
+    .stroke();
 
   for (const r of rows) {
     if (doc.y > PAGE_BOTTOM - 60) {
@@ -460,47 +791,49 @@ function drawBookingTable(
       doc.y = 60;
     }
     const dateStr = formatDate(new Date(r.booking.startTime));
-    const timeStr = formatTime(new Date(r.booking.startTime));
     const rowY = doc.y;
 
     doc
       .fillColor(COLOURS.grey90)
       .fontSize(10)
       .font("Helvetica")
-      .text(dateStr, colDate, rowY, { width: 75 });
-    doc
-      .fillColor(COLOURS.grey60)
-      .fontSize(8.5)
-      .font("Helvetica")
-      .text(timeStr, colDate, rowY + 12, { width: 75 });
+      .text(dateStr, colDate, rowY + 5, { width: 85 });
 
     doc
       .fillColor(COLOURS.ink)
       .fontSize(10.5)
       .font("Helvetica")
-      .text(r.service.name, colService, rowY, { width: colStaff - colService - 8 });
+      .text(r.service.name, colService, rowY + 5, {
+        width: colStaff - colService - 8,
+        ellipsis: true,
+        lineBreak: false,
+      });
     doc
       .fillColor(COLOURS.grey70)
       .fontSize(10)
       .font("Helvetica")
-      .text(r.staffMember.name, colStaff, rowY, { width: colPrice - colStaff - 8 });
+      .text(r.staffMember.name, colStaff, rowY + 5, {
+        width: colPrice - colStaff - 8,
+        ellipsis: true,
+        lineBreak: false,
+      });
     doc
       .fillColor(COLOURS.ink)
       .fontSize(10)
       .font("Helvetica-Bold")
-      .text(`S$${parseFloat(r.booking.priceSgd).toFixed(0)}`, colPrice, rowY, {
+      .text(`S$${parseFloat(r.booking.priceSgd).toFixed(0)}`, colPrice, rowY + 5, {
         width: 50,
         align: "right",
       });
     if (opts.showStatus) {
-      const statusLabel = r.booking.status.replace("_", " ");
+      const statusLabel = r.booking.status.replace("_", " ").toUpperCase();
       const statusColor = statusColorFor(r.booking.status);
       doc
         .fillColor(statusColor)
-        .fontSize(8.5)
+        .fontSize(8)
         .font("Helvetica-Bold")
-        .text(statusLabel, colStatus, rowY + 4, {
-          width: 50,
+        .text(statusLabel, colStatus, rowY + 7, {
+          width: 60,
           align: "right",
           characterSpacing: 0.5,
         });
