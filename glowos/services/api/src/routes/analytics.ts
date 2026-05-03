@@ -1,13 +1,15 @@
 import { Hono } from "hono";
 import { eq, and, gte, lte, gt, sql, inArray } from "drizzle-orm";
-import { db, bookings, clients, clientProfiles, services, staff, reviews, clientPackages } from "@glowos/db";
+import { db, bookings, clients, clientProfiles, services, staff, reviews, clientPackages, merchants } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import type { AppVariables } from "../lib/types.js";
 import {
   aggregateUtilization,
   aggregateCohortRetention,
   aggregateRebookLag,
+  computeDigestMetrics,
 } from "../lib/analytics-aggregator.js";
+import { renderAnalyticsPdf, analyticsPdfFilename } from "../lib/analytics-pdf.js";
 
 const analyticsRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -1045,5 +1047,159 @@ function customRangeBounds(startISO: string, endISO: string) {
   const prevEnd = new Date(start.getTime());
   return { start, end, prevStart, prevEnd };
 }
+
+// ─── GET /merchant/analytics/export-pdf ──────────────────────────────────────
+// Server-rendered PDF report. Replaces the old window.print() button which
+// captured the live page DOM (with chrome, loading skeletons, etc.). Pulls
+// the same aggregator data the email digest uses, plus a few dashboard-
+// specific datasets, and renders a structured 1–2 page report with
+// footnotes explaining each metric's derivation.
+
+analyticsRouter.get("/export-pdf", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const periodParam = c.req.query("period") ?? "30d";
+  const fromQ = c.req.query("from");
+  const toQ = c.req.query("to");
+  const { start, end, prevStart, prevEnd } = resolveBounds(fromQ, toQ, periodParam);
+
+  // Period label rendered on the cover. Format: "Last 30 days" /
+  // "Last 7 days" / "1 May - 30 May 2026" for custom ranges.
+  let periodLabel: string;
+  if (fromQ && toQ) {
+    periodLabel = `${start.toLocaleDateString("en-SG", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`;
+  } else if (periodParam === "7d") periodLabel = "Last 7 days";
+  else if (periodParam === "90d") periodLabel = "Last 90 days";
+  else periodLabel = "Last 30 days";
+
+  const [merchant] = await db
+    .select({ name: merchants.name, country: merchants.country })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+
+  if (!merchant) {
+    return c.json({ error: "Not Found", message: "Merchant not found" }, 404);
+  }
+
+  const currency = merchant.country === "MY" ? "MYR" : "SGD";
+
+  // Fetch all data in parallel — same aggregator the email digest uses
+  // for the headline KPIs, plus a few dashboard-specific datasets.
+  const [
+    metrics,
+    utilization,
+    cohortRetention,
+    rebookLag,
+    topServicesRows,
+    bookingSourcesRows,
+    revByDowRows,
+  ] = await Promise.all([
+    computeDigestMetrics({ merchantId, periodStart: start, periodEnd: end }),
+    aggregateUtilization({
+      merchantId,
+      periodStart: start,
+      periodEnd: end,
+      priorPeriodStart: prevStart,
+      priorPeriodEnd: prevEnd,
+    }).catch(() => null),
+    aggregateCohortRetention({ merchantId, periodStart: start, periodEnd: end }).catch(() => null),
+    aggregateRebookLag({ merchantId, periodStart: start, periodEnd: end }).catch(() => null),
+    db
+      .select({
+        service_name: services.name,
+        bookings_count: sql<number>`cast(count(${bookings.id}) as int)`,
+        revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      })
+      .from(bookings)
+      .innerJoin(services, eq(bookings.serviceId, services.id))
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          gte(bookings.startTime, start),
+          lte(bookings.startTime, end),
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
+        ),
+      )
+      .groupBy(bookings.serviceId, services.name)
+      .orderBy(sql`sum(cast(${bookings.priceSgd} as numeric)) desc nulls last`)
+      .limit(8),
+    db
+      .select({
+        source: bookings.bookingSource,
+        count: sql<number>`cast(count(${bookings.id}) as int)`,
+        revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          gte(bookings.startTime, start),
+          lte(bookings.startTime, end),
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
+        ),
+      )
+      .groupBy(bookings.bookingSource)
+      .orderBy(sql`count(${bookings.id}) desc`),
+    db
+      .select({
+        dow: sql<number>`cast(extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore') as int)`,
+        revenue: sql<number>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+        count: sql<number>`cast(count(*) as int)`,
+      })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.merchantId, merchantId),
+          gte(bookings.startTime, start),
+          lte(bookings.startTime, end),
+          sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
+        ),
+      )
+      .groupBy(sql`extract(dow from ${bookings.startTime} AT TIME ZONE 'Asia/Singapore')`),
+  ]);
+
+  const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dowMap = new Map(revByDowRows.map((r) => [Number(r.dow), { revenue: Number(r.revenue), count: Number(r.count) }]));
+  const revenueByDow = DOW_LABELS.map((label, dow) => ({
+    dow,
+    label,
+    revenue: dowMap.get(dow)?.revenue ?? 0,
+    count: dowMap.get(dow)?.count ?? 0,
+  }));
+
+  const pdf = await renderAnalyticsPdf({
+    merchantName: merchant.name,
+    currency,
+    periodLabel,
+    periodStart: start,
+    periodEnd: end,
+    metrics,
+    utilization,
+    cohortRetention,
+    rebookLag,
+    topServices: topServicesRows.map((r) => ({
+      serviceName: r.service_name,
+      bookingsCount: Number(r.bookings_count),
+      revenue: parseFloat(Number(r.revenue).toFixed(2)),
+    })),
+    bookingSources: bookingSourcesRows.map((r) => ({
+      source: r.source,
+      count: Number(r.count),
+      revenue: parseFloat(Number(r.revenue).toFixed(2)),
+    })),
+    revenueByDow,
+  });
+
+  const filename = analyticsPdfFilename({ merchantName: merchant.name, periodLabel });
+  return new Response(new Uint8Array(pdf), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": String(pdf.length),
+      "Cache-Control": "no-store",
+    },
+  });
+});
 
 export { analyticsRouter };
