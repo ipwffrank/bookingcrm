@@ -1,11 +1,19 @@
 import { Hono } from "hono";
 import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions, waitlist } from "@glowos/db";
+import { db, clients, clientProfiles, bookings, services, staff, clientPackages, packageSessions, waitlist, merchants } from "@glowos/db";
 import { requireMerchant } from "../middleware/auth.js";
 import { zValidator } from "../middleware/validate.js";
 import type { AppVariables } from "../lib/types.js";
 import { normalizePhone } from "../lib/normalize.js";
+import {
+  renderClientProfilePdf,
+  renderBulkClientProfilesPdf,
+  clientProfilePdfFilename,
+  bulkClientsPdfFilename,
+  type ClientProfileData,
+  type BookingWithLookups,
+} from "../lib/client-profile-pdf.js";
 
 const clientsRouter = new Hono<{ Variables: AppVariables }>();
 
@@ -358,6 +366,175 @@ clientsRouter.get("/:id", requireMerchant, async (c) => {
     noShowCount,
   });
 });
+
+// ─── Shared loader for the PDF endpoints ────────────────────────────────
+// Mirrors the inline query in `GET /:id` above, but bundles the merchant
+// row + bookings into the shape the PDF renderer expects. Used by both
+// the single-client and bulk-export endpoints.
+async function loadClientProfileData(args: {
+  merchantId: string;
+  profileId: string;
+}): Promise<ClientProfileData | null> {
+  const [row] = await db
+    .select({ profile: clientProfiles, client: clients })
+    .from(clientProfiles)
+    .innerJoin(clients, eq(clientProfiles.clientId, clients.id))
+    .where(
+      and(
+        eq(clientProfiles.id, args.profileId),
+        eq(clientProfiles.merchantId, args.merchantId),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+
+  const [merchant] = await db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, args.merchantId))
+    .limit(1);
+  if (!merchant) return null;
+
+  // Last 50 bookings — covers ~1 year for a typical aesthetic-clinic patient.
+  // Bulk export with 200 clients × 50 bookings = 10K rows; well within
+  // pdfkit's per-document budget.
+  const bookingRows = await db
+    .select({
+      booking: bookings,
+      service: services,
+      staffMember: staff,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .innerJoin(staff, eq(bookings.staffId, staff.id))
+    .where(
+      and(
+        eq(bookings.merchantId, args.merchantId),
+        eq(bookings.clientId, row.profile.clientId),
+      ),
+    )
+    .orderBy(desc(bookings.startTime))
+    .limit(50);
+
+  const [spendingStats] = await db
+    .select({
+      totalSpendSgd: sql<string>`coalesce(sum(cast(${bookings.priceSgd} as numeric)), 0)`,
+      totalVisits: sql<number>`cast(count(*) as int)`,
+      lastVisitAt: sql<string>`max(${bookings.startTime})`,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.merchantId, args.merchantId),
+        eq(bookings.clientId, row.profile.clientId),
+        sql`${bookings.status} NOT IN ('cancelled', 'no_show')`,
+      ),
+    );
+
+  const [nsRow] = await db
+    .select({ count: sql<number>`cast(count(*) as int)` })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, row.profile.clientId),
+        eq(bookings.merchantId, args.merchantId),
+        eq(bookings.status, "no_show"),
+      ),
+    );
+
+  return {
+    merchant,
+    profile: row.profile,
+    client: row.client,
+    totalVisits: Number(spendingStats?.totalVisits ?? 0),
+    totalSpendSgd: String(spendingStats?.totalSpendSgd ?? "0"),
+    lastVisitAt: spendingStats?.lastVisitAt ? String(spendingStats.lastVisitAt) : null,
+    noShowCount: Number(nsRow?.count ?? 0),
+    recentBookings: bookingRows.map((b) => ({
+      booking: b.booking,
+      service: { id: b.service.id, name: b.service.name },
+      staffMember: { id: b.staffMember.id, name: b.staffMember.name },
+    })) satisfies BookingWithLookups[],
+  };
+}
+
+// ─── GET /merchant/clients/:id/profile-pdf ──────────────────────────────
+// Single-client PDF report. Replaces the old browser-print-to-PDF flow
+// which captured dashboard chrome. Designed for handing to the patient
+// or attaching to a clinical handoff.
+
+clientsRouter.get("/:id/profile-pdf", requireMerchant, async (c) => {
+  const merchantId = c.get("merchantId")!;
+  const profileId = c.req.param("id")!;
+
+  const data = await loadClientProfileData({ merchantId, profileId });
+  if (!data) {
+    return c.json({ error: "Not Found", message: "Client not found." }, 404);
+  }
+
+  const pdf = await renderClientProfilePdf(data);
+  return new Response(new Uint8Array(pdf), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${clientProfilePdfFilename({
+        merchantName: data.merchant.name,
+        clientName: data.client.name,
+        clientPhone: data.client.phone,
+      })}"`,
+    },
+  });
+});
+
+// ─── POST /merchant/clients/profile-pdf-bulk ────────────────────────────
+// One combined PDF with page break per client + a cover page. Easier to
+// share than a zip of individual PDFs; ZIP variant deferrable to a
+// follow-up if a clinic asks.
+
+const bulkPdfSchema = z.object({
+  profile_ids: z.array(z.string().uuid()).min(1).max(200),
+});
+
+clientsRouter.post(
+  "/profile-pdf-bulk",
+  requireMerchant,
+  zValidator(bulkPdfSchema),
+  async (c) => {
+    const merchantId = c.get("merchantId")!;
+    const body = c.get("body") as z.infer<typeof bulkPdfSchema>;
+
+    // Load each client in parallel — Promise.all is fine at 200 max
+    // (single-digit-second total). Skip nulls (deleted/wrong-merchant
+    // profile_ids) so a partially-bad selection still produces a usable
+    // PDF for the valid clients.
+    const settled = await Promise.all(
+      body.profile_ids.map((profileId) =>
+        loadClientProfileData({ merchantId, profileId }).catch(() => null),
+      ),
+    );
+    const dataRows = settled.filter((d): d is ClientProfileData => d !== null);
+
+    if (dataRows.length === 0) {
+      return c.json(
+        { error: "Not Found", message: "None of the selected clients were found." },
+        404,
+      );
+    }
+
+    const pdf = await renderBulkClientProfilesPdf(dataRows);
+    const merchantName = dataRows[0].merchant.name;
+    return new Response(new Uint8Array(pdf), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${bulkClientsPdfFilename({
+          merchantName,
+          count: dataRows.length,
+        })}"`,
+      },
+    });
+  },
+);
 
 // ─── PUT /merchant/clients/:id/notes ──────────────────────────────────────────
 
