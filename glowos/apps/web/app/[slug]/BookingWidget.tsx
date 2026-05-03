@@ -1517,7 +1517,11 @@ export default function BookingWidget({
                             <span className="block text-[11px] text-grey-60 mt-0.5">
                               {merchant.paymentGateway === 'ipay88'
                                 ? 'Card · FPX · GrabPay — secures your slot instantly'
-                                : 'Card · PayNow · GrabPay — secures your slot instantly'}
+                                : merchant.country === 'HK'
+                                  ? 'Card — secures your slot instantly'
+                                  : merchant.country === 'MY'
+                                    ? 'Card · GrabPay — secures your slot instantly'
+                                    : 'Card · PayNow · GrabPay — secures your slot instantly'}
                             </span>
                           </span>
                         </button>
