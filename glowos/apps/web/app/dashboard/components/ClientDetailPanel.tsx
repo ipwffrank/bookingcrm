@@ -89,7 +89,7 @@ function ExpandToFullPageButton({ profileId, onClose }: { profileId: string; onC
         onClose();
       }}
       title="Open this client profile as a dedicated full-page view"
-      className="px-3 py-1.5 rounded-md text-xs font-medium text-grey-70 hover:text-tone-ink hover:bg-grey-10 transition-colors"
+      className="cursor-pointer px-3 py-1.5 rounded-md text-xs font-medium text-grey-70 hover:text-tone-ink hover:bg-grey-10 transition-colors"
     >
       Open as full page
     </button>
