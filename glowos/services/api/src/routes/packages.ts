@@ -666,16 +666,25 @@ publicPackagesRouter.post("/:slug/packages/purchase", async (c) => {
   let payment: { clientSecret: string; stripeAccountId: string } | null = null;
   if (paymentMethod === "online") {
     const [m] = await db
-      .select({ stripeAccountId: merchants.stripeAccountId })
+      .select({
+        stripeAccountId: merchants.stripeAccountId,
+        country: merchants.country,
+      })
       .from(merchants)
       .where(eq(merchants.id, merchant.id))
       .limit(1);
     if (m?.stripeAccountId) {
+      // Stripe expects lowercase ISO 4217. Country → currency:
+      //   MY → myr, HK → hkd, else (incl. SG) → sgd.
+      const stripeCurrency =
+        m.country === "MY" ? "myr"
+        : m.country === "HK" ? "hkd"
+        : "sgd";
       try {
         const intent = await stripe.paymentIntents.create(
           {
             amount: Math.round(parseFloat(String(pkg.priceSgd)) * 100),
-            currency: "sgd",
+            currency: stripeCurrency,
             automatic_payment_methods: { enabled: true },
             metadata: {
               client_package_id: result.clientPkg.id,

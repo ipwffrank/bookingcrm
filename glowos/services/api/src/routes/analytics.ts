@@ -355,6 +355,19 @@ analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => 
   const periodParam = c.req.query("period") ?? "30d";
   const { start, end } = resolveBounds(c.req.query("from"), c.req.query("to"), periodParam);
 
+  // Currency derives from merchant country. Echoed back so the dashboard
+  // can render the right symbol on the segment chart without a second
+  // call.
+  const [m] = await db
+    .select({ country: merchants.country })
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .limit(1);
+  const currency =
+    m?.country === "MY" ? "MYR"
+    : m?.country === "HK" ? "HKD"
+    : "SGD";
+
   // Raw SQL via db.execute — Drizzle's groupBy(sql`segment`) doesn't reliably
   // resolve to the CASE alias across all builders. CTE wrap also makes the
   // correlated EXISTS subquery against the bookings table unambiguous.
@@ -413,7 +426,7 @@ analyticsRouter.get("/revenue-by-client-segment", requireMerchant, async (c) => 
 
   return c.json({
     period: periodParam,
-    currency: "SGD",
+    currency,
     segments,
     totals: { bookings: totalBookings, revenue: parseFloat(totalRevenue.toFixed(2)) },
   });
